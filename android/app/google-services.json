@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "48438281409",
+    "project_id": "pikuru-app",
+    "storage_bucket": "pikuru-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:48438281409:android:e6a2e86a50b67a1c8e4040",
+        "android_client_info": {
+          "package_name": "com.pikuru_pickleball.pikuru"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD3zYU5Sc0EkBfIGRj9blLQDwbT0P62_9U"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
