@@ -16,6 +16,7 @@ class _RegisterPageState extends State<RegisterPage>
     with SingleTickerProviderStateMixin {
 
   final _fireStore = FirebaseFirestore.instance;
+
   final TextEditingController firstNameController = TextEditingController();
   final TextEditingController lastNameController = TextEditingController();
   final TextEditingController emailController = TextEditingController();
@@ -30,8 +31,6 @@ class _RegisterPageState extends State<RegisterPage>
   bool agree = false;
   bool showPassword = false;
   bool showConfirmPassword = false;
-
-  // 🔥 ADD THIS
   bool showSpinner = false;
 
   @override
@@ -62,7 +61,6 @@ class _RegisterPageState extends State<RegisterPage>
     return Scaffold(
       backgroundColor: Colors.white,
 
-      // 🔥 WRAP EVERYTHING IN ModalProgressHUD
       body: ModalProgressHUD(
         inAsyncCall: showSpinner,
         child: FadeTransition(
@@ -116,7 +114,7 @@ class _RegisterPageState extends State<RegisterPage>
                         const SizedBox(height: 6),
                         TextFormField(
                           controller: firstNameController,
-                          decoration: _inputDecoration("Firstame"),
+                          decoration: _inputDecoration("Firstname"),
                           validator: (v) =>
                           v == null || v.isEmpty ? "Required" : null,
                         ),
@@ -127,7 +125,7 @@ class _RegisterPageState extends State<RegisterPage>
                         const SizedBox(height: 6),
                         TextFormField(
                           controller: lastNameController,
-                          decoration: _inputDecoration("Lastame"),
+                          decoration: _inputDecoration("Lastname"),
                           validator: (v) =>
                           v == null || v.isEmpty ? "Required" : null,
                         ),
@@ -246,21 +244,20 @@ class _RegisterPageState extends State<RegisterPage>
                                 return;
                               }
 
-                              // 🔥 SHOW SPINNER
                               setState(() => showSpinner = true);
 
                               try {
-                                final credential = await FirebaseAuth.instance
+                                final credential =
+                                await FirebaseAuth.instance
                                     .createUserWithEmailAndPassword(
                                   email: emailController.text.trim(),
                                   password: passwordController.text.trim(),
                                 );
 
-                                await _fireStore.collection("registration")
-                                    .add({
+                                await _fireStore.collection("registration").add({
                                   "email": emailController.text.trim(),
-                                  'firstName': firstNameController.text.trim(),
-                                  'lastName': lastNameController.text.trim(),
+                                  "firstName": firstNameController.text.trim(),
+                                  "lastName": lastNameController.text.trim(),
                                 });
 
                                 setState(() => showSpinner = false);
@@ -339,16 +336,59 @@ class _RegisterPageState extends State<RegisterPage>
   }
 }
 
+// ---------------- INPUT DECORATION ----------------
+
 InputDecoration _inputDecoration(String hint) {
   return InputDecoration(
     hintText: hint,
+    hintStyle: const TextStyle(
+      fontWeight: FontWeight.bold,
+      color: Colors.black,   // <-- placeholder now BLACK
+    ),
+
     filled: true,
-    border: OutlineInputBorder(
+    fillColor: Colors.white,
+
+    contentPadding: const EdgeInsets.symmetric(
+      vertical: 14,
+      horizontal: 12,
+    ),
+
+    enabledBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(12),
-      borderSide: BorderSide.none,
+      borderSide: const BorderSide(
+        color: AppColors.primary,
+        width: 1.5,
+      ),
+    ),
+
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(
+        color: AppColors.primary,
+        width: 2,
+      ),
+    ),
+
+    errorBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(
+        color: Colors.red,
+        width: 1.5,
+      ),
+    ),
+
+    focusedErrorBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: const BorderSide(
+        color: Colors.red,
+        width: 2,
+      ),
     ),
   );
 }
+
+// ---------------- HEADER CLIPPER ----------------
 
 class RegisterHeaderClipper extends CustomClipper<Path> {
   @override
