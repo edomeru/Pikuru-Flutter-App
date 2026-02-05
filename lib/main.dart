@@ -4,6 +4,7 @@ import 'firebase_options.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:pikuru/HomePage.dart';
 import 'package:pikuru/theme/material.dart';
+import 'package:pikuru/loginpage.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,6 +27,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Flutter Demo',
       theme: ThemeData(
+        fontFamily: 'Rubik',
         colorScheme:
         ColorScheme.fromSeed(
           seedColor: AppColors.primary,
@@ -35,7 +37,7 @@ class MyApp extends StatelessWidget {
       ),
       ),
       debugShowCheckedModeBanner: false,
-      home: HomePage(),
+      home: LoginScreen(),
     );
   }
 }
