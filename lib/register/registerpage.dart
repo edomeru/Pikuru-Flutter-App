@@ -110,7 +110,6 @@ class _RegisterPageState extends State<RegisterPage>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
 
-                        // FIRSTNAME
                         const SizedBox(height: 6),
                         TextFormField(
                           controller: firstNameController,
@@ -121,7 +120,6 @@ class _RegisterPageState extends State<RegisterPage>
 
                         const SizedBox(height: 16),
 
-                        // LASTNAME
                         const SizedBox(height: 6),
                         TextFormField(
                           controller: lastNameController,
@@ -132,7 +130,6 @@ class _RegisterPageState extends State<RegisterPage>
 
                         const SizedBox(height: 16),
 
-                        // EMAIL
                         const SizedBox(height: 6),
                         TextFormField(
                           controller: emailController,
@@ -146,7 +143,6 @@ class _RegisterPageState extends State<RegisterPage>
 
                         const SizedBox(height: 16),
 
-                        // PASSWORD
                         const SizedBox(height: 6),
                         TextFormField(
                           controller: passwordController,
@@ -172,7 +168,6 @@ class _RegisterPageState extends State<RegisterPage>
 
                         const SizedBox(height: 16),
 
-                        // CONFIRM PASSWORD
                         const SizedBox(height: 6),
                         TextFormField(
                           controller: confirmPasswordController,
@@ -201,7 +196,6 @@ class _RegisterPageState extends State<RegisterPage>
 
                         const SizedBox(height: 20),
 
-                        // TERMS CHECKBOX
                         Row(
                           children: [
                             Checkbox(
@@ -221,18 +215,10 @@ class _RegisterPageState extends State<RegisterPage>
 
                         const SizedBox(height: 20),
 
-                        // ---------------- SIGN UP BUTTON ----------------
-                        SizedBox(
-                          width: double.infinity,
-                          height: 55,
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.primary,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14),
-                              ),
-                            ),
-                            onPressed: () async {
+                        // ---------------- NEW SIGN UP BUTTON ----------------
+                        Center(
+                          child: GestureDetector(
+                            onTap: () async {
                               if (!_formKey.currentState!.validate()) return;
 
                               if (!agree) {
@@ -276,53 +262,91 @@ class _RegisterPageState extends State<RegisterPage>
                                 );
                               }
                             },
-                            child: const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  "Sign Up",
-                                  style: TextStyle(
-                                    fontSize: 18,
-                                    color: Colors.white,
-                                  ),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 24, vertical: 14),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(30),
+                                border: Border.all(
+                                  color: AppColors.primary,
+                                  width: 2,
                                 ),
-                                SizedBox(width: 8),
-                                Icon(Icons.arrow_forward, color: Colors.white),
-                              ],
-                            ),
-                          ),
-                        ),
-
-                        const SizedBox(height: 25),
-
-                        // LOGIN LINK
-                        Center(
-                          child: GestureDetector(
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (_) => LoginScreen()),
-                              );
-                            },
-                            child: const Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text("Already have an account? "),
-                                Text(
-                                  "Login",
-                                  style: TextStyle(
-                                    color: Colors.green,
-                                    fontWeight: FontWeight.bold,
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: const [
+                                  Text(
+                                    "Sign Up",
+                                    style: TextStyle(
+                                      color: AppColors.primary,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                    ),
                                   ),
-                                ),
-                                SizedBox(width: 4),
-                                Icon(Icons.arrow_forward, size: 16),
-                              ],
+                                  SizedBox(width: 8),
+                                  Icon(Icons.arrow_forward,
+                                      color: AppColors.primary),
+                                ],
+                              ),
                             ),
                           ),
                         ),
 
                         const SizedBox(height: 40),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // ---------------- BOTTOM CURVED SECTION ----------------
+                ClipPath(
+                  clipper: BottomCurveClipper(),
+                  child: Container(
+                    width: double.infinity,
+                    color: AppColors.primary,
+                    padding: const EdgeInsets.symmetric(vertical: 40),
+                    child: Column(
+                      children: [
+                        const Text(
+                          "Already have an account?",
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => LoginScreen()),
+                            );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 24, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(30),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: const [
+                                Text(
+                                  "Login",
+                                  style: TextStyle(
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                SizedBox(width: 8),
+                                Icon(Icons.arrow_forward,
+                                    color: AppColors.primary),
+                              ],
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -343,17 +367,14 @@ InputDecoration _inputDecoration(String hint) {
     hintText: hint,
     hintStyle: const TextStyle(
       fontWeight: FontWeight.bold,
-      color: Colors.black,   // <-- placeholder now BLACK
+      color: Colors.black,
     ),
-
     filled: true,
     fillColor: Colors.white,
-
     contentPadding: const EdgeInsets.symmetric(
       vertical: 14,
       horizontal: 12,
     ),
-
     enabledBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(12),
       borderSide: const BorderSide(
@@ -361,7 +382,6 @@ InputDecoration _inputDecoration(String hint) {
         width: 1.5,
       ),
     ),
-
     focusedBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(12),
       borderSide: const BorderSide(
@@ -369,7 +389,6 @@ InputDecoration _inputDecoration(String hint) {
         width: 2,
       ),
     ),
-
     errorBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(12),
       borderSide: const BorderSide(
@@ -377,7 +396,6 @@ InputDecoration _inputDecoration(String hint) {
         width: 1.5,
       ),
     ),
-
     focusedErrorBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(12),
       borderSide: const BorderSide(
@@ -405,6 +423,31 @@ class RegisterHeaderClipper extends CustomClipper<Path> {
     );
 
     path.lineTo(size.width, 0);
+    path.close();
+
+    return path;
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
+}
+
+// ---------------- BOTTOM CURVE CLIPPER ----------------
+
+class BottomCurveClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    Path path = Path();
+
+    path.moveTo(0, 40);
+    path.quadraticBezierTo(
+      size.width * 0.5,
+      -40,
+      size.width,
+      40,
+    );
+    path.lineTo(size.width, size.height);
+    path.lineTo(0, size.height);
     path.close();
 
     return path;
