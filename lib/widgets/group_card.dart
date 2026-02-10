@@ -19,7 +19,7 @@ class GroupCard extends StatelessWidget {
       width: 180,
       margin: const EdgeInsets.only(right: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFF32A259).withOpacity(0.02),
+        color: const Color(0xFF32A259).withOpacity(0.001),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: AppColors.primary,
@@ -33,6 +33,7 @@ class GroupCard extends StatelessWidget {
           ),
         ],
       ),
+
       child: Column(
         children: [
           ClipRRect(
@@ -40,13 +41,18 @@ class GroupCard extends StatelessWidget {
               topLeft: Radius.circular(14),
               topRight: Radius.circular(14),
             ),
-            child: Image.network(
-              imageUrl.isNotEmpty
-                  ? imageUrl
-                  : "https://via.placeholder.com/300x200.png?text=No+Image",
+            child: Container(
               height: 220,
               width: double.infinity,
-              fit: BoxFit.cover,
+              color: Colors.white, // prevents weird background gaps
+              child: Image.network(
+                imageUrl.isNotEmpty
+                    ? imageUrl
+                    : "https://via.placeholder.com/300x200.png?text=No+Image",
+                fit: BoxFit.contain, // <-- FIX: shows full logo/image
+                errorBuilder: (context, error, stackTrace) =>
+                const Center(child: Icon(Icons.broken_image, size: 40)),
+              ),
             ),
           ),
 
@@ -54,7 +60,6 @@ class GroupCard extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   name,

@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:pikuru/widgets/event_card.dart';
-import 'package:pikuru/widgets/group_card.dart';   // <-- IMPORTANT
+import 'package:pikuru/widgets/group_card.dart';
+import 'package:pikuru/widgets/court_card.dart';
 import 'package:pikuru/utils/date_formatter.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -54,14 +55,14 @@ class HomeScreen extends StatelessWidget {
                   Text(
                     "Upcoming events",
                     style: TextStyle(
-                      fontSize: 20,
+                      fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   Text(
                     "See all",
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: 18,
                       color: AppColors.primary,
                       fontWeight: FontWeight.bold,
                     ),
@@ -130,14 +131,14 @@ class HomeScreen extends StatelessWidget {
                   Text(
                     "Local groups",
                     style: TextStyle(
-                      fontSize: 20,
+                      fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   Text(
                     "See all",
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: 18,
                       color: AppColors.primary,
                       fontWeight: FontWeight.bold,
                     ),
@@ -197,14 +198,14 @@ class HomeScreen extends StatelessWidget {
                   Text(
                     "Pickleball courts",
                     style: TextStyle(
-                      fontSize: 20,
+                      fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   Text(
                     "See all",
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: 18,
                       color: AppColors.primary,
                       fontWeight: FontWeight.bold,
                     ),
@@ -236,7 +237,7 @@ class HomeScreen extends StatelessWidget {
                       itemBuilder: (context, index) {
                         final data = docs[index].data();
 
-                        return GroupCard(
+                        return CourtCard(
                           imageUrl: data["loc_image"] ?? "",
                           name: data["loc_name"] ?? "Unnamed Group",
                           location:
@@ -250,11 +251,11 @@ class HomeScreen extends StatelessWidget {
 
               const SizedBox(height: 30),
 
-// WELCOME TEXT
+             // WELCOME TEXT
               const Text(
                 "Welcome to Pikuru!",
                 style: TextStyle(
-                  fontSize: 22,
+                  fontSize: 26,
                   fontWeight: FontWeight.bold,
                   color: AppColors.primary,
                 ),
@@ -266,6 +267,7 @@ class HomeScreen extends StatelessWidget {
                 "Find pickleball courts and events near you 🎾",
                 style: TextStyle(
                   fontSize: 16,
+                  fontWeight: FontWeight.bold,
                   color: Colors.black87,
                 ),
               ),
@@ -320,9 +322,6 @@ class HomeScreen extends StatelessWidget {
                   const SizedBox(height: 30),
                 ],
               ),
-
-
-
             ],
           ),
         ),

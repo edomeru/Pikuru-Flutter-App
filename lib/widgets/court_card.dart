@@ -1,29 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:pikuru/theme/material.dart';
 
-class EventCard extends StatelessWidget {
+class CourtCard extends StatelessWidget {
   final String imageUrl;
-  final String title;
-  final String dateTime;
+  final String name;
   final String location;
 
-  const EventCard({
+  const CourtCard({
     super.key,
     required this.imageUrl,
-    required this.title,
-    required this.dateTime,
+    required this.name,
     required this.location,
   });
 
-  bool _isLogo(String url) {
-    final lower = url.toLowerCase();
-    return lower.endsWith(".png") || lower.endsWith(".svg");
-  }
-
   @override
   Widget build(BuildContext context) {
-    final bool isLogo = _isLogo(imageUrl);
-
     return Container(
       width: 180,
       margin: const EdgeInsets.only(right: 12),
@@ -42,7 +33,6 @@ class EventCard extends StatelessWidget {
           ),
         ],
       ),
-
       child: Column(
         children: [
           ClipRRect(
@@ -50,47 +40,28 @@ class EventCard extends StatelessWidget {
               topLeft: Radius.circular(14),
               topRight: Radius.circular(14),
             ),
-            child: Container(
+            child: Image.network(
+              imageUrl.isNotEmpty
+                  ? imageUrl
+                  : "https://via.placeholder.com/300x200.png?text=No+Image",
               height: 220,
               width: double.infinity,
-              color: Colors.white,
-              child: Image.network(
-                imageUrl.isNotEmpty
-                    ? imageUrl
-                    : "https://via.placeholder.com/300x200.png?text=No+Image",
-
-                // 🔥 AUTO‑DETECT FIT MODE
-                fit: isLogo ? BoxFit.contain : BoxFit.cover,
-
-                errorBuilder: (context, error, stackTrace) =>
-                const Center(child: Icon(Icons.broken_image, size: 40)),
-              ),
+              fit: BoxFit.cover,
             ),
           ),
 
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  title,
+                  name,
                   style: const TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                     color: AppColors.primary,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-
-                const SizedBox(height: 4),
-
-                Text(
-                  dateTime,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.secondary,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -110,8 +81,8 @@ class EventCard extends StatelessWidget {
                       child: Text(
                         location,
                         style: const TextStyle(
-                          fontSize: 12,
-                          color: AppColors.secondary,
+                          fontSize: 11,
+                          color: Colors.black,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,

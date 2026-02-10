@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:pikuru/register/RegisterPage.dart';
 import 'package:pikuru/home_screen.dart';
 import 'package:pikuru/theme/material.dart';
+import 'package:pikuru/main.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:modal_progress_hud_nsn/modal_progress_hud_nsn.dart';
 
@@ -144,7 +145,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               Navigator.pushReplacement(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (_) => HomeScreen(),
+                                  builder: (_) => MainNavigation(),
                                 ),
                               );
                             }
