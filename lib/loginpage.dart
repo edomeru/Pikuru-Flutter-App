@@ -5,6 +5,7 @@ import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/main.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:modal_progress_hud_nsn/modal_progress_hud_nsn.dart';
+import 'package:pikuru/utils/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -41,19 +42,16 @@ class _LoginScreenState extends State<LoginScreen> {
                     width: double.infinity,
                     color: Colors.white,
                   ),
-
                   Positioned(
                     top: -70,
                     left: -50,
                     child: _circle(230, AppColors.primary.withOpacity(0.40)),
                   ),
-
                   Positioned(
                     top: -10,
                     right: -20,
                     child: _circle(180, Colors.white.withOpacity(0.95)),
                   ),
-
                   Positioned(
                     top: 110,
                     left: 0,
@@ -151,7 +149,6 @@ class _LoginScreenState extends State<LoginScreen> {
                             }
                           } catch (e) {
                             print(e);
-
                             setState(() => showSpinner = false);
                           }
                         },
@@ -201,6 +198,24 @@ class _LoginScreenState extends State<LoginScreen> {
                           child: _socialButton(
                             label: "Google",
                             icon: Icons.g_mobiledata,
+                            onPressed: () async {
+                              setState(() => showSpinner = true);
+
+                              final userCredential = await AuthService.signInWithGoogle();
+
+                              setState(() => showSpinner = false);
+
+                              if (userCredential != null) {
+                                Navigator.pushReplacement(
+                                  context,
+                                  MaterialPageRoute(builder: (_) => const MainNavigation()),
+                                );
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text("Google sign-in failed")),
+                                );
+                              }
+                            },
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -208,6 +223,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           child: _socialButton(
                             label: "Apple",
                             icon: Icons.apple,
+                            onPressed: () {
+                              // TODO: Implement Apple sign-in
+                            },
                           ),
                         ),
                       ],
@@ -305,11 +323,12 @@ Widget _circle(double size, Color color) {
 Widget _socialButton({
   required String label,
   required IconData icon,
+  required VoidCallback onPressed,
 }) {
   return SizedBox(
     height: 44,
     child: OutlinedButton.icon(
-      onPressed: () {},
+      onPressed: onPressed,
       style: OutlinedButton.styleFrom(
         side: BorderSide(color: Colors.grey[300]!),
         shape: RoundedRectangleBorder(
