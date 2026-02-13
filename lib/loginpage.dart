@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:pikuru/register/RegisterPage.dart';
-import 'package:pikuru/home_screen.dart';
 import 'package:pikuru/theme/material.dart';
-import 'package:pikuru/main.dart';
+import 'package:pikuru/main_navigation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:modal_progress_hud_nsn/modal_progress_hud_nsn.dart';
-import 'package:pikuru/utils/auth_service.dart';
+import 'package:pikuru/Utils/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -132,24 +131,41 @@ class _LoginScreenState extends State<LoginScreen> {
                           setState(() => showSpinner = true);
 
                           try {
-                            final user = await _auth.signInWithEmailAndPassword(
-                              email: email,
+                            final userCredential =
+                            await _auth.signInWithEmailAndPassword(
+                              email: email.trim(),
                               password: password,
                             );
 
-                            if (user != null) {
-                              setState(() => showSpinner = false);
-
-                              Navigator.pushReplacement(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => MainNavigation(),
-                                ),
-                              );
-                            }
-                          } catch (e) {
-                            print(e);
                             setState(() => showSpinner = false);
+
+                            if (!mounted) return;
+                            Navigator.pushReplacement(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const MainNavigation(),
+                              ),
+                            );
+                          } on FirebaseAuthException catch (e) {
+                            setState(() => showSpinner = false);
+                            String message = "Login failed. Please try again.";
+                            if (e.code == 'user-not-found') {
+                              message = "No account found with this email.";
+                            } else if (e.code == 'wrong-password') {
+                              message = "Incorrect password.";
+                            } else if (e.code == 'invalid-email') {
+                              message = "Please enter a valid email address.";
+                            }
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(message)),
+                            );
+                          } catch (e) {
+                            setState(() => showSpinner = false);
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text("Error: ${e.toString()}")),
+                            );
                           }
                         },
                         style: ElevatedButton.styleFrom(
@@ -201,18 +217,23 @@ class _LoginScreenState extends State<LoginScreen> {
                             onPressed: () async {
                               setState(() => showSpinner = true);
 
-                              final userCredential = await AuthService.signInWithGoogle();
+                              final userCredential =
+                              await AuthService.signInWithGoogle();
 
                               setState(() => showSpinner = false);
 
                               if (userCredential != null) {
+                                if (!mounted) return;
                                 Navigator.pushReplacement(
                                   context,
-                                  MaterialPageRoute(builder: (_) => const MainNavigation()),
+                                  MaterialPageRoute(
+                                      builder: (_) => const MainNavigation()),
                                 );
                               } else {
+                                if (!mounted) return;
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text("Google sign-in failed")),
+                                  const SnackBar(
+                                      content: Text("Google sign-in failed")),
                                 );
                               }
                             },
@@ -237,7 +258,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         const Text(
-                          "Don’t have an account yet? ",
+                          "Don't have an account yet? ",
                           style: TextStyle(fontSize: 13),
                         ),
                         GestureDetector(
@@ -284,27 +305,19 @@ InputDecoration _fieldDecoration(String hint) {
     ),
     filled: true,
     fillColor: Colors.white,
-    contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
+    contentPadding:
+    const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
     border: OutlineInputBorder(
       borderRadius: BorderRadius.circular(12),
-      borderSide: const BorderSide(
-        color: Colors.black,
-        width: 1.2,
-      ),
+      borderSide: const BorderSide(color: Colors.black, width: 1.2),
     ),
     enabledBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(12),
-      borderSide: const BorderSide(
-        color: Colors.black,
-        width: 1.2,
-      ),
+      borderSide: const BorderSide(color: Colors.black, width: 1.2),
     ),
     focusedBorder: OutlineInputBorder(
       borderRadius: BorderRadius.circular(12),
-      borderSide: const BorderSide(
-        color: AppColors.primary,
-        width: 1.6,
-      ),
+      borderSide: const BorderSide(color: AppColors.primary, width: 1.6),
     ),
   );
 }
@@ -313,17 +326,14 @@ Widget _circle(double size, Color color) {
   return Container(
     height: size,
     width: size,
-    decoration: BoxDecoration(
-      color: color,
-      shape: BoxShape.circle,
-    ),
+    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
   );
 }
 
 Widget _socialButton({
   required String label,
   required IconData icon,
-  required VoidCallback onPressed,
+  required Function() onPressed,
 }) {
   return SizedBox(
     height: 44,

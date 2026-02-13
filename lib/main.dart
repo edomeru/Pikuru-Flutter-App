@@ -3,9 +3,10 @@ import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/loginpage.dart';
-import 'package:pikuru/home_screen.dart';
+import 'package:pikuru/main_navigation.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
-Future<void> main() async {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
@@ -22,8 +23,6 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Pikuru',
       debugShowCheckedModeBanner: false,
-
-      // YOUR THEME (unchanged)
       theme: ThemeData(
         fontFamily: 'Rubik',
         colorScheme: ColorScheme.fromSeed(
@@ -33,75 +32,80 @@ class MyApp extends StatelessWidget {
           background: AppColors.background,
         ),
       ),
-
-      home: const LoginScreen(),
+      home: const SplashScreen(),
     );
   }
 }
 
-//
-// ────────────────────────────────────────────────────────────────
-//   MAIN NAVIGATION WITH BOTTOM BAR
-// ────────────────────────────────────────────────────────────────
-//
+// ── Splash Screen ─────────────────────────────────────────────────────
+// Simply checks if a user is already signed in and routes accordingly.
+// No more deep-link / email-link handling needed.
 
-class MainNavigation extends StatefulWidget {
-  const MainNavigation({super.key});
+class SplashScreen extends StatefulWidget {
+  const SplashScreen({super.key});
 
   @override
-  State<MainNavigation> createState() => _MainNavigationState();
+  State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _MainNavigationState extends State<MainNavigation> {
-  int _currentIndex = 0;
+class _SplashScreenState extends State<SplashScreen> {
+  @override
+  void initState() {
+    super.initState();
+    _checkAuthState();
+  }
 
-  final List<Widget> _screens = [
-    const HomeScreen(),
-    const Placeholder(), // Courts
-    const Placeholder(), // Events
-    const Placeholder(), // Groups
-    const Placeholder(), // Account
-  ];
+  Future<void> _checkAuthState() async {
+    // Small delay so the splash is visible briefly
+    await Future.delayed(const Duration(milliseconds: 1500));
+    if (!mounted) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      _navigateTo(const MainNavigation());
+    } else {
+      _navigateTo(const LoginScreen());
+    }
+  }
+
+  void _navigateTo(Widget screen) {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => screen),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _screens[_currentIndex],
-
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        selectedItemColor: AppColors.primary,
-        unselectedItemColor: Colors.grey,
-        type: BottomNavigationBarType.fixed,
-
-        onTap: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
-
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home_outlined),
-            label: "Home",
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.sports_tennis),
-            label: "Courts",
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.event),
-            label: "Events",
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.groups),
-            label: "Groups",
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: "Account",
-          ),
-        ],
+      backgroundColor: AppColors.primary,
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Replace with your app logo asset if available
+            const Icon(
+              Icons.sports_tennis,
+              size: 80,
+              color: Colors.white,
+            ),
+            const SizedBox(height: 20),
+            const Text(
+              'Pikuru',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 36,
+                fontWeight: FontWeight.bold,
+                fontFamily: 'Rubik',
+              ),
+            ),
+            const SizedBox(height: 40),
+            const CircularProgressIndicator(
+              color: Colors.white,
+              strokeWidth: 2.5,
+            ),
+          ],
+        ),
       ),
     );
   }
