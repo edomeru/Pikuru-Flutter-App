@@ -5,6 +5,7 @@ import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/providers/providers.dart';
 import 'package:pikuru/utils/date_formatter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class EventDetailScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> event;
@@ -41,6 +42,21 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
     final feeStr = fee.toString();
     if (feeStr.isEmpty || feeStr == '0') return 'Free';
     return '¥$feeStr';
+  }
+
+  // ── Open Google Maps ─────────────────────────────────────────────────
+  Future<void> _openGoogleMaps(double lat, double lng) async {
+    final url = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open Google Maps')),
+        );
+      }
+    }
   }
 
   @override
@@ -378,16 +394,36 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                 ],
               ),
             ),
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: AppColors.primary,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.arrow_forward,
-                color: Colors.white,
-                size: 24,
+            GestureDetector(
+              onTap: () async {
+                // Get coordinates and open Google Maps
+                final snapshot = await FirebaseFirestore.instance
+                    .collection('locations')
+                    .where('loc_org_id', isEqualTo: widget.event['event_loc_id'])
+                    .limit(1)
+                    .get();
+
+                if (snapshot.docs.isNotEmpty) {
+                  final data = snapshot.docs.first.data();
+                  final lat = _parseCoordinate(data['loc_latitude']);
+                  final lng = _parseCoordinate(data['loc_longitude']);
+
+                  if (lat != null && lng != null) {
+                    _openGoogleMaps(lat, lng);
+                  }
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.arrow_forward,
+                  color: Colors.white,
+                  size: 24,
+                ),
               ),
             ),
           ],
@@ -451,27 +487,32 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: SizedBox(
-                  height: 200,
-                  child: GoogleMap(
-                    initialCameraPosition: CameraPosition(
-                      target: position,
-                      zoom: 15,
-                    ),
-                    markers: {
-                      Marker(
-                        markerId: const MarkerId('event_location'),
-                        position: position,
+              GestureDetector(
+                onTap: () => _openGoogleMaps(lat, lng),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: SizedBox(
+                    height: 200,
+                    child: AbsorbPointer(
+                      child: GoogleMap(
+                        initialCameraPosition: CameraPosition(
+                          target: position,
+                          zoom: 15,
+                        ),
+                        markers: {
+                          Marker(
+                            markerId: const MarkerId('event_location'),
+                            position: position,
+                          ),
+                        },
+                        zoomControlsEnabled: false,
+                        mapToolbarEnabled: false,
+                        myLocationButtonEnabled: false,
+                        onMapCreated: (controller) {
+                          _mapController = controller;
+                        },
                       ),
-                    },
-                    zoomControlsEnabled: false,
-                    mapToolbarEnabled: false,
-                    myLocationButtonEnabled: false,
-                    onMapCreated: (controller) {
-                      _mapController = controller;
-                    },
+                    ),
                   ),
                 ),
               ),
