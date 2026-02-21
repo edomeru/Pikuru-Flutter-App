@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/providers/providers.dart';
+import 'package:pikuru/utils/date_formatter.dart';
+import 'package:pikuru/screens/event_detail_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class EventCardFull extends ConsumerWidget {
@@ -19,116 +21,114 @@ class EventCardFull extends ConsumerWidget {
     final DateTime date = startDate.toDate();
     final DateTime time = startTime.toDate();
 
-    // Format date and time without external libraries
-    final dateStr =
-        '${date.year}年${date.month.toString().padLeft(2, '0')}月${date.day.toString().padLeft(2, '0')}日';
-    final timeStr =
-        '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+    // Format date and time using DateFormatter.formatDateTime
+    final dateTimeStr = DateFormatter.formatDateTime(date, time);
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withOpacity(0.08),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => EventDetailScreen(event: event),
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Event Image ────────────────────────────────────────
-          ClipRRect(
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(16),
-              topRight: Radius.circular(16),
+        );
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withOpacity(0.08),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
             ),
-            child: Image.network(
-              event['event_image'] ?? '',
-              height: 200,
-              width: double.infinity,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Event Image ────────────────────────────────────────
+            ClipRRect(
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
+              ),
+              child: Image.network(
+                event['event_image'] ?? '',
                 height: 200,
-                color: AppColors.primary.withOpacity(0.1),
-                child: const Icon(
-                  Icons.event,
-                  size: 64,
-                  color: AppColors.primary,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  height: 200,
+                  color: AppColors.primary.withOpacity(0.1),
+                  child: const Icon(
+                    Icons.event,
+                    size: 64,
+                    color: AppColors.primary,
+                  ),
                 ),
               ),
             ),
-          ),
 
-          // ── Event Details ──────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Title
-                Text(
-                  event['event_title'] ?? 'Untitled Event',
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+            // ── Event Details ──────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Title
+                  Text(
+                    event['event_title'] ?? 'Untitled Event',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary,
+                      height: 1.2,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Date & Time combined
+                  Text(
+                    dateTimeStr.toUpperCase(),
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // Location with resolver
+                  _buildLocation(ref),
+
+                  const SizedBox(height: 12),
+
+                  // Tags
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _buildTags(),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  // Arrow icon
+                  const Icon(
+                    Icons.arrow_forward,
                     color: AppColors.primary,
-                    height: 1.2,
+                    size: 28,
                   ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 12),
-
-                // Date
-                Text(
-                  dateStr.toUpperCase(),
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black,
-                  ),
-                ),
-                const SizedBox(height: 6),
-
-                // Time
-                Text(
-                  timeStr,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                // Location with resolver
-                _buildLocation(ref),
-
-                const SizedBox(height: 12),
-
-                // Tags
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _buildTags(),
-                ),
-
-                const SizedBox(height: 12),
-
-                // Arrow icon
-                Icon(
-                  Icons.arrow_forward,
-                  color: AppColors.primary,
-                  size: 28,
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

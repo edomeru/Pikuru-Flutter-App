@@ -4,6 +4,7 @@ import 'package:pikuru/home_screen.dart';
 import 'package:pikuru/screens/events_screen.dart';
 import 'package:pikuru/screens/groups_screen.dart';
 import 'package:pikuru/screens/account_screen.dart';
+import 'package:pikuru/screens/courts_screen.dart';
 
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
@@ -17,7 +18,7 @@ class _MainNavigationState extends State<MainNavigation> {
 
   final List<Widget> _screens = [
     const HomeScreen(),
-    const Placeholder(), // Courts
+    const CourtsScreen(), // Courts
     const EventsScreen(), // Events
     const GroupsScreen(), // Groups
     const AccountScreen(), // Account

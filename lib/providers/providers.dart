@@ -8,6 +8,9 @@ final showAddEventButtonProvider = StateProvider<bool>((ref) => true);
 // Controls visibility of "Add Group" button in Groups screen
 final showAddGroupButtonProvider = StateProvider<bool>((ref) => true);
 
+// Controls visibility of "Add Court" button in Courts screen
+final showAddCourtButtonProvider = StateProvider<bool>((ref) => true);
+
 // ── Events Provider ──────────────────────────────────────────────────
 final eventsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   return FirebaseFirestore.instance
