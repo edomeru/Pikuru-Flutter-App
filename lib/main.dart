@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/loginpage.dart';
 import 'package:pikuru/main_navigation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -12,7 +14,25 @@ void main() async {
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  runApp(const MyApp());
+  // ── iOS Keychain fix ─────────────────────────────────────────────
+  // iOS keeps Firebase Auth session in Keychain even after app deletion.
+  // We use SharedPreferences (cleared on uninstall) to detect fresh installs
+  // and sign out automatically so the login screen always shows.
+  final prefs = await SharedPreferences.getInstance();
+  final hasLaunchedBefore = prefs.getBool('has_launched_before') ?? false;
+
+  if (!hasLaunchedBefore) {
+    // First launch after install — sign out any leftover Keychain session
+    await FirebaseAuth.instance.signOut();
+    await prefs.setBool('has_launched_before', true);
+  }
+
+  runApp(
+    // Wrap with ProviderScope for Riverpod
+    const ProviderScope(
+      child: MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -38,8 +58,6 @@ class MyApp extends StatelessWidget {
 }
 
 // ── Splash Screen ─────────────────────────────────────────────────────
-// Simply checks if a user is already signed in and routes accordingly.
-// No more deep-link / email-link handling needed.
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -56,7 +74,6 @@ class _SplashScreenState extends State<SplashScreen> {
   }
 
   Future<void> _checkAuthState() async {
-    // Small delay so the splash is visible briefly
     await Future.delayed(const Duration(milliseconds: 1500));
     if (!mounted) return;
 
@@ -83,7 +100,6 @@ class _SplashScreenState extends State<SplashScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Replace with your app logo asset if available
             const Icon(
               Icons.sports_tennis,
               size: 80,

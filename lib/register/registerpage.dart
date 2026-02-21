@@ -391,7 +391,7 @@ InputDecoration _inputDecoration(String hint) {
   return InputDecoration(
     hintText: hint,
     hintStyle:
-    const TextStyle(fontWeight: FontWeight.w600, color: Colors.black54),
+    const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
     filled: true,
     fillColor: Colors.white,
     contentPadding:

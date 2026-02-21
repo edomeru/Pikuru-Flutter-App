@@ -15,103 +15,148 @@ class EventCard extends StatelessWidget {
     required this.location,
   });
 
-  bool _isLogo(String url) {
-    final lower = url.toLowerCase();
-    return lower.endsWith(".png") || lower.endsWith(".svg");
-  }
-
   @override
   Widget build(BuildContext context) {
-    final bool isLogo = _isLogo(imageUrl);
-
     return Container(
-      width: 180,
-      margin: const EdgeInsets.only(right: 12),
+      width: 220,
+      margin: const EdgeInsets.only(right: 16, bottom: 12),
       decoration: BoxDecoration(
-        color: const Color(0xFF32A259).withOpacity(0.001),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: AppColors.primary,
-          width: 0.2,
-        ),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 6,
-            offset: const Offset(0, 3),
+            color: AppColors.primary.withOpacity(0.12),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
-
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          ClipRRect(
-            borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(14),
-              topRight: Radius.circular(14),
-            ),
-            child: Container(
-              height: 220,
-              width: double.infinity,
-              color: Colors.white,
-              child: Image.network(
-                imageUrl.isNotEmpty
-                    ? imageUrl
-                    : "https://via.placeholder.com/300x200.png?text=No+Image",
-
-                // 🔥 AUTO‑DETECT FIT MODE
-                fit: isLogo ? BoxFit.contain : BoxFit.cover,
-
-                errorBuilder: (context, error, stackTrace) =>
-                const Center(child: Icon(Icons.broken_image, size: 40)),
+          // ── Image with date badge ──────────────────────────────
+          Stack(
+            children: [
+              ClipRRect(
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(20),
+                  topRight: Radius.circular(20),
+                ),
+                child: Image.network(
+                  imageUrl.isNotEmpty
+                      ? imageUrl
+                      : "https://via.placeholder.com/300x200.png?text=Event",
+                  height: 160,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    height: 160,
+                    color: AppColors.primary.withOpacity(0.1),
+                    child: const Icon(
+                      Icons.event,
+                      size: 48,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
               ),
-            ),
+              // Green gradient overlay at bottom of image
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  height: 60,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter,
+                      end: Alignment.topCenter,
+                      colors: [
+                        AppColors.primary.withOpacity(0.7),
+                        Colors.transparent,
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              // Date/time chip on top of image
+              Positioned(
+                top: 10,
+                left: 10,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.calendar_today,
+                        color: Colors.white,
+                        size: 11,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        dateTime,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
 
+          // ── Card content ───────────────────────────────────────
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   title,
                   style: const TextStyle(
-                    fontSize: 18,
+                    fontSize: 15,
                     fontWeight: FontWeight.bold,
-                    color: AppColors.primary,
+                    color: Colors.black87,
+                    height: 1.2,
                   ),
-                  maxLines: 1,
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
-
-                const SizedBox(height: 4),
-
-                Text(
-                  dateTime,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppColors.secondary,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-
-                const SizedBox(height: 4),
-
+                const SizedBox(height: 8),
                 Row(
                   children: [
-                    const Icon(
-                      Icons.location_on_outlined,
-                      size: 14,
-                      color: AppColors.primary,
+                    Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Icon(
+                        Icons.location_on,
+                        size: 12,
+                        color: AppColors.primary,
+                      ),
                     ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: 6),
                     Expanded(
                       child: Text(
                         location,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 12,
-                          color: AppColors.secondary,
+                          color: Colors.black54,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
