@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/loginpage.dart';
 import 'package:pikuru/screens/resources_screen.dart';
+import 'package:pikuru/screens/edit_profile_screen.dart';
+import 'package:pikuru/screens/settings_screen.dart'; // ✅ New import
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -76,7 +78,6 @@ class _AccountScreenState extends State<AccountScreen>
               background: Stack(
                 fit: StackFit.expand,
                 children: [
-                  // Gradient
                   Container(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
@@ -90,7 +91,6 @@ class _AccountScreenState extends State<AccountScreen>
                       ),
                     ),
                   ),
-                  // Decorative circles
                   Positioned(
                     top: -50,
                     right: -30,
@@ -115,7 +115,6 @@ class _AccountScreenState extends State<AccountScreen>
                       ),
                     ),
                   ),
-                  // Avatar + name + email
                   Positioned(
                     bottom: 24,
                     left: 0,
@@ -131,8 +130,8 @@ class _AccountScreenState extends State<AccountScreen>
                               height: 88,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                border: Border.all(
-                                    color: Colors.white, width: 3),
+                                border:
+                                Border.all(color: Colors.white, width: 3),
                                 boxShadow: [
                                   BoxShadow(
                                     color: Colors.black.withOpacity(0.2),
@@ -205,7 +204,13 @@ class _AccountScreenState extends State<AccountScreen>
                           _MenuItem(
                             icon: Icons.person_outline_rounded,
                             label: 'Edit Profile',
-                            onTap: () {},
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                // ✅ Navigate to EditProfileScreen
+                                builder: (_) => const EditProfileScreen(),
+                              ),
+                            ),
                           ),
                           _MenuItem(
                             icon: Icons.history_rounded,
@@ -233,10 +238,14 @@ class _AccountScreenState extends State<AccountScreen>
                       _MenuCard(
                         items: [
                           _MenuItem(
-                            icon: Icons.language_rounded,
+                            icon: Icons.settings_rounded,
                             label: 'Settings',
                             isLast: true,
-                            onTap: () {},
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const SettingsScreen()),
+                            ),
                           ),
                         ],
                       ),
@@ -351,9 +360,7 @@ class _AccountScreenState extends State<AccountScreen>
 
 // ── Groups Joined Banner ──────────────────────────────────────────────
 class _GroupsJoinedBanner extends StatelessWidget {
-  // Replace with real data when available
   final int groupsCount = 0;
-
   _GroupsJoinedBanner();
 
   @override
@@ -375,7 +382,6 @@ class _GroupsJoinedBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Icon badge
           Container(
             width: 52,
             height: 52,
@@ -390,7 +396,6 @@ class _GroupsJoinedBanner extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 16),
-          // Text
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -419,21 +424,18 @@ class _GroupsJoinedBanner extends StatelessWidget {
               ],
             ),
           ),
-          // Subtle CTA
           Container(
-            padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
             decoration: BoxDecoration(
               color: AppColors.primary.withOpacity(0.08),
               borderRadius: BorderRadius.circular(20),
             ),
-            child: Row(
+            child: const Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.add_rounded,
-                    color: AppColors.primary, size: 15),
-                const SizedBox(width: 4),
-                const Text(
+                Icon(Icons.add_rounded, color: AppColors.primary, size: 15),
+                SizedBox(width: 4),
+                Text(
                   'Join',
                   style: TextStyle(
                     fontSize: 12,
@@ -541,8 +543,7 @@ class _MenuTile extends StatelessWidget {
         InkWell(
           onTap: item.onTap,
           borderRadius: BorderRadius.vertical(
-            bottom:
-            item.isLast ? const Radius.circular(16) : Radius.zero,
+            bottom: item.isLast ? const Radius.circular(16) : Radius.zero,
           ),
           child: Padding(
             padding:
