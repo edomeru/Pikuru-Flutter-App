@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:pikuru/theme/material.dart';
-import 'package:pikuru/Utils/app_language.dart';
+import 'package:pikuru/utils/app_language.dart';
 import 'package:pikuru/screens/language_screen.dart';
 import 'package:pikuru/screens/contact_us_screen.dart';
+import 'package:pikuru/screens/change_email_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -161,7 +162,11 @@ class _SettingsScreenState extends State<SettingsScreen>
                         _SettingsItem(
                           icon: Icons.email_rounded,
                           label: 'Change Email',
-                          onTap: () {},
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                                builder: (_) => const ChangeEmailScreen()),
+                          ),
                         ),
                         _SettingsItem(
                           icon: Icons.lock_rounded,
@@ -210,10 +215,7 @@ class _SettingsScreenState extends State<SettingsScreen>
                           icon: Icons.chat_bubble_outline_rounded,
                           label: 'Contact Us',
                           isLast: true,
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => const ContactUsScreen()),
-                          ),
+                          onTap: () {},
                         ),
                       ]),
 

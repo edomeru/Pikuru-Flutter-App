@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/providers/providers.dart';
+import 'dart:io' show Platform;
 
 class CourtsScreen extends ConsumerStatefulWidget {
   const CourtsScreen({super.key});
@@ -17,8 +18,8 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
   GoogleMapController? _mapController;
   Set<Marker> _markers = {};
   bool _hasMovedCamera = false;
+  bool _mapReady = false;
 
-  // Default location (Tokyo, Japan) - will be updated when markers load
   static const CameraPosition _initialPosition = CameraPosition(
     target: LatLng(35.6762, 139.6503),
     zoom: 12,
@@ -50,17 +51,14 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
     return null;
   }
 
-  // Move camera to show all markers
   void _moveCameraToMarkers() {
     if (_mapController == null || _markers.isEmpty || _hasMovedCamera) return;
 
-    // Calculate bounds that include all markers
     double? minLat, maxLat, minLng, maxLng;
 
     for (final marker in _markers) {
       final lat = marker.position.latitude;
       final lng = marker.position.longitude;
-
       minLat = minLat == null ? lat : (lat < minLat ? lat : minLat);
       maxLat = maxLat == null ? lat : (lat > maxLat ? lat : maxLat);
       minLng = minLng == null ? lng : (lng < minLng ? lng : minLng);
@@ -72,9 +70,8 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
         southwest: LatLng(minLat, minLng),
         northeast: LatLng(maxLat, maxLng),
       );
-
       _mapController!.animateCamera(
-        CameraUpdate.newLatLngBounds(bounds, 50), // 50 = padding
+        CameraUpdate.newLatLngBounds(bounds, 80),
       );
       _hasMovedCamera = true;
     }
@@ -86,24 +83,13 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
     final showAddButton = ref.watch(showAddCourtButtonProvider);
     final locationsAsync = ref.watch(locationsProvider);
 
-    // Build markers from locations
     locationsAsync.whenData((locations) {
       final newMarkers = <Marker>{};
-
-      print('🗺️ Loading ${locations.length} locations from Firestore...');
 
       for (int i = 0; i < locations.length; i++) {
         final location = locations[i];
         final lat = _parseCoordinate(location['loc_latitude']);
         final lng = _parseCoordinate(location['loc_longitude']);
-
-        print('📍 Location $i:');
-        print('   Name: ${location['loc_name']}');
-        print('   City: ${location['loc_city']}');
-        print('   Raw lat: ${location['loc_latitude']} (${location['loc_latitude'].runtimeType})');
-        print('   Raw lng: ${location['loc_longitude']} (${location['loc_longitude'].runtimeType})');
-        print('   Parsed lat: $lat');
-        print('   Parsed lng: $lng');
 
         if (lat != null && lng != null) {
           newMarkers.add(
@@ -116,22 +102,14 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
               ),
             ),
           );
-          print('   ✅ Marker added!');
-        } else {
-          print('   ❌ Skipped - invalid coordinates');
         }
       }
-
-      print('🎯 Total markers created: ${newMarkers.length}');
 
       if (newMarkers.isNotEmpty && newMarkers.length != _markers.length) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) {
-            setState(() {
-              _markers = newMarkers;
-            });
-            // Move camera to show all markers
-            Future.delayed(const Duration(milliseconds: 500), () {
+            setState(() => _markers = newMarkers);
+            Future.delayed(const Duration(milliseconds: 800), () {
               _moveCameraToMarkers();
             });
           }
@@ -143,18 +121,65 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
       body: Stack(
         children: [
           // ── Google Map ───────────────────────────────────────
-          GoogleMap(
-            initialCameraPosition: _initialPosition,
-            markers: _markers,
-            myLocationEnabled: true,
-            myLocationButtonEnabled: false,
-            zoomControlsEnabled: false,
-            mapToolbarEnabled: false,
-            onMapCreated: (controller) {
-              _mapController = controller;
-              print('🗺️ Map controller created');
-            },
+          // ✅ On iOS the map can appear white if the key isn't
+          //    enabled for "Maps SDK for iOS" in Google Cloud.
+          //    Using a RepaintBoundary + key forces a fresh render.
+          RepaintBoundary(
+            child: GoogleMap(
+              key: const ValueKey('google_map'),
+              initialCameraPosition: _initialPosition,
+              markers: _markers,
+              myLocationEnabled: true,
+              myLocationButtonEnabled: false,
+              zoomControlsEnabled: false,
+              mapToolbarEnabled: false,
+              // ✅ Explicitly set mapType — fixes blank tile issue on iOS
+              mapType: MapType.normal,
+              // ✅ compassEnabled false avoids an iOS rendering conflict
+              compassEnabled: false,
+              onMapCreated: (controller) {
+                _mapController = controller;
+                setState(() => _mapReady = true);
+                debugPrint('🗺️ Map controller created (${Platform.isIOS ? "iOS" : "Android"})');
+
+                // ✅ On iOS, force a slight camera move to trigger tile load
+                if (Platform.isIOS) {
+                  Future.delayed(const Duration(milliseconds: 300), () {
+                    controller.animateCamera(
+                      CameraUpdate.newCameraPosition(
+                        const CameraPosition(
+                          target: LatLng(35.6762, 139.6503),
+                          zoom: 12.01, // tiny nudge to force tile render
+                        ),
+                      ),
+                    );
+                  });
+                }
+              },
+            ),
           ),
+
+          // ✅ Show loading indicator while map initializes on iOS
+          if (!_mapReady && Platform.isIOS)
+            Container(
+              color: const Color(0xFFE8F0E9),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: AppColors.primary),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Loading map...',
+                      style: TextStyle(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
 
           // ── Search Bar ───────────────────────────────────────
           SafeArea(
@@ -235,9 +260,7 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
               bottom: 24,
               left: 0,
               right: 0,
-              child: Center(
-                child: _buildAddCourtButton(),
-              ),
+              child: Center(child: _buildAddCourtButton()),
             ),
         ],
       ),
@@ -286,10 +309,7 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
               decoration: BoxDecoration(
                 color: Colors.white,
                 shape: BoxShape.circle,
-                border: Border.all(
-                  color: Colors.black,
-                  width: 2,
-                ),
+                border: Border.all(color: Colors.black, width: 2),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withOpacity(0.15),
@@ -298,11 +318,7 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
                   ),
                 ],
               ),
-              child: const Icon(
-                Icons.close,
-                size: 18,
-                color: Colors.black,
-              ),
+              child: const Icon(Icons.close, size: 18, color: Colors.black),
             ),
           ),
         ),

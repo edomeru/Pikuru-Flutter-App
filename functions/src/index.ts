@@ -1,10 +1,17 @@
 import * as nodemailer from "nodemailer";
 import {onCall, HttpsError} from "firebase-functions/v2/https";
 import {defineString} from "firebase-functions/params";
+import * as admin from "firebase-admin";
+
+// Initialize Admin SDK (safe to call multiple times)
+if (admin.apps.length === 0) {
+  admin.initializeApp();
+}
 
 const gmailEmail = defineString("GMAIL_EMAIL");
 const gmailPassword = defineString("GMAIL_PASSWORD");
 
+// ── Send OTP ─────────────────────────────────────────────────────────
 export const sendOtp = onCall(async (request) => {
   const data = request.data;
   const email = data.email as string;
@@ -57,6 +64,49 @@ export const sendOtp = onCall(async (request) => {
     throw new HttpsError(
       "internal",
       "Failed to send OTP email. Please try again."
+    );
+  }
+});
+
+// ── Update User Email ─────────────────────────────────────────────────
+// Called after OTP is verified on the client. Uses Admin SDK to update
+// the email in Firebase Auth directly, bypassing client-side restrictions.
+export const updateUserEmail = onCall(async (request) => {
+  // Must be authenticated
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "You must be logged in.");
+  }
+
+  const uid = request.auth.uid;
+  const newEmail = request.data.newEmail as string;
+
+  if (!newEmail) {
+    throw new HttpsError("invalid-argument", "newEmail is required.");
+  }
+
+  // Basic email format check
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(newEmail)) {
+    throw new HttpsError("invalid-argument", "Invalid email format.");
+  }
+
+  try {
+    // ✅ Admin SDK updates Auth email directly — no confirmation link needed
+    await admin.auth().updateUser(uid, {email: newEmail});
+    console.log(`Email updated for uid=${uid} → ${newEmail}`);
+    return {success: true};
+  } catch (error: unknown) {
+    console.error("Error updating email:", error);
+    const err = error as {code?: string; message?: string};
+    if (err.code === "auth/email-already-exists") {
+      throw new HttpsError(
+        "already-exists",
+        "This email is already used by another account."
+      );
+    }
+    throw new HttpsError(
+      "internal",
+      "Failed to update email. Please try again."
     );
   }
 });

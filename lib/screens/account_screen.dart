@@ -4,7 +4,7 @@ import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/loginpage.dart';
 import 'package:pikuru/screens/resources_screen.dart';
 import 'package:pikuru/screens/edit_profile_screen.dart';
-import 'package:pikuru/screens/settings_screen.dart'; // ✅ New import
+import 'package:pikuru/screens/settings_screen.dart';
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -61,221 +61,219 @@ class _AccountScreenState extends State<AccountScreen>
 
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    final displayName = user?.displayName ?? 'User';
+    // ✅ StreamBuilder listens to auth state — updates instantly when
+    // email changes, user reloads, or signs back in after token expiry.
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        final user = snapshot.data;
+        final displayName = user?.displayName ?? 'User';
 
-    return Scaffold(
-      backgroundColor: const Color(0xFFF4F9F5),
-      body: CustomScrollView(
-        slivers: [
-          // ── Hero App Bar ──────────────────────────────────────────
-          SliverAppBar(
-            expandedHeight: 230,
-            pinned: true,
-            automaticallyImplyLeading: false,
-            backgroundColor: AppColors.primary,
-            flexibleSpace: FlexibleSpaceBar(
-              background: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          AppColors.primary.withOpacity(0.85),
-                          AppColors.primary,
-                          AppColors.primary.withOpacity(0.7),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    top: -50,
-                    right: -30,
-                    child: Container(
-                      width: 200,
-                      height: 200,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withOpacity(0.06),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    bottom: -30,
-                    left: -20,
-                    child: Container(
-                      width: 140,
-                      height: 140,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withOpacity(0.05),
-                      ),
-                    ),
-                  ),
-                  Positioned(
-                    bottom: 24,
-                    left: 0,
-                    right: 0,
-                    child: FadeTransition(
-                      opacity: _fadeAnim,
-                      child: Column(
-                        children: [
-                          ScaleTransition(
-                            scale: _avatarAnim,
-                            child: Container(
-                              width: 88,
-                              height: 88,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border:
-                                Border.all(color: Colors.white, width: 3),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withOpacity(0.2),
-                                    blurRadius: 14,
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ],
-                              ),
-                              child: ClipOval(
-                                child: user?.photoURL != null
-                                    ? Image.network(
-                                  user!.photoURL!,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) =>
-                                      _avatarPlaceholder(),
-                                )
-                                    : _avatarPlaceholder(),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            displayName,
-                            style: const TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                              letterSpacing: -0.3,
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            user?.email ?? '',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.white.withOpacity(0.7),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // ── Body ─────────────────────────────────────────────────
-          SliverToBoxAdapter(
-            child: FadeTransition(
-              opacity: _fadeAnim,
-              child: SlideTransition(
-                position: _slideAnim,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 20, vertical: 24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+        return Scaffold(
+          backgroundColor: const Color(0xFFF4F9F5),
+          body: CustomScrollView(
+            slivers: [
+              // ── Hero App Bar ────────────────────────────────────
+              SliverAppBar(
+                expandedHeight: 230,
+                pinned: true,
+                automaticallyImplyLeading: false,
+                backgroundColor: AppColors.primary,
+                flexibleSpace: FlexibleSpaceBar(
+                  background: Stack(
+                    fit: StackFit.expand,
                     children: [
-                      // ── Groups Joined Banner ──────────────────
-                      _GroupsJoinedBanner(),
-
-                      const SizedBox(height: 28),
-
-                      // ── Account ───────────────────────────────
-                      const _SectionHeader(label: 'Account'),
-                      const SizedBox(height: 12),
-                      _MenuCard(
-                        items: [
-                          _MenuItem(
-                            icon: Icons.person_outline_rounded,
-                            label: 'Edit Profile',
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                // ✅ Navigate to EditProfileScreen
-                                builder: (_) => const EditProfileScreen(),
+                      Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              AppColors.primary.withOpacity(0.85),
+                              AppColors.primary,
+                              AppColors.primary.withOpacity(0.7),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        top: -50, right: -30,
+                        child: Container(
+                          width: 200, height: 200,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white.withOpacity(0.06),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: -30, left: -20,
+                        child: Container(
+                          width: 140, height: 140,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white.withOpacity(0.05),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: 24, left: 0, right: 0,
+                        child: FadeTransition(
+                          opacity: _fadeAnim,
+                          child: Column(
+                            children: [
+                              ScaleTransition(
+                                scale: _avatarAnim,
+                                child: Container(
+                                  width: 88, height: 88,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                        color: Colors.white, width: 3),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.2),
+                                        blurRadius: 14,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
+                                  ),
+                                  child: ClipOval(
+                                    child: user?.photoURL != null
+                                        ? Image.network(
+                                      user!.photoURL!,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) =>
+                                          _avatarPlaceholder(),
+                                    )
+                                        : _avatarPlaceholder(),
+                                  ),
+                                ),
                               ),
-                            ),
+                              const SizedBox(height: 10),
+                              Text(
+                                displayName,
+                                style: const TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                  letterSpacing: -0.3,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              // ✅ Now reads from live stream — always current
+                              Text(
+                                user?.email ?? '',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.white.withOpacity(0.7),
+                                ),
+                              ),
+                            ],
                           ),
-                          _MenuItem(
-                            icon: Icons.history_rounded,
-                            label: 'Events History',
-                            onTap: () {},
-                          ),
-                          _MenuItem(
-                            icon: Icons.library_books_rounded,
-                            label: 'Resources',
-                            isLast: true,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) => const ResourcesScreen()),
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
-
-                      const SizedBox(height: 20),
-
-                      // ── Preferences ───────────────────────────
-                      const _SectionHeader(label: 'Preferences'),
-                      const SizedBox(height: 12),
-                      _MenuCard(
-                        items: [
-                          _MenuItem(
-                            icon: Icons.settings_rounded,
-                            label: 'Settings',
-                            isLast: true,
-                            onTap: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) => const SettingsScreen()),
-                            ),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 20),
-
-                      // ── Session ───────────────────────────────
-                      const _SectionHeader(label: 'Session'),
-                      const SizedBox(height: 12),
-                      _MenuCard(
-                        items: [
-                          _MenuItem(
-                            icon: Icons.logout_rounded,
-                            label: 'Sign Out',
-                            isDestructive: true,
-                            isLast: true,
-                            onTap: () => _handleSignOut(context),
-                          ),
-                        ],
-                      ),
-
-                      const SizedBox(height: 40),
                     ],
                   ),
                 ),
               ),
-            ),
+
+              // ── Body ───────────────────────────────────────────
+              SliverToBoxAdapter(
+                child: FadeTransition(
+                  opacity: _fadeAnim,
+                  child: SlideTransition(
+                    position: _slideAnim,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _GroupsJoinedBanner(),
+                          const SizedBox(height: 28),
+
+                          const _SectionHeader(label: 'Account'),
+                          const SizedBox(height: 12),
+                          _MenuCard(
+                            items: [
+                              _MenuItem(
+                                icon: Icons.person_outline_rounded,
+                                label: 'Edit Profile',
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) =>
+                                    const EditProfileScreen(),
+                                  ),
+                                ),
+                              ),
+                              _MenuItem(
+                                icon: Icons.history_rounded,
+                                label: 'Events History',
+                                onTap: () {},
+                              ),
+                              _MenuItem(
+                                icon: Icons.library_books_rounded,
+                                label: 'Resources',
+                                isLast: true,
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) =>
+                                      const ResourcesScreen()),
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 20),
+
+                          const _SectionHeader(label: 'Preferences'),
+                          const SizedBox(height: 12),
+                          _MenuCard(
+                            items: [
+                              _MenuItem(
+                                icon: Icons.settings_rounded,
+                                label: 'Settings',
+                                isLast: true,
+                                onTap: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) =>
+                                      const SettingsScreen()),
+                                ),
+                              ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 20),
+
+                          const _SectionHeader(label: 'Session'),
+                          const SizedBox(height: 12),
+                          _MenuCard(
+                            items: [
+                              _MenuItem(
+                                icon: Icons.logout_rounded,
+                                label: 'Sign Out',
+                                isDestructive: true,
+                                isLast: true,
+                                onTap: () => _handleSignOut(context),
+                              ),
+                            ],
+                          ),
+
+                          const SizedBox(height: 40),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -304,7 +302,8 @@ class _AccountScreenState extends State<AccountScreen>
         content: const Text(
           'Are you sure you want to sign out of your account?',
           textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 14, color: Colors.black54, height: 1.5),
+          style:
+          TextStyle(fontSize: 14, color: Colors.black54, height: 1.5),
         ),
         actionsAlignment: MainAxisAlignment.spaceEvenly,
         actionsPadding:
@@ -313,8 +312,8 @@ class _AccountScreenState extends State<AccountScreen>
           OutlinedButton(
             onPressed: () => Navigator.of(ctx).pop(false),
             style: OutlinedButton.styleFrom(
-              padding:
-              const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 28, vertical: 12),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12)),
               side: BorderSide(color: Colors.grey.shade300),
@@ -329,8 +328,8 @@ class _AccountScreenState extends State<AccountScreen>
             onPressed: () => Navigator.of(ctx).pop(true),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.primary,
-              padding:
-              const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 28, vertical: 12),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12)),
               elevation: 0,
@@ -383,32 +382,25 @@ class _GroupsJoinedBanner extends StatelessWidget {
       child: Row(
         children: [
           Container(
-            width: 52,
-            height: 52,
+            width: 52, height: 52,
             decoration: BoxDecoration(
               color: AppColors.primary.withOpacity(0.10),
               borderRadius: BorderRadius.circular(14),
             ),
-            child: const Icon(
-              Icons.groups_rounded,
-              color: AppColors.primary,
-              size: 28,
-            ),
+            child: const Icon(Icons.groups_rounded,
+                color: AppColors.primary, size: 28),
           ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'Groups Joined',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.black54,
-                    letterSpacing: 0.1,
-                  ),
-                ),
+                const Text('Groups Joined',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.black54,
+                        letterSpacing: 0.1)),
                 const SizedBox(height: 2),
                 Text(
                   groupsCount == 0
@@ -425,7 +417,8 @@ class _GroupsJoinedBanner extends StatelessWidget {
             ),
           ),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            padding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
             decoration: BoxDecoration(
               color: AppColors.primary.withOpacity(0.08),
               borderRadius: BorderRadius.circular(20),
@@ -435,14 +428,11 @@ class _GroupsJoinedBanner extends StatelessWidget {
               children: [
                 Icon(Icons.add_rounded, color: AppColors.primary, size: 15),
                 SizedBox(width: 4),
-                Text(
-                  'Join',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.primary,
-                  ),
-                ),
+                Text('Join',
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.primary)),
               ],
             ),
           ),
@@ -462,29 +452,24 @@ class _SectionHeader extends StatelessWidget {
     return Row(
       children: [
         Container(
-          width: 4,
-          height: 18,
+          width: 4, height: 18,
           decoration: BoxDecoration(
             color: AppColors.primary,
             borderRadius: BorderRadius.circular(2),
           ),
         ),
         const SizedBox(width: 8),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w800,
-            color: AppColors.primary,
-            letterSpacing: 0.1,
-          ),
-        ),
+        Text(label,
+            style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: AppColors.primary,
+                letterSpacing: 0.1)),
       ],
     );
   }
 }
 
-// ── Menu Item Data ────────────────────────────────────────────────────
 class _MenuItem {
   final IconData icon;
   final String label;
@@ -501,7 +486,6 @@ class _MenuItem {
   });
 }
 
-// ── Menu Card ─────────────────────────────────────────────────────────
 class _MenuCard extends StatelessWidget {
   final List<_MenuItem> items;
   const _MenuCard({required this.items});
@@ -528,7 +512,6 @@ class _MenuCard extends StatelessWidget {
   }
 }
 
-// ── Menu Tile ─────────────────────────────────────────────────────────
 class _MenuTile extends StatelessWidget {
   final _MenuItem item;
   const _MenuTile({required this.item});
@@ -543,16 +526,16 @@ class _MenuTile extends StatelessWidget {
         InkWell(
           onTap: item.onTap,
           borderRadius: BorderRadius.vertical(
-            bottom: item.isLast ? const Radius.circular(16) : Radius.zero,
+            bottom:
+            item.isLast ? const Radius.circular(16) : Radius.zero,
           ),
           child: Padding(
-            padding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+            padding: const EdgeInsets.symmetric(
+                horizontal: 16, vertical: 15),
             child: Row(
               children: [
                 Container(
-                  width: 38,
-                  height: 38,
+                  width: 38, height: 38,
                   decoration: BoxDecoration(
                     color: color.withOpacity(0.10),
                     borderRadius: BorderRadius.circular(10),
@@ -572,11 +555,8 @@ class _MenuTile extends StatelessWidget {
                     ),
                   ),
                 ),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  color: color.withOpacity(0.4),
-                  size: 20,
-                ),
+                Icon(Icons.chevron_right_rounded,
+                    color: color.withOpacity(0.4), size: 20),
               ],
             ),
           ),
