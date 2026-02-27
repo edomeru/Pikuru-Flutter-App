@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/providers/providers.dart';
 import 'package:pikuru/widgets/event_card_full.dart';
+import 'package:pikuru/screens/calendar_events_screen.dart'; // ✅
 
 class EventsScreen extends ConsumerStatefulWidget {
   const EventsScreen({super.key});
@@ -30,7 +31,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
       body: SafeArea(
         child: Stack(
           children: [
-            // ── Main content ─────────────────────────────────────
             Column(
               children: [
                 const SizedBox(height: 16),
@@ -73,7 +73,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                         ),
                       ),
                       const SizedBox(width: 12),
-                      // ── Filter Icon ──────────────────────────────
                       Container(
                         height: 50,
                         width: 50,
@@ -102,7 +101,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                       _filterChip('Today'),
                       _filterChip('Tomorrow'),
                       _filterChip('Weekend'),
-                      // Calendar icon chip
+                      // ✅ Calendar icon — navigates to CalendarEventsScreen
                       Container(
                         margin: const EdgeInsets.only(left: 6),
                         width: 44,
@@ -122,7 +121,13 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                             color: AppColors.primary,
                             size: 22,
                           ),
-                          onPressed: () {},
+                          onPressed: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                              const CalendarEventsScreen(),
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -131,22 +136,16 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
                 const SizedBox(height: 16),
 
-                // ── Events List ──────────────────────────────────
-                Expanded(
-                  child: _buildEventsList(),
-                ),
+                Expanded(child: _buildEventsList()),
               ],
             ),
 
-            // ── Floating Add Event Button ───────────────────────
             if (showAddButton)
               Positioned(
                 bottom: 24,
                 left: 0,
                 right: 0,
-                child: Center(
-                  child: _buildAddEventButton(),
-                ),
+                child: Center(child: _buildAddEventButton()),
               ),
           ],
         ),
@@ -154,7 +153,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     );
   }
 
-  // ── Filter Chip Widget ──────────────────────────────────────────────
   Widget _filterChip(String label, {bool isFirst = false}) {
     final isSelected = _selectedFilter == label;
     return Expanded(
@@ -164,7 +162,8 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
           onTap: () => setState(() => _selectedFilter = label),
           child: Container(
             height: 44,
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+            padding:
+            const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
             decoration: BoxDecoration(
               color: isSelected ? AppColors.primary : Colors.white,
               borderRadius: BorderRadius.circular(10),
@@ -192,7 +191,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     );
   }
 
-  // ── Events List Builder ─────────────────────────────────────────────
   Widget _buildEventsList() {
     final eventsAsync = ref.watch(eventsProvider);
 
@@ -200,16 +198,10 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
       data: (events) {
         if (events.isEmpty) {
           return const Center(
-            child: Text(
-              'No events found',
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.black54,
-              ),
-            ),
+            child: Text('No events found',
+                style: TextStyle(fontSize: 16, color: Colors.black54)),
           );
         }
-
         return ListView.builder(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
           itemCount: events.length,
@@ -219,19 +211,17 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
           },
         );
       },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, stack) => Center(
-        child: Text('Error: $error'),
-      ),
+      loading: () =>
+      const Center(child: CircularProgressIndicator()),
+      error: (error, stack) =>
+          Center(child: Text('Error: $error')),
     );
   }
 
-  // ── Floating Add Event Button ───────────────────────────────────────
   Widget _buildAddEventButton() {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        // Main button
         Container(
           height: 56,
           padding: const EdgeInsets.symmetric(horizontal: 32),
@@ -257,15 +247,13 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
             ),
           ),
         ),
-
-        // Close button
         Positioned(
           top: -8,
           right: -8,
           child: GestureDetector(
             onTap: () {
-              // Hide the Add Event button
-              ref.read(showAddEventButtonProvider.notifier).state = false;
+              ref.read(showAddEventButtonProvider.notifier).state =
+              false;
             },
             child: Container(
               width: 32,
@@ -273,10 +261,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 shape: BoxShape.circle,
-                border: Border.all(
-                  color: Colors.black,
-                  width: 2,
-                ),
+                border: Border.all(color: Colors.black, width: 2),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withOpacity(0.15),
@@ -285,11 +270,8 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                   ),
                 ],
               ),
-              child: const Icon(
-                Icons.close,
-                size: 18,
-                color: Colors.black,
-              ),
+              child: const Icon(Icons.close,
+                  size: 18, color: Colors.black),
             ),
           ),
         ),

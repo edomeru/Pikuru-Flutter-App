@@ -4,6 +4,8 @@ import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/providers/providers.dart';
 import 'package:pikuru/utils/date_formatter.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:pikuru/modal/join_group_modal.dart';
+import 'package:pikuru/modal/mark_interested_modal.dart';
 
 class GroupDetailScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> group;
@@ -178,7 +180,8 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
                       Expanded(
                         child: ElevatedButton(
                           onPressed: () {
-                            // Join action
+                            // Show join modal
+                            JoinGroupModal.show(context, widget.group);
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primary,
@@ -202,7 +205,7 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
                       Expanded(
                         child: OutlinedButton(
                           onPressed: () {
-                            // Interested action
+                            MarkInterestedModal.show(context, widget.group);
                           },
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 16),
@@ -286,10 +289,6 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
 
   // ── Upcoming Events List ─────────────────────────────────────────────
   Widget _buildUpcomingEventsList() {
-    // Query events - assuming events have an org_id or similar field
-    // If your events don't have this field, we'll show placeholder events
-    final orgId = widget.group['org_id'] ?? widget.group['org_org_id'];
-
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
           .collection('events')
@@ -325,7 +324,6 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
           );
         }
 
-        // Show first 3 events as examples
         return Column(
           children: events.take(3).map((doc) {
             final event = doc.data() as Map<String, dynamic>;
@@ -344,6 +342,14 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
     final time = startTime.toDate();
 
     final eventLocId = (event['event_loc_id'] ?? '').toString();
+
+    // Merge group fields into the event map so the modal can access them
+    final eventWithGroup = {
+      ...event,
+      'group_id': widget.group['group_id'] ?? widget.group['org_id'] ?? '',
+      'group_image': widget.group['group_image'] ?? widget.group['org_image'] ?? '',
+      'group_name': widget.group['group_name'] ?? widget.group['org_name'] ?? '',
+    };
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -431,21 +437,27 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen> {
                     ),
                     const SizedBox(width: 8),
                     // JOIN Button
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Text(
-                        'JOIN',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
+                    GestureDetector(
+                      onTap: () {
+                        // Pass event merged with group fields
+                        MarkInterestedModal.show(context, eventWithGroup);
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Text(
+                          'JOIN',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ),
