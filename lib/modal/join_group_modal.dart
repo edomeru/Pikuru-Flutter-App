@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:pikuru/theme/material.dart';
+import 'package:pikuru/screens/group_chat_screen.dart';
 
 class JoinGroupModal {
   static Future<void> show(
@@ -24,7 +25,6 @@ class JoinGroupModal {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Icon
               Container(
                 width: 64,
                 height: 64,
@@ -38,10 +38,7 @@ class JoinGroupModal {
                   size: 32,
                 ),
               ),
-
               const SizedBox(height: 20),
-
-              // Title
               const Text(
                 'Join the Group?',
                 style: TextStyle(
@@ -51,10 +48,7 @@ class JoinGroupModal {
                 ),
                 textAlign: TextAlign.center,
               ),
-
               const SizedBox(height: 12),
-
-              // Message
               Text(
                 'You will be able to see group events and communicate with members.',
                 style: TextStyle(
@@ -64,10 +58,7 @@ class JoinGroupModal {
                 ),
                 textAlign: TextAlign.center,
               ),
-
               const SizedBox(height: 28),
-
-              // Buttons
               Row(
                 children: [
                   Expanded(
@@ -136,7 +127,6 @@ class JoinGroupModal {
     }
 
     try {
-      // Show loading
       if (context.mounted) {
         showDialog(
           context: context,
@@ -147,24 +137,23 @@ class JoinGroupModal {
         );
       }
 
-      // Get group ID - try multiple field names
       String groupId = group['org_id']?.toString() ??
           group['org_org_id']?.toString() ??
           group['id']?.toString() ??
           '';
 
-      // If still empty, generate ID from group name
       if (groupId.isEmpty) {
         final groupName = group['org_name']?.toString() ?? 'unknown';
-        groupId = groupName.toLowerCase().replaceAll(' ', '_').replaceAll(RegExp(r'[^a-z0-9_]'), '');
+        groupId = groupName
+            .toLowerCase()
+            .replaceAll(' ', '_')
+            .replaceAll(RegExp(r'[^a-z0-9_]'), '');
       }
 
       debugPrint('🔑 Group ID: $groupId');
 
-      // Create composite key
       final docId = '${user.uid}_$groupId';
 
-      // Check if already joined
       final existingDoc = await FirebaseFirestore.instance
           .collection('user_groups')
           .doc(docId)
@@ -172,13 +161,12 @@ class JoinGroupModal {
 
       if (existingDoc.exists && existingDoc.data()?['status'] == 'active') {
         if (context.mounted) {
-          Navigator.pop(context); // Close loading
+          Navigator.pop(context);
           _showSnackBar(context, 'You have already joined this group', false);
         }
         return;
       }
 
-      // Save to Firestore
       await FirebaseFirestore.instance.collection('user_groups').doc(docId).set({
         'user_id': user.uid,
         'group_id': groupId,
@@ -191,18 +179,22 @@ class JoinGroupModal {
 
       if (context.mounted) {
         Navigator.pop(context); // Close loading
-        _showSuccessModal(context);
+        _showSuccessModal(context, group); // ← pass group here
       }
     } catch (e) {
       debugPrint('❌ Join group error: $e');
       if (context.mounted) {
-        Navigator.pop(context); // Close loading
+        Navigator.pop(context);
         _showSnackBar(context, 'Failed to join group. Please try again.', true);
       }
     }
   }
 
-  static Future<void> _showSuccessModal(BuildContext context) async {
+  // ── group is now a parameter ──────────────────────────────────────────
+  static Future<void> _showSuccessModal(
+      BuildContext context,
+      Map<String, dynamic> group, // ← added
+      ) async {
     await showDialog(
       context: context,
       builder: (ctx) => Dialog(
@@ -218,7 +210,6 @@ class JoinGroupModal {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Success Icon
               Container(
                 width: 64,
                 height: 64,
@@ -232,10 +223,7 @@ class JoinGroupModal {
                   size: 36,
                 ),
               ),
-
               const SizedBox(height: 20),
-
-              // Title
               const Text(
                 'Joined the Group\nSuccessfully!',
                 style: TextStyle(
@@ -246,10 +234,7 @@ class JoinGroupModal {
                 ),
                 textAlign: TextAlign.center,
               ),
-
               const SizedBox(height: 12),
-
-              // Message
               Text(
                 'Want to communicate with the members\nof the group?',
                 style: TextStyle(
@@ -259,10 +244,7 @@ class JoinGroupModal {
                 ),
                 textAlign: TextAlign.center,
               ),
-
               const SizedBox(height: 28),
-
-              // Buttons
               Row(
                 children: [
                   Expanded(
@@ -290,7 +272,12 @@ class JoinGroupModal {
                     child: TextButton(
                       onPressed: () {
                         Navigator.pop(ctx);
-                        // TODO: Navigate to group chat/communication screen
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => GroupChatScreen(group: group), // ← uses parameter
+                          ),
+                        );
                       },
                       style: TextButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
