@@ -8,7 +8,6 @@ class ChatService {
 
   // ── Get or create a chat room for an org ──────────────────────────────
   static Future<String> getOrCreateChatId(String orgId) async {
-    // Check if a chat already exists for this org
     final existing = await _db
         .collection('group_chats')
         .where('org_id', isEqualTo: orgId)
@@ -19,9 +18,12 @@ class ChatService {
       return existing.docs.first.id;
     }
 
-    // Create a new chat room
+    final user = _auth.currentUser;
+
+    // ✅ Store created_by so ChatMembersScreen can identify the creator
     final newChat = await _db.collection('group_chats').add({
       'org_id': orgId,
+      'created_by': user?.uid ?? '',        // ← NEW
       'created_at': FieldValue.serverTimestamp(),
       'last_message': '',
       'last_message_at': FieldValue.serverTimestamp(),
@@ -53,6 +55,26 @@ class ChatService {
         'last_read_at': FieldValue.serverTimestamp(),
       });
     }
+
+    // Backfill created_by on existing docs that are missing it
+    // (safe to run every time — only writes if field is absent)
+    final chatDoc = await _db.collection('group_chats').doc(chatId).get();
+    final data = chatDoc.data();
+    if (data != null && (data['created_by'] ?? '').toString().isEmpty) {
+      // Find the earliest member to use as creator
+      final earliest = await _db
+          .collection('group_chats')
+          .doc(chatId)
+          .collection('members')
+          .orderBy('joined_at')
+          .limit(1)
+          .get();
+      if (earliest.docs.isNotEmpty) {
+        await _db.collection('group_chats').doc(chatId).update({
+          'created_by': earliest.docs.first.id,
+        });
+      }
+    }
   }
 
   // ── Send a message ────────────────────────────────────────────────────
@@ -62,7 +84,6 @@ class ChatService {
 
     final trimmed = text.trim();
 
-    // Add message to subcollection
     await _db
         .collection('group_chats')
         .doc(chatId)
@@ -75,14 +96,12 @@ class ChatService {
       'sent_at': FieldValue.serverTimestamp(),
     });
 
-    // Update last message on parent doc
     await _db.collection('group_chats').doc(chatId).update({
       'last_message': trimmed,
       'last_message_at': FieldValue.serverTimestamp(),
       'last_message_by': user.uid,
     });
 
-    // Update this user's last_read_at
     await _db
         .collection('group_chats')
         .doc(chatId)
@@ -110,6 +129,45 @@ class ChatService {
         .collection('members')
         .snapshots()
         .map((snap) => snap.size);
+  }
+
+  // ── Stream members subcollection ──────────────────────────────────────
+  // Returns full member docs so ChatMembersScreen can render them directly
+  static Stream<QuerySnapshot> membersStream(String chatId) {
+    return _db
+        .collection('group_chats')
+        .doc(chatId)
+        .collection('members')
+        .orderBy('joined_at')
+        .snapshots();
+  }
+
+  // ── Get creator uid for a chat ────────────────────────────────────────
+  // Tries created_by field first; falls back to earliest joined_at member
+  static Stream<String> creatorIdStream(String chatId) {
+    return _db
+        .collection('group_chats')
+        .doc(chatId)
+        .snapshots()
+        .asyncMap((snap) async {
+      // 1. Use created_by if it exists
+      final createdBy = (snap.data()?['created_by'] ?? '').toString();
+      if (createdBy.isNotEmpty) return createdBy;
+
+      // 2. Fallback: first member by joined_at (oldest = creator)
+      try {
+        final q = await _db
+            .collection('group_chats')
+            .doc(chatId)
+            .collection('members')
+            .orderBy('joined_at')
+            .limit(1)
+            .get();
+        if (q.docs.isNotEmpty) return q.docs.first.id;
+      } catch (_) {}
+
+      return '';
+    });
   }
 
   // ── Update last_read_at when user opens chat ──────────────────────────

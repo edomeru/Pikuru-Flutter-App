@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/services/chat_service.dart';
+import 'package:pikuru/screens/chat_members_screen.dart'; // ← add this import
 
 class GroupChatScreen extends StatefulWidget {
   final Map<String, dynamic> group;
@@ -25,7 +26,6 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   bool _isLoading = true;
   bool _isTyping = false;
 
-  // ── Initialized directly — no `late` ─────────────────────────────────
   AnimationController? _sendBtnController;
   Animation<double>? _sendBtnAnim;
 
@@ -104,6 +104,21 @@ class _GroupChatScreenState extends State<GroupChatScreen>
         );
       }
     });
+  }
+
+  // ── Open Members Screen ────────────────────────────────────────────────
+  void _openMembersScreen() {
+    if (_chatId == null) return;
+    final orgName = widget.group['org_name'] ?? 'Group Chat';
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatMembersScreen(
+          chatId: _chatId!,
+          groupName: orgName,
+        ),
+      ),
+    );
   }
 
   @override
@@ -265,8 +280,9 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                 ),
               ),
 
+              // ✅ Members icon — now opens ChatMembersScreen
               GestureDetector(
-                onTap: () {},
+                onTap: _openMembersScreen,
                 child: Container(
                   width: 38,
                   height: 38,
@@ -585,7 +601,6 @@ class _GroupChatScreenState extends State<GroupChatScreen>
 
               const SizedBox(width: 10),
 
-              // Send button — uses AnimatedContainer, no AnimatedBuilder needed
               GestureDetector(
                 onTap: _sendMessage,
                 child: AnimatedContainer(
