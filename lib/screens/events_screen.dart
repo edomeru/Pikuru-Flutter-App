@@ -3,7 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/providers/providers.dart';
 import 'package:pikuru/widgets/event_card_full.dart';
-import 'package:pikuru/screens/calendar_events_screen.dart'; // ✅
+import 'package:pikuru/screens/calendar_events_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class EventsScreen extends ConsumerStatefulWidget {
   const EventsScreen({super.key});
@@ -14,12 +15,49 @@ class EventsScreen extends ConsumerStatefulWidget {
 
 class _EventsScreenState extends ConsumerState<EventsScreen> {
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   String _selectedFilter = 'Upcoming';
 
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
+  }
+
+  List<Map<String, dynamic>> _applyFilter(List<Map<String, dynamic>> events) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final tomorrow = today.add(const Duration(days: 1));
+    final daysUntilSaturday = (DateTime.saturday - now.weekday + 7) % 7;
+    final saturday = today.add(Duration(days: daysUntilSaturday == 0 ? 7 : daysUntilSaturday));
+    final sunday = saturday.add(const Duration(days: 1));
+
+    final searchQuery = _searchController.text.toLowerCase().trim();
+    List<Map<String, dynamic>> filtered = events.where((e) {
+      if (searchQuery.isEmpty) return true;
+      final title = (e['event_title'] ?? '').toString().toLowerCase();
+      final type = (e['event_type'] ?? '').toString().toLowerCase();
+      return title.contains(searchQuery) || type.contains(searchQuery);
+    }).toList();
+
+    return filtered.where((e) {
+      final raw = e['event_date'];
+      DateTime? eventDate;
+      if (raw is Timestamp) {
+        eventDate = raw.toDate();
+      } else if (raw is String && raw.isNotEmpty) {
+        try { eventDate = DateTime.parse(raw); } catch (_) {}
+      }
+      if (eventDate == null) return false;
+      final eventDay = DateTime(eventDate.year, eventDate.month, eventDate.day);
+      switch (_selectedFilter) {
+        case 'Today':    return eventDay.isAtSameMomentAs(today);
+        case 'Tomorrow': return eventDay.isAtSameMomentAs(tomorrow);
+        case 'Weekend':  return eventDay.isAtSameMomentAs(saturday) || eventDay.isAtSameMomentAs(sunday);
+        default:         return !eventDay.isBefore(today);
+      }
+    }).toList();
   }
 
   @override
@@ -27,119 +65,16 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     final showAddButton = ref.watch(showAddEventButtonProvider);
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFF7F8FA),
       body: SafeArea(
         child: Stack(
           children: [
             Column(
               children: [
-                const SizedBox(height: 16),
-
-                // ── Search Bar ───────────────────────────────────
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Container(
-                          height: 50,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: AppColors.primary.withOpacity(0.3),
-                              width: 1.5,
-                            ),
-                          ),
-                          child: TextField(
-                            controller: _searchController,
-                            decoration: InputDecoration(
-                              hintText: 'Search Events',
-                              hintStyle: const TextStyle(
-                                color: Colors.black54,
-                                fontWeight: FontWeight.w500,
-                              ),
-                              prefixIcon: const Icon(
-                                Icons.search,
-                                color: AppColors.primary,
-                              ),
-                              border: InputBorder.none,
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 14,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Container(
-                        height: 50,
-                        width: 50,
-                        decoration: BoxDecoration(
-                          color: AppColors.primary,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Icon(
-                          Icons.tune,
-                          color: Colors.white,
-                          size: 24,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                // ── Filter Chips ─────────────────────────────────
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Row(
-                    children: [
-                      _filterChip('Upcoming', isFirst: true),
-                      _filterChip('Today'),
-                      _filterChip('Tomorrow'),
-                      _filterChip('Weekend'),
-                      // ✅ Calendar icon — navigates to CalendarEventsScreen
-                      Container(
-                        margin: const EdgeInsets.only(left: 6),
-                        width: 44,
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: AppColors.primary.withOpacity(0.3),
-                            width: 1.5,
-                          ),
-                        ),
-                        child: IconButton(
-                          padding: EdgeInsets.zero,
-                          icon: const Icon(
-                            Icons.calendar_month,
-                            color: AppColors.primary,
-                            size: 22,
-                          ),
-                          onPressed: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) =>
-                              const CalendarEventsScreen(),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
+                _buildHeader(),
                 Expanded(child: _buildEventsList()),
               ],
             ),
-
             if (showAddButton)
               Positioned(
                 bottom: 24,
@@ -153,39 +88,134 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     );
   }
 
-  Widget _filterChip(String label, {bool isFirst = false}) {
-    final isSelected = _selectedFilter == label;
-    return Expanded(
-      child: Container(
-        margin: EdgeInsets.only(left: isFirst ? 0 : 6),
-        child: GestureDetector(
-          onTap: () => setState(() => _selectedFilter = label),
-          child: Container(
-            height: 44,
-            padding:
-            const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-            decoration: BoxDecoration(
-              color: isSelected ? AppColors.primary : Colors.white,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: isSelected
-                    ? AppColors.primary
-                    : AppColors.primary.withOpacity(0.3),
-                width: 1.5,
-              ),
-            ),
-            child: Center(
-              child: Text(
-                label,
+  Widget _buildHeader() {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Title row ────────────────────────────────────────────────────
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Events',
                 style: TextStyle(
-                  color: isSelected ? Colors.white : Colors.black87,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
+                  fontSize: 28,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF0D0D0D),
+                  letterSpacing: -0.5,
                 ),
-                textAlign: TextAlign.center,
+              ),
+              // Calendar icon button
+              GestureDetector(
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const CalendarEventsScreen()),
+                ),
+                child: Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(Icons.calendar_month_rounded, color: AppColors.primary, size: 22),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // ── Search Bar ───────────────────────────────────────────────────
+          Container(
+            height: 48,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF2F3F5),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (_) => setState(() {}),
+              style: const TextStyle(fontSize: 15, color: Color(0xFF0D0D0D)),
+              decoration: InputDecoration(
+                hintText: 'Search events, type...',
+                hintStyle: TextStyle(
+                  color: Colors.black.withOpacity(0.35),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w400,
+                ),
+                prefixIcon: Icon(Icons.search_rounded, color: Colors.black.withOpacity(0.35), size: 22),
+                suffixIcon: _searchController.text.isNotEmpty
+                    ? GestureDetector(
+                  onTap: () => setState(() => _searchController.clear()),
+                  child: Icon(Icons.close_rounded, color: Colors.black.withOpacity(0.35), size: 20),
+                )
+                    : null,
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               ),
             ),
           ),
+          const SizedBox(height: 14),
+
+          // ── Filter Chips ─────────────────────────────────────────────────
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              children: [
+                _filterChip('Upcoming', icon: Icons.bolt_rounded),
+                _filterChip('Today', icon: Icons.wb_sunny_rounded),
+                _filterChip('Tomorrow', icon: Icons.arrow_forward_rounded),
+                _filterChip('Weekend', icon: Icons.weekend_rounded),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+
+          // ── Thin divider ─────────────────────────────────────────────────
+          Container(height: 1, color: const Color(0xFFEEEFF1)),
+        ],
+      ),
+    );
+  }
+
+  Widget _filterChip(String label, {required IconData icon}) {
+    final isSelected = _selectedFilter == label;
+    return GestureDetector(
+      onTap: () => setState(() => _selectedFilter = label),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        margin: const EdgeInsets.only(right: 8, bottom: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(30),
+          border: Border.all(
+            color: isSelected ? AppColors.primary : const Color(0xFFDDDEE1),
+            width: 1.5,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 15,
+              color: isSelected ? Colors.white : const Color(0xFF888A90),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? Colors.white : const Color(0xFF555760),
+                fontWeight: FontWeight.w600,
+                fontSize: 13.5,
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -196,25 +226,57 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
     return eventsAsync.when(
       data: (events) {
-        if (events.isEmpty) {
-          return const Center(
-            child: Text('No events found',
-                style: TextStyle(fontSize: 16, color: Colors.black54)),
+        final filtered = _applyFilter(events);
+
+        if (filtered.isEmpty) {
+          final emptyMessages = {
+            'Today': 'No events today.',
+            'Tomorrow': 'No events tomorrow.',
+            'Weekend': 'No events this weekend.',
+            'Upcoming': 'No upcoming events in the next 30 days.',
+          };
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.event_busy_rounded, size: 56, color: Colors.black.withOpacity(0.12)),
+                const SizedBox(height: 14),
+                Text(
+                  emptyMessages[_selectedFilter] ?? 'No events found.',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.black.withOpacity(0.35),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
           );
         }
+
         return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 100),
-          itemCount: events.length,
-          itemBuilder: (context, index) {
-            final event = events[index];
-            return EventCardFull(event: event);
-          },
+          controller: _scrollController,
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 110),
+          itemCount: filtered.length,
+          itemBuilder: (context, index) => EventCardFull(event: filtered[index]),
         );
       },
-      loading: () =>
-      const Center(child: CircularProgressIndicator()),
-      error: (error, stack) =>
-          Center(child: Text('Error: $error')),
+      loading: () => Center(
+        child: CircularProgressIndicator(
+          color: AppColors.primary,
+          strokeWidth: 2.5,
+        ),
+      ),
+      error: (error, stack) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(
+            'Something went wrong.\n$error',
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.black45, fontSize: 14),
+          ),
+        ),
+      ),
     );
   }
 
@@ -223,55 +285,57 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
       clipBehavior: Clip.none,
       children: [
         Container(
-          height: 56,
-          padding: const EdgeInsets.symmetric(horizontal: 32),
+          height: 54,
+          padding: const EdgeInsets.symmetric(horizontal: 36),
           decoration: BoxDecoration(
-            color: Colors.black,
-            borderRadius: BorderRadius.circular(28),
+            color: const Color(0xFF0D0D0D),
+            borderRadius: BorderRadius.circular(30),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.25),
-                blurRadius: 16,
-                offset: const Offset(0, 6),
+                color: Colors.black.withOpacity(0.22),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
               ),
             ],
           ),
-          child: const Center(
-            child: Text(
-              'Add an Event',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.add_rounded, color: Colors.white, size: 20),
+              SizedBox(width: 8),
+              Text(
+                'Add an Event',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.2,
+                ),
               ),
-            ),
+            ],
           ),
         ),
         Positioned(
           top: -8,
           right: -8,
           child: GestureDetector(
-            onTap: () {
-              ref.read(showAddEventButtonProvider.notifier).state =
-              false;
-            },
+            onTap: () => ref.read(showAddEventButtonProvider.notifier).state = false,
             child: Container(
-              width: 32,
-              height: 32,
+              width: 28,
+              height: 28,
               decoration: BoxDecoration(
                 color: Colors.white,
                 shape: BoxShape.circle,
-                border: Border.all(color: Colors.black, width: 2),
+                border: Border.all(color: const Color(0xFF0D0D0D), width: 1.5),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.15),
-                    blurRadius: 8,
+                    color: Colors.black.withOpacity(0.12),
+                    blurRadius: 6,
                     offset: const Offset(0, 2),
                   ),
                 ],
               ),
-              child: const Icon(Icons.close,
-                  size: 18, color: Colors.black),
+              child: const Icon(Icons.close_rounded, size: 16, color: Color(0xFF0D0D0D)),
             ),
           ),
         ),

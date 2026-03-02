@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/providers/providers.dart';
-import 'package:pikuru/utils/date_formatter.dart';
 import 'package:pikuru/screens/event_detail_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 
 class EventCardFull extends ConsumerWidget {
   final Map<String, dynamic> event;
@@ -16,32 +16,46 @@ class EventCardFull extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final Timestamp startDate = event['event_start_date'];
-    final Timestamp startTime = event['event_start_time'];
-    final DateTime date = startDate.toDate();
-    final DateTime time = startTime.toDate();
+    // ── Date ─────────────────────────────────────────────────────────────────
+    final rawDate = event['event_date'];
+    String dateStr = '';
+    if (rawDate is Timestamp) {
+      final dt = rawDate.toDate();
+      dateStr = DateFormat('EEE, MMM d, yyyy').format(dt).toUpperCase();
+    } else if (rawDate is String && rawDate.isNotEmpty) {
+      try {
+        final dt = DateTime.parse(rawDate);
+        dateStr = DateFormat('EEE, MMM d, yyyy').format(dt).toUpperCase();
+      } catch (_) {
+        dateStr = rawDate.toUpperCase();
+      }
+    }
 
-    // Format date and time using DateFormatter.formatDateTime
-    final dateTimeStr = DateFormatter.formatDateTime(date, time);
+    // ── Time ─────────────────────────────────────────────────────────────────
+    final rawTime = event['event_time'];
+    String timeStr = '';
+    if (rawTime is Timestamp) {
+      timeStr = DateFormat('h:mm a').format(rawTime.toDate());
+    } else if (rawTime is String && rawTime.isNotEmpty) {
+      timeStr = rawTime;
+    }
+
+    final tags = _buildTagStrings();
 
     return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => EventDetailScreen(event: event),
-          ),
-        );
-      },
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => EventDetailScreen(event: event)),
+      ),
       child: Container(
-        margin: const EdgeInsets.only(bottom: 20),
+        margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: AppColors.primary.withOpacity(0.08),
-              blurRadius: 12,
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 16,
               offset: const Offset(0, 4),
             ),
           ],
@@ -49,80 +63,162 @@ class EventCardFull extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Event Image ────────────────────────────────────────
-            ClipRRect(
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(16),
-                topRight: Radius.circular(16),
-              ),
-              child: Image.network(
-                event['event_image'] ?? '',
-                height: 200,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  height: 200,
-                  color: AppColors.primary.withOpacity(0.1),
-                  child: const Icon(
-                    Icons.event,
-                    size: 64,
-                    color: AppColors.primary,
+            // ── Image ───────────────────────────────────────────────────────
+            Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(20),
+                    topRight: Radius.circular(20),
+                  ),
+                  child: Image.network(
+                    (event['event_pic'] ?? event['event_pic_thumbnail'] ?? '').toString(),
+                    height: 190,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      height: 190,
+                      decoration: BoxDecoration(
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(20),
+                          topRight: Radius.circular(20),
+                        ),
+                        color: AppColors.primary.withOpacity(0.07),
+                      ),
+                      child: Center(
+                        child: Icon(Icons.event_rounded, size: 56, color: AppColors.primary.withOpacity(0.3)),
+                      ),
+                    ),
                   ),
                 ),
-              ),
+                // Event type badge top-left
+                if ((event['event_type'] ?? '').toString().isNotEmpty)
+                  Positioned(
+                    top: 12,
+                    left: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.55),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        (event['event_type'] ?? '').toString().toUpperCase(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
 
-            // ── Event Details ──────────────────────────────────────
+            // ── Content ──────────────────────────────────────────────────────
             Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Title
                   Text(
-                    event['event_title'] ?? 'Untitled Event',
+                    (event['event_title'] ?? 'Untitled Event').toString(),
                     style: const TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF0D0D0D),
                       height: 1.2,
+                      letterSpacing: -0.3,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
 
-                  // Date & Time combined
-                  Text(
-                    dateTimeStr.toUpperCase(),
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.black,
-                    ),
+                  // Date & Location row
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Date/time column
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (dateStr.isNotEmpty)
+                              Row(
+                                children: [
+                                  Icon(Icons.calendar_today_rounded, size: 13, color: AppColors.primary),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    dateStr,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.primary,
+                                      letterSpacing: 0.3,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            if (timeStr.isNotEmpty) ...[
+                              const SizedBox(height: 3),
+                              Row(
+                                children: [
+                                  Icon(Icons.access_time_rounded, size: 13, color: Colors.black38),
+                                  const SizedBox(width: 5),
+                                  Text(
+                                    timeStr,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.black45,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
 
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 6),
 
-                  // Location with resolver
+                  // Location
                   _buildLocation(ref),
 
+                  if (tags.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    // Tags
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: tags.map((tag) => _buildTag(tag)).toList(),
+                    ),
+                  ],
+
                   const SizedBox(height: 12),
 
-                  // Tags
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _buildTags(),
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // Arrow icon
-                  const Icon(
-                    Icons.arrow_forward,
-                    color: AppColors.primary,
-                    size: 28,
+                  // Bottom row: arrow
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          Icons.arrow_forward_rounded,
+                          color: AppColors.primary,
+                          size: 18,
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -133,63 +229,60 @@ class EventCardFull extends ConsumerWidget {
     );
   }
 
-  // ── Location with Riverpod resolver ───────────────────────────────
   Widget _buildLocation(WidgetRef ref) {
     final eventLocId = (event['event_loc_id'] ?? '').toString();
     final locationAsync = ref.watch(locationResolverProvider(eventLocId));
 
     return locationAsync.when(
-      data: (location) => Text(
-        location,
-        style: const TextStyle(
-          fontSize: 13,
-          color: Colors.black54,
-        ),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
+      data: (location) => Row(
+        children: [
+          Icon(Icons.location_on_rounded, size: 13, color: Colors.black38),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              location,
+              style: const TextStyle(fontSize: 12, color: Colors.black45, fontWeight: FontWeight.w500),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
       ),
-      loading: () => const Text(
-        '...',
-        style: TextStyle(fontSize: 13, color: Colors.black54),
-      ),
-      error: (_, __) => const Text(
-        'Unknown location',
-        style: TextStyle(fontSize: 13, color: Colors.black54),
-      ),
+      loading: () => const Text('...', style: TextStyle(fontSize: 12, color: Colors.black38)),
+      error: (_, __) => const SizedBox.shrink(),
     );
   }
 
-  // ── Build Tags ─────────────────────────────────────────────────────
-  List<Widget> _buildTags() {
+  List<String> _buildTagStrings() {
     final tags = <String>[];
-
-    final skillLevel = event['event_skill_level']?.toString() ?? '';
-    if (skillLevel.isNotEmpty) tags.add(skillLevel.toUpperCase());
-
-    final category = event['event_category']?.toString() ?? '';
-    if (category.isNotEmpty) tags.add(category.toUpperCase());
-
+    if (event['event_skill_level_pro'] == true) tags.add('PRO');
+    if (event['event_skill_level_amateur'] == true) tags.add('AMATEUR');
+    if (event['event_skill_level_beginner'] == true) tags.add('BEGINNER');
+    if (event['event_category_juniors'] == true) tags.add('JUNIORS');
+    if (event['event_category_seniors'] == true) tags.add('SENIORS');
+    if (event['event_category_collegiate'] == true) tags.add('COLLEGIATE');
+    if (event['event_category_mixeddoubles'] == true) tags.add('MIXED DOUBLES');
     if (tags.isEmpty) {
-      tags.addAll(['BEGINNER', 'INDOOR', 'COACH']);
+      final oldSkill = (event['event_skill_level'] ?? '').toString();
+      if (oldSkill.isNotEmpty) tags.add(oldSkill.toUpperCase());
     }
-
-    return tags.map((tag) => _buildTag(tag)).toList();
+    return tags;
   }
 
   Widget _buildTag(String label) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: AppColors.primary,
+        color: AppColors.primary.withOpacity(0.09),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
         label,
-        style: const TextStyle(
-          color: Colors.white,
+        style: TextStyle(
+          color: AppColors.primary,
           fontSize: 11,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 0.5,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.4,
         ),
       ),
     );
