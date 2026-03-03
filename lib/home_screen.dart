@@ -6,6 +6,7 @@ import 'package:pikuru/widgets/group_card.dart';
 import 'package:pikuru/widgets/court_card.dart';
 import 'package:pikuru/utils/date_formatter.dart';
 import 'package:pikuru/providers/providers.dart';
+import 'package:pikuru/screens/chats_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class HomeScreen extends ConsumerWidget {
@@ -26,8 +27,9 @@ class HomeScreen extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.chat_bubble_outline, color: AppColors.primary),
-            onPressed: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Chat tapped')),
+            onPressed: () => Navigator.push(          // ← changed from SnackBar
+              context,
+              MaterialPageRoute(builder: (_) => const ChatsScreen()),
             ),
           ),
         ],
@@ -255,7 +257,9 @@ class HomeScreen extends ConsumerWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        Text(title,
+            style: const TextStyle(
+                fontSize: 18, fontWeight: FontWeight.bold)),
         const Text(
           'See all',
           style: TextStyle(
@@ -281,10 +285,13 @@ class HomeScreen extends ConsumerWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         minimumSize: Size.zero,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        shape:
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
       onPressed: () {},
-      child: Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+      child: Text(label,
+          style: const TextStyle(
+              fontSize: 14, fontWeight: FontWeight.bold)),
     );
   }
 }
