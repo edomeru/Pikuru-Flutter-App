@@ -5,10 +5,56 @@ import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/screens/group_chat_screen.dart';
 
 class JoinGroupModal {
+  // ── Resolve group ID consistently ─────────────────────────────────────
+  // Priority: Firestore doc ID (_doc_id) > org_id field > name-based slug
+  // This must match exactly how user_groups docs are keyed.
+  static String _resolveGroupId(Map<String, dynamic> group) {
+    // 1. _doc_id is the actual Firestore document ID — most reliable
+    final docId = group['_doc_id']?.toString() ?? '';
+    if (docId.isNotEmpty) return docId;
+
+    // 2. org_id field stored inside the document
+    final orgId = group['org_id']?.toString() ?? '';
+    if (orgId.isNotEmpty) return orgId;
+
+    // 3. Other possible field names
+    final altId = group['org_org_id']?.toString() ??
+        group['id']?.toString() ??
+        '';
+    if (altId.isNotEmpty) return altId;
+
+    // 4. Last resort: slugify org_name (least reliable)
+    final orgName = group['org_name']?.toString() ?? 'unknown';
+    return orgName
+        .toLowerCase()
+        .replaceAll(' ', '_')
+        .replaceAll(RegExp(r'[^a-z0-9_]'), '');
+  }
+
   static Future<void> show(
       BuildContext context,
       Map<String, dynamic> group,
       ) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    // ── Check if already joined BEFORE showing dialog ─────────────────
+    final groupId = _resolveGroupId(group);
+    final docId = '${user.uid}_$groupId';
+
+    final existingDoc = await FirebaseFirestore.instance
+        .collection('user_groups')
+        .doc(docId)
+        .get();
+
+    if (existingDoc.exists && existingDoc.data()?['status'] == 'active') {
+      if (context.mounted) {
+        _showSnackBar(context, 'You have already joined this group', false);
+      }
+      return;
+    }
+
+    // ── Show join confirmation dialog ──────────────────────────────────
     final shouldJoin = await showDialog<bool>(
       context: context,
       barrierDismissible: true,
@@ -66,7 +112,8 @@ class JoinGroupModal {
                       onPressed: () => Navigator.pop(ctx, false),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 14),
-                        side: BorderSide(color: Colors.grey.shade300, width: 1.5),
+                        side:
+                        BorderSide(color: Colors.grey.shade300, width: 1.5),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -112,13 +159,15 @@ class JoinGroupModal {
     );
 
     if (shouldJoin == true && context.mounted) {
-      await _joinGroup(context, group);
+      await _joinGroup(context, group, groupId, docId);
     }
   }
 
   static Future<void> _joinGroup(
       BuildContext context,
       Map<String, dynamic> group,
+      String groupId, // ← already resolved, no re-computation
+      String docId,   // ← already computed
       ) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -137,37 +186,12 @@ class JoinGroupModal {
         );
       }
 
-      String groupId = group['org_id']?.toString() ??
-          group['org_org_id']?.toString() ??
-          group['id']?.toString() ??
-          '';
+      debugPrint('🔑 Joining group — groupId: $groupId | docId: $docId');
 
-      if (groupId.isEmpty) {
-        final groupName = group['org_name']?.toString() ?? 'unknown';
-        groupId = groupName
-            .toLowerCase()
-            .replaceAll(' ', '_')
-            .replaceAll(RegExp(r'[^a-z0-9_]'), '');
-      }
-
-      debugPrint('🔑 Group ID: $groupId');
-
-      final docId = '${user.uid}_$groupId';
-
-      final existingDoc = await FirebaseFirestore.instance
+      await FirebaseFirestore.instance
           .collection('user_groups')
           .doc(docId)
-          .get();
-
-      if (existingDoc.exists && existingDoc.data()?['status'] == 'active') {
-        if (context.mounted) {
-          Navigator.pop(context);
-          _showSnackBar(context, 'You have already joined this group', false);
-        }
-        return;
-      }
-
-      await FirebaseFirestore.instance.collection('user_groups').doc(docId).set({
+          .set({
         'user_id': user.uid,
         'group_id': groupId,
         'group_name': group['org_name'] ?? 'Unnamed Group',
@@ -179,7 +203,7 @@ class JoinGroupModal {
 
       if (context.mounted) {
         Navigator.pop(context); // Close loading
-        _showSuccessModal(context, group); // ← pass group here
+        _showSuccessModal(context, group);
       }
     } catch (e) {
       debugPrint('❌ Join group error: $e');
@@ -190,10 +214,9 @@ class JoinGroupModal {
     }
   }
 
-  // ── group is now a parameter ──────────────────────────────────────────
   static Future<void> _showSuccessModal(
       BuildContext context,
-      Map<String, dynamic> group, // ← added
+      Map<String, dynamic> group,
       ) async {
     await showDialog(
       context: context,
@@ -275,7 +298,7 @@ class JoinGroupModal {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => GroupChatScreen(group: group), // ← uses parameter
+                            builder: (_) => GroupChatScreen(group: group),
                           ),
                         );
                       },
@@ -301,9 +324,21 @@ class JoinGroupModal {
     );
   }
 
-  static void _showSnackBar(BuildContext context, String message, bool isError) {
-    if (!context.mounted) return;
+  // ── Public helper so GroupDetailScreen can check join status ──────────
+  static Future<bool> isAlreadyJoined(
+      String userId, Map<String, dynamic> group) async {
+    final groupId = _resolveGroupId(group);
+    final docId = '${userId}_$groupId';
+    final doc = await FirebaseFirestore.instance
+        .collection('user_groups')
+        .doc(docId)
+        .get();
+    return doc.exists && doc.data()?['status'] == 'active';
+  }
 
+  static void _showSnackBar(
+      BuildContext context, String message, bool isError) {
+    if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(

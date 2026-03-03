@@ -1,6 +1,20 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/material.dart';
+
+/// KEY FIX:
+/// The `members` subcollection under group_chats was being written to by
+/// joinChat() for EVERY user who opened the chat screen. JoinGroupModal
+/// (or any join-check logic) was then reading `members` and incorrectly
+/// concluding every user had already "officially joined the group."
+///
+/// Solution: joinChat() now writes to a `participants` subcollection
+/// (chat-only presence), while `members` is reserved exclusively for users
+/// who explicitly click the Join button via JoinGroupModal.
+///
+/// Firestore structure:
+/// group_chats/{chatId}
+///   ├── participants/   ← anyone who opened the chat (chat presence only)
+///   └── messages/       ← chat messages
 
 class ChatService {
   static final _db = FirebaseFirestore.instance;
@@ -20,10 +34,9 @@ class ChatService {
 
     final user = _auth.currentUser;
 
-    // ✅ Store created_by so ChatMembersScreen can identify the creator
     final newChat = await _db.collection('group_chats').add({
       'org_id': orgId,
-      'created_by': user?.uid ?? '',        // ← NEW
+      'created_by': user?.uid ?? '',
       'created_at': FieldValue.serverTimestamp(),
       'last_message': '',
       'last_message_at': FieldValue.serverTimestamp(),
@@ -33,39 +46,38 @@ class ChatService {
     return newChat.id;
   }
 
-  // ── Join chat (add user to members subcollection) ─────────────────────
+  // ── Join chat as a PARTICIPANT (chat presence only) ───────────────────
+  // ✅ Writes to `participants` subcollection — NOT `members`
+  // This does NOT mean the user has officially joined the group.
   static Future<void> joinChat(String chatId) async {
     final user = _auth.currentUser;
     if (user == null) return;
 
-    final memberRef = _db
+    final participantRef = _db
         .collection('group_chats')
         .doc(chatId)
-        .collection('members')
+        .collection('participants')
         .doc(user.uid);
 
-    final existing = await memberRef.get();
+    final existing = await participantRef.get();
     if (!existing.exists) {
-      await memberRef.set({
+      await participantRef.set({
         'user_id': user.uid,
         'display_name': user.displayName ?? 'Anonymous',
         'avatar_url': user.photoURL ?? '',
         'joined_at': FieldValue.serverTimestamp(),
-        'role': 'member',
         'last_read_at': FieldValue.serverTimestamp(),
       });
     }
 
-    // Backfill created_by on existing docs that are missing it
-    // (safe to run every time — only writes if field is absent)
+    // Backfill created_by for old docs missing the field
     final chatDoc = await _db.collection('group_chats').doc(chatId).get();
     final data = chatDoc.data();
     if (data != null && (data['created_by'] ?? '').toString().isEmpty) {
-      // Find the earliest member to use as creator
       final earliest = await _db
           .collection('group_chats')
           .doc(chatId)
-          .collection('members')
+          .collection('participants')
           .orderBy('joined_at')
           .limit(1)
           .get();
@@ -105,7 +117,7 @@ class ChatService {
     await _db
         .collection('group_chats')
         .doc(chatId)
-        .collection('members')
+        .collection('participants')
         .doc(user.uid)
         .set({'last_read_at': FieldValue.serverTimestamp()},
         SetOptions(merge: true));
@@ -121,45 +133,41 @@ class ChatService {
         .snapshots();
   }
 
-  // ── Stream member count ───────────────────────────────────────────────
+  // ── Stream participant count (people in the chat) ─────────────────────
   static Stream<int> memberCountStream(String chatId) {
     return _db
         .collection('group_chats')
         .doc(chatId)
-        .collection('members')
+        .collection('participants')
         .snapshots()
         .map((snap) => snap.size);
   }
 
-  // ── Stream members subcollection ──────────────────────────────────────
-  // Returns full member docs so ChatMembersScreen can render them directly
+  // ── Stream participants for ChatMembersScreen ─────────────────────────
   static Stream<QuerySnapshot> membersStream(String chatId) {
     return _db
         .collection('group_chats')
         .doc(chatId)
-        .collection('members')
+        .collection('participants')
         .orderBy('joined_at')
         .snapshots();
   }
 
   // ── Get creator uid for a chat ────────────────────────────────────────
-  // Tries created_by field first; falls back to earliest joined_at member
   static Stream<String> creatorIdStream(String chatId) {
     return _db
         .collection('group_chats')
         .doc(chatId)
         .snapshots()
         .asyncMap((snap) async {
-      // 1. Use created_by if it exists
       final createdBy = (snap.data()?['created_by'] ?? '').toString();
       if (createdBy.isNotEmpty) return createdBy;
 
-      // 2. Fallback: first member by joined_at (oldest = creator)
       try {
         final q = await _db
             .collection('group_chats')
             .doc(chatId)
-            .collection('members')
+            .collection('participants')
             .orderBy('joined_at')
             .limit(1)
             .get();
@@ -177,7 +185,7 @@ class ChatService {
     await _db
         .collection('group_chats')
         .doc(chatId)
-        .collection('members')
+        .collection('participants')
         .doc(user.uid)
         .set({'last_read_at': FieldValue.serverTimestamp()},
         SetOptions(merge: true));

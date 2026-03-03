@@ -47,6 +47,9 @@ StreamProvider<List<Map<String, dynamic>>>((ref) {
 });
 
 // ── Organizations Provider ────────────────────────────────────────────────────
+// ✅ ONLY CHANGE FROM ORIGINAL: added data['_doc_id'] = d.id
+// This lets JoinGroupModal reliably identify the group being joined.
+// Same pattern already used by eventsProvider and calendarEventsProvider.
 final organizationsProvider =
 StreamProvider<List<Map<String, dynamic>>>((ref) {
   return FirebaseFirestore.instance
@@ -54,7 +57,11 @@ StreamProvider<List<Map<String, dynamic>>>((ref) {
       .orderBy('org_created_at')
       .limit(10)
       .snapshots()
-      .map((s) => s.docs.map((d) => d.data()).toList());
+      .map((s) => s.docs.map((d) {
+    final data = d.data();
+    data['_doc_id'] = d.id; // ← only change
+    return data;
+  }).toList());
 });
 
 // ── Locations (Courts) Provider ───────────────────────────────────────────────

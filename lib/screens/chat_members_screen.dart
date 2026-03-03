@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/services/chat_service.dart';
+import 'package:pikuru/screens/individual_chat_screen.dart';
 
 class ChatMembersScreen extends StatefulWidget {
   final String chatId;
@@ -204,6 +205,7 @@ class _ChatMembersScreenState extends State<ChatMembersScreen> {
             final avatarUrl = (data['avatar_url'] ?? '').toString();
 
             return _buildMemberTile(
+              userId: userId,
               name: isCurrentUser ? '$name (You)' : name,
               avatarUrl: avatarUrl,
               isCreator: isCreator,
@@ -218,76 +220,92 @@ class _ChatMembersScreenState extends State<ChatMembersScreen> {
     required String name,
     required String avatarUrl,
     required bool isCreator,
+    required String userId,
   }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Row(
-        children: [
-          Stack(
-            children: [
-              CircleAvatar(
-                radius: 24,
-                backgroundColor: AppColors.primary.withOpacity(0.1),
-                backgroundImage:
-                avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
-                child: avatarUrl.isEmpty
-                    ? Text(
-                  name.isNotEmpty ? name[0].toUpperCase() : '?',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primary,
-                  ),
-                )
-                    : null,
-              ),
-              if (isCreator)
-                Positioned(
-                  right: 0,
-                  bottom: 0,
-                  child: Container(
-                    width: 16,
-                    height: 16,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 1.5),
-                    ),
-                    child: const Icon(Icons.star_rounded,
-                        size: 10, color: Colors.white),
-                  ),
-                ),
-            ],
+    final isCurrentUser = userId == currentUserId;
+    return GestureDetector(
+      onTap: isCurrentUser
+          ? null
+          : () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => IndividualChatScreen(
+            otherUserId: userId,
+            otherUserName: name.replaceAll(' (You)', ''),
+            otherUserAvatar: avatarUrl,
           ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          children: [
+            Stack(
               children: [
-                Text(
-                  name,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF1C1C1E),
-                    letterSpacing: -0.2,
-                  ),
-                ),
-                if (isCreator) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    'Group Creator',
+                CircleAvatar(
+                  radius: 24,
+                  backgroundColor: AppColors.primary.withOpacity(0.1),
+                  backgroundImage:
+                  avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+                  child: avatarUrl.isEmpty
+                      ? Text(
+                    name.isNotEmpty ? name[0].toUpperCase() : '?',
                     style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
                       color: AppColors.primary,
                     ),
+                  )
+                      : null,
+                ),
+                if (isCreator)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 16,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 1.5),
+                      ),
+                      child: const Icon(Icons.star_rounded,
+                          size: 10, color: Colors.white),
+                    ),
                   ),
-                ],
               ],
             ),
-          ),
-        ],
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1C1C1E),
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                  if (isCreator) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'Group Creator',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
