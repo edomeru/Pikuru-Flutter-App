@@ -4,7 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/services/chat_service.dart';
-import 'package:pikuru/screens/chat_members_screen.dart'; // ← add this import
+import 'package:pikuru/screens/chat_members_screen.dart';
 
 class GroupChatScreen extends StatefulWidget {
   final Map<String, dynamic> group;
@@ -90,6 +90,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     HapticFeedback.lightImpact();
     final text = _messageController.text;
     _messageController.clear();
+    _focusNode.requestFocus(); // keep keyboard open after sending
     await ChatService.sendMessage(_chatId!, text);
     _scrollToBottom();
   }
@@ -106,7 +107,6 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     });
   }
 
-  // ── Open Members Screen ────────────────────────────────────────────────
   void _openMembersScreen() {
     if (_chatId == null) return;
     final orgName = widget.group['org_name'] ?? 'Group Chat';
@@ -127,18 +127,30 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     final orgImage = widget.group['org_image'] ?? '';
 
     return Scaffold(
+      // ── Key: pushes input bar up when keyboard opens ──────────────────
+      resizeToAvoidBottomInset: true,
       backgroundColor: const Color(0xFFF2F2F7),
       body: Column(
         children: [
+          // AppBar with top SafeArea only
           _buildAppBar(orgName, orgImage),
+          // Messages fill remaining space, shrinks when keyboard opens
           Expanded(
-            child: _isLoading
-                ? _buildLoader()
-                : _chatId == null
-                ? _buildError()
-                : _buildMessageList(),
+            child: GestureDetector(
+              onTap: () => FocusScope.of(context).unfocus(),
+              child: _isLoading
+                  ? _buildLoader()
+                  : _chatId == null
+                  ? _buildError()
+                  : _buildMessageList(),
+            ),
           ),
-          _buildInputBar(),
+          // Input bar — Scaffold pushes this up with keyboard
+          // SafeArea(top:false) handles home indicator on gesture phones
+          SafeArea(
+            top: false,
+            child: _buildInputBar(),
+          ),
         ],
       ),
     );
@@ -172,7 +184,6 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                 ),
               ),
 
-              // Avatar with online dot
               Stack(
                 children: [
                   Container(
@@ -280,7 +291,6 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                 ),
               ),
 
-              // ✅ Members icon — now opens ChatMembersScreen
               GestureDetector(
                 onTap: _openMembersScreen,
                 child: Container(
@@ -344,8 +354,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
             return Column(
               children: [
                 if (showDate) _buildDateDivider(msg['sent_at']),
-                _buildMessageBubble(
-                    msg, isMe, isFirstInGroup, isLastInGroup),
+                _buildMessageBubble(msg, isMe, isFirstInGroup, isLastInGroup),
               ],
             );
           },
@@ -376,8 +385,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Container(
-              padding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(20),
@@ -554,95 +562,90 @@ class _GroupChatScreenState extends State<GroupChatScreen>
           ),
         ],
       ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF2F2F7),
-                    borderRadius: BorderRadius.circular(26),
-                    border: Border.all(
-                      color: _focusNode.hasFocus
-                          ? AppColors.primary.withOpacity(0.35)
-                          : Colors.transparent,
-                      width: 1.5,
-                    ),
-                  ),
-                  child: TextField(
-                    controller: _messageController,
-                    focusNode: _focusNode,
-                    textCapitalization: TextCapitalization.sentences,
-                    minLines: 1,
-                    maxLines: 5,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      color: Color(0xFF1C1C1E),
-                      height: 1.4,
-                    ),
-                    decoration: const InputDecoration(
-                      hintText: 'Message...',
-                      hintStyle: TextStyle(
-                        color: Color(0xFFAEAEB2),
-                        fontSize: 15,
-                      ),
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 12),
-                    ),
-                  ),
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Expanded(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF2F2F7),
+                borderRadius: BorderRadius.circular(26),
+                border: Border.all(
+                  color: _focusNode.hasFocus
+                      ? AppColors.primary.withOpacity(0.35)
+                      : Colors.transparent,
+                  width: 1.5,
                 ),
               ),
-
-              const SizedBox(width: 10),
-
-              GestureDetector(
-                onTap: _sendMessage,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: 46,
-                  height: 46,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: _isTyping
-                          ? [
-                        AppColors.primary,
-                        Color.lerp(AppColors.primary,
-                            const Color(0xFF1A6B4A), 0.35)!,
-                      ]
-                          : const [
-                        Color(0xFFD1D1D6),
-                        Color(0xFFD1D1D6),
-                      ],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    shape: BoxShape.circle,
-                    boxShadow: _isTyping
-                        ? [
-                      BoxShadow(
-                        color: AppColors.primary.withOpacity(0.38),
-                        blurRadius: 14,
-                        offset: const Offset(0, 5),
-                      ),
-                    ]
-                        : [],
+              child: TextField(
+                controller: _messageController,
+                focusNode: _focusNode,
+                // ── Keyboard fixes ──────────────────────────────────────
+                keyboardType: TextInputType.multiline,
+                textInputAction: TextInputAction.newline,
+                textCapitalization: TextCapitalization.sentences,
+                minLines: 1,
+                maxLines: 5,
+                style: const TextStyle(
+                  fontSize: 15,
+                  color: Color(0xFF1C1C1E),
+                  height: 1.4,
+                ),
+                decoration: const InputDecoration(
+                  hintText: 'Message...',
+                  hintStyle: TextStyle(
+                    color: Color(0xFFAEAEB2),
+                    fontSize: 15,
                   ),
-                  child: const Icon(
-                    Icons.arrow_upward_rounded,
-                    color: Colors.white,
-                    size: 22,
-                  ),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 12),
                 ),
               ),
-            ],
+            ),
           ),
-        ),
+
+          const SizedBox(width: 10),
+
+          GestureDetector(
+            onTap: _sendMessage,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: _isTyping
+                      ? [
+                    AppColors.primary,
+                    Color.lerp(AppColors.primary,
+                        const Color(0xFF1A6B4A), 0.35)!,
+                  ]
+                      : const [Color(0xFFD1D1D6), Color(0xFFD1D1D6)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                shape: BoxShape.circle,
+                boxShadow: _isTyping
+                    ? [
+                  BoxShadow(
+                    color: AppColors.primary.withOpacity(0.38),
+                    blurRadius: 14,
+                    offset: const Offset(0, 5),
+                  ),
+                ]
+                    : [],
+              ),
+              child: const Icon(
+                Icons.arrow_upward_rounded,
+                color: Colors.white,
+                size: 22,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
