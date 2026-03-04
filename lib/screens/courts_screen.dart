@@ -55,7 +55,6 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
     if (_mapController == null || _markers.isEmpty || _hasMovedCamera) return;
 
     double? minLat, maxLat, minLng, maxLng;
-
     for (final marker in _markers) {
       final lat = marker.position.latitude;
       final lng = marker.position.longitude;
@@ -85,12 +84,10 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
 
     locationsAsync.whenData((locations) {
       final newMarkers = <Marker>{};
-
       for (int i = 0; i < locations.length; i++) {
         final location = locations[i];
         final lat = _parseCoordinate(location['loc_latitude']);
         final lng = _parseCoordinate(location['loc_longitude']);
-
         if (lat != null && lng != null) {
           newMarkers.add(
             Marker(
@@ -120,10 +117,7 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
     return Scaffold(
       body: Stack(
         children: [
-          // ── Google Map ───────────────────────────────────────
-          // ✅ On iOS the map can appear white if the key isn't
-          //    enabled for "Maps SDK for iOS" in Google Cloud.
-          //    Using a RepaintBoundary + key forces a fresh render.
+          // ── Google Map ─────────────────────────────────────────────────
           RepaintBoundary(
             child: GoogleMap(
               key: const ValueKey('google_map'),
@@ -133,23 +127,19 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
               myLocationButtonEnabled: false,
               zoomControlsEnabled: false,
               mapToolbarEnabled: false,
-              // ✅ Explicitly set mapType — fixes blank tile issue on iOS
               mapType: MapType.normal,
-              // ✅ compassEnabled false avoids an iOS rendering conflict
               compassEnabled: false,
               onMapCreated: (controller) {
                 _mapController = controller;
                 setState(() => _mapReady = true);
                 debugPrint('🗺️ Map controller created (${Platform.isIOS ? "iOS" : "Android"})');
-
-                // ✅ On iOS, force a slight camera move to trigger tile load
                 if (Platform.isIOS) {
                   Future.delayed(const Duration(milliseconds: 300), () {
                     controller.animateCamera(
                       CameraUpdate.newCameraPosition(
                         const CameraPosition(
                           target: LatLng(35.6762, 139.6503),
-                          zoom: 12.01, // tiny nudge to force tile render
+                          zoom: 12.01,
                         ),
                       ),
                     );
@@ -159,7 +149,7 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
             ),
           ),
 
-          // ✅ Show loading indicator while map initializes on iOS
+          // ── Loading overlay on iOS ─────────────────────────────────────
           if (!_mapReady && Platform.isIOS)
             Container(
               color: const Color(0xFFE8F0E9),
@@ -181,80 +171,16 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
               ),
             ),
 
-          // ── Search Bar ───────────────────────────────────────
+          // ── Header (title + search + filter) ──────────────────────────
           SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Container(
-                      height: 50,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: AppColors.primary,
-                          width: 2,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: TextField(
-                        controller: _searchController,
-                        textAlignVertical: TextAlignVertical.center,
-                        decoration: const InputDecoration(
-                          hintText: 'Search Pickleball Courts...',
-                          hintStyle: TextStyle(
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.w500,
-                          ),
-                          prefixIcon: Icon(
-                            Icons.search,
-                            color: AppColors.primary,
-                          ),
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 0,
-                          ),
-                          isDense: true,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Container(
-                    height: 50,
-                    width: 50,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.1),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: const Icon(
-                      Icons.tune,
-                      color: Colors.white,
-                      size: 24,
-                    ),
-                  ),
-                ],
-              ),
+            child: Column(
+              children: [
+                _buildHeader(),
+              ],
             ),
           ),
 
-          // ── Floating Add Court Button ───────────────────────
+          // ── Floating Add Court Button ───────────────────────────────────
           if (showAddButton)
             Positioned(
               bottom: 24,
@@ -267,58 +193,189 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
     );
   }
 
+  // ── Header ─────────────────────────────────────────────────────────────────
+  Widget _buildHeader() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Column(
+        children: [
+          // ── Title row ──────────────────────────────────────────────────
+          Row(
+            children: [
+              // Frosted title card
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.08),
+                        blurRadius: 20,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 34,
+                        height: 34,
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(Icons.location_on_rounded,
+                            color: AppColors.primary, size: 18),
+                      ),
+                      const SizedBox(width: 10),
+                      const Text(
+                        'Courts',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF0D0D0D),
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              // Filter button
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(14),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.08),
+                      blurRadius: 20,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Icon(Icons.tune_rounded,
+                    color: AppColors.primary, size: 22),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 10),
+
+          // ── Search Bar ─────────────────────────────────────────────────
+          Container(
+            height: 48,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.07),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (_) => setState(() {}),
+              style: const TextStyle(
+                  fontSize: 15, color: Color(0xFF0D0D0D)),
+              decoration: InputDecoration(
+                hintText: 'Search pickleball courts...',
+                hintStyle: TextStyle(
+                  color: Colors.black.withOpacity(0.35),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w400,
+                ),
+                prefixIcon: Icon(Icons.search_rounded,
+                    color: Colors.black.withOpacity(0.35), size: 22),
+                suffixIcon: _searchController.text.isNotEmpty
+                    ? GestureDetector(
+                  onTap: () =>
+                      setState(() => _searchController.clear()),
+                  child: Icon(Icons.close_rounded,
+                      color: Colors.black.withOpacity(0.35),
+                      size: 20),
+                )
+                    : null,
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16, vertical: 14),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Floating Add Court Button — matches EventsScreen style ─────────────────
   Widget _buildAddCourtButton() {
     return Stack(
       clipBehavior: Clip.none,
       children: [
         Container(
-          height: 56,
-          padding: const EdgeInsets.symmetric(horizontal: 32),
+          height: 54,
+          padding: const EdgeInsets.symmetric(horizontal: 36),
           decoration: BoxDecoration(
-            color: Colors.black,
-            borderRadius: BorderRadius.circular(28),
+            color: const Color(0xFF0D0D0D),
+            borderRadius: BorderRadius.circular(30),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.25),
-                blurRadius: 16,
-                offset: const Offset(0, 6),
+                color: Colors.black.withOpacity(0.22),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
               ),
             ],
           ),
-          child: const Center(
-            child: Text(
-              'Add a Court',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.add_rounded, color: Colors.white, size: 20),
+              SizedBox(width: 8),
+              Text(
+                'Add a Court',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.2,
+                ),
               ),
-            ),
+            ],
           ),
         ),
         Positioned(
           top: -8,
           right: -8,
           child: GestureDetector(
-            onTap: () {
-              ref.read(showAddCourtButtonProvider.notifier).state = false;
-            },
+            onTap: () =>
+            ref.read(showAddCourtButtonProvider.notifier).state = false,
             child: Container(
-              width: 32,
-              height: 32,
+              width: 28,
+              height: 28,
               decoration: BoxDecoration(
                 color: Colors.white,
                 shape: BoxShape.circle,
-                border: Border.all(color: Colors.black, width: 2),
+                border: Border.all(
+                    color: const Color(0xFF0D0D0D), width: 1.5),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.15),
-                    blurRadius: 8,
+                    color: Colors.black.withOpacity(0.12),
+                    blurRadius: 6,
                     offset: const Offset(0, 2),
                   ),
                 ],
               ),
-              child: const Icon(Icons.close, size: 18, color: Colors.black),
+              child: const Icon(Icons.close_rounded,
+                  size: 16, color: Color(0xFF0D0D0D)),
             ),
           ),
         ),
