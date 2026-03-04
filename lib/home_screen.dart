@@ -4,13 +4,35 @@ import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/widgets/event_card.dart';
 import 'package:pikuru/widgets/group_card.dart';
 import 'package:pikuru/widgets/court_card.dart';
-import 'package:pikuru/utils/date_formatter.dart';
 import 'package:pikuru/providers/providers.dart';
 import 'package:pikuru/screens/chats_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
+
+  // ── Format event_date (Timestamp) + event_time ────────────────────────────
+  String _formatEventDateTime(Map<String, dynamic> data) {
+    final rawDate = data['event_date'];
+    final rawTime = data['event_time'];
+
+    String dateStr = '';
+    if (rawDate is Timestamp) {
+      dateStr = DateFormat('EEE, MMM d').format(rawDate.toDate());
+    }
+
+    String timeStr = '';
+    if (rawTime is Timestamp) {
+      timeStr = DateFormat('h:mm a').format(rawTime.toDate());
+    } else if (rawTime is String && rawTime.isNotEmpty) {
+      timeStr = rawTime;
+    }
+
+    if (dateStr.isNotEmpty && timeStr.isNotEmpty) return '$dateStr · $timeStr';
+    if (dateStr.isNotEmpty) return dateStr;
+    return 'Date TBD';
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -27,7 +49,7 @@ class HomeScreen extends ConsumerWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.chat_bubble_outline, color: AppColors.primary),
-            onPressed: () => Navigator.push(          // ← changed from SnackBar
+            onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const ChatsScreen()),
             ),
@@ -42,7 +64,7 @@ class HomeScreen extends ConsumerWidget {
             children: [
               const SizedBox(height: 10),
 
-              // ── UPCOMING EVENTS ─────────────────────────────────
+              // ── UPCOMING EVENTS ──────────────────────────────────────────
               _sectionHeader('Upcoming events'),
               const SizedBox(height: 16),
               SizedBox(
@@ -54,7 +76,7 @@ class HomeScreen extends ConsumerWidget {
               _divider(),
               const SizedBox(height: 20),
 
-              // ── LOCAL GROUPS ────────────────────────────────────
+              // ── LOCAL GROUPS ─────────────────────────────────────────────
               _sectionHeader('Local groups'),
               const SizedBox(height: 16),
               SizedBox(
@@ -66,7 +88,7 @@ class HomeScreen extends ConsumerWidget {
               _divider(),
               const SizedBox(height: 20),
 
-              // ── PICKLEBALL COURTS ───────────────────────────────
+              // ── PICKLEBALL COURTS ────────────────────────────────────────
               _sectionHeader('Pickleball courts'),
               const SizedBox(height: 16),
               SizedBox(
@@ -76,7 +98,7 @@ class HomeScreen extends ConsumerWidget {
 
               const SizedBox(height: 30),
 
-              // ── WELCOME ─────────────────────────────────────────
+              // ── WELCOME ──────────────────────────────────────────────────
               const Text(
                 'Welcome to Pikuru!',
                 style: TextStyle(
@@ -111,7 +133,7 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  // ── Events Section ──────────────────────────────────────────────────
+  // ── Events Section ────────────────────────────────────────────────────────
   Widget _buildEventsSection(WidgetRef ref) {
     final eventsAsync = ref.watch(eventsProvider);
 
@@ -126,35 +148,39 @@ class HomeScreen extends ConsumerWidget {
           itemCount: events.length,
           itemBuilder: (context, index) {
             final data = events[index];
-            final Timestamp startDate = data['event_start_date'];
-            final Timestamp startTime = data['event_start_time'];
-            final formattedDateTime = DateFormatter.formatDateTime(
-              startDate.toDate(),
-              startTime.toDate(),
-            );
+
+            // ── New fields ────────────────────────────────────────────────
+            // event_pic → fallback event_pic_thumbnail → fallback event_image
+            final imageUrl = (data['event_pic'] ??
+                data['event_pic_thumbnail'] ??
+                data['event_image'] ??
+                '')
+                .toString();
+
+            final title = (data['event_title'] ?? 'Untitled').toString();
+            final formattedDateTime = _formatEventDateTime(data);
             final eventLocId = (data['event_loc_id'] ?? '').toString();
 
             return Consumer(
               builder: (context, ref, child) {
-                final locationAsync = ref.watch(
-                  locationResolverProvider(eventLocId),
-                );
+                final locationAsync =
+                ref.watch(locationResolverProvider(eventLocId));
                 return locationAsync.when(
                   data: (location) => EventCard(
-                    imageUrl: (data['event_image'] ?? '').toString(),
-                    title: (data['event_title'] ?? 'Untitled').toString(),
+                    imageUrl: imageUrl,
+                    title: title,
                     dateTime: formattedDateTime,
                     location: location,
                   ),
                   loading: () => EventCard(
-                    imageUrl: (data['event_image'] ?? '').toString(),
-                    title: (data['event_title'] ?? 'Untitled').toString(),
+                    imageUrl: imageUrl,
+                    title: title,
                     dateTime: formattedDateTime,
                     location: '...',
                   ),
                   error: (_, __) => EventCard(
-                    imageUrl: (data['event_image'] ?? '').toString(),
-                    title: (data['event_title'] ?? 'Untitled').toString(),
+                    imageUrl: imageUrl,
+                    title: title,
                     dateTime: formattedDateTime,
                     location: 'Unknown location',
                   ),
@@ -169,7 +195,7 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  // ── Groups Section ──────────────────────────────────────────────────
+  // ── Groups Section ────────────────────────────────────────────────────────
   Widget _buildGroupsSection(WidgetRef ref) {
     final orgsAsync = ref.watch(organizationsProvider);
 
@@ -188,9 +214,8 @@ class HomeScreen extends ConsumerWidget {
 
             return Consumer(
               builder: (context, ref, child) {
-                final locationAsync = ref.watch(
-                  locationResolverProvider(orgLocId),
-                );
+                final locationAsync =
+                ref.watch(locationResolverProvider(orgLocId));
                 return locationAsync.when(
                   data: (location) => GroupCard(
                     imageUrl: (data['org_image'] ?? '').toString(),
@@ -218,7 +243,7 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  // ── Courts Section ──────────────────────────────────────────────────
+  // ── Courts Section ────────────────────────────────────────────────────────
   Widget _buildCourtsSection(WidgetRef ref) {
     final courtsAsync = ref.watch(locationsProvider);
 
@@ -252,7 +277,7 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  // ── UI Helpers ──────────────────────────────────────────────────────
+  // ── UI Helpers ────────────────────────────────────────────────────────────
   Widget _sectionHeader(String title) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -285,13 +310,11 @@ class HomeScreen extends ConsumerWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         minimumSize: Size.zero,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        shape:
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
       onPressed: () {},
       child: Text(label,
-          style: const TextStyle(
-              fontSize: 14, fontWeight: FontWeight.bold)),
+          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
     );
   }
 }

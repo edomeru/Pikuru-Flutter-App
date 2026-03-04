@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -34,12 +35,10 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   @override
   void initState() {
     super.initState();
-
     _messageController.addListener(() {
       final typing = _messageController.text.trim().isNotEmpty;
       if (typing != _isTyping) setState(() => _isTyping = typing);
     });
-
     _focusNode.addListener(() => setState(() {}));
     _initChat();
   }
@@ -71,6 +70,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
     HapticFeedback.lightImpact();
     final text = _messageController.text;
     _messageController.clear();
+    _focusNode.requestFocus();
     await IndividualChatService.sendMessage(_chatId!, text);
     _scrollToBottom();
   }
@@ -90,18 +90,33 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      // ── Key: Scaffold resizes body upward when keyboard opens ─────────
+      resizeToAvoidBottomInset: true,
       backgroundColor: const Color(0xFFF2F2F7),
       body: Column(
         children: [
-          _buildAppBar(),
-          Expanded(
-            child: _isLoading
-                ? Center(
-                child: CircularProgressIndicator(
-                    color: AppColors.primary, strokeWidth: 2.5))
-                : _buildMessageList(),
+          // ── Top SafeArea wraps only the appbar ──────────────────────────
+          SafeArea(
+            bottom: false,
+            child: _buildAppBar(),
           ),
-          _buildInputBar(),
+          // ── Messages fill remaining space ───────────────────────────────
+          Expanded(
+            child: GestureDetector(
+              onTap: () => FocusScope.of(context).unfocus(),
+              child: _isLoading
+                  ? Center(
+                  child: CircularProgressIndicator(
+                      color: AppColors.primary, strokeWidth: 2.5))
+                  : _buildMessageList(),
+            ),
+          ),
+          // ── Input bar — pushed up by Scaffold when keyboard opens ───────
+          // SafeArea bottom handles home indicator bar on gesture phones
+          SafeArea(
+            top: false,
+            child: _buildInputBar(),
+          ),
         ],
       ),
     );
@@ -120,56 +135,48 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
           ),
         ],
       ),
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(4, 8, 16, 12),
-          child: Row(
-            children: [
-              // Back button
-              IconButton(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                    size: 18, color: Color(0xFF1C1C1E)),
-              ),
-
-              // Avatar
-              CircleAvatar(
-                radius: 22,
-                backgroundColor: AppColors.primary.withOpacity(0.1),
-                backgroundImage: widget.otherUserAvatar.isNotEmpty
-                    ? NetworkImage(widget.otherUserAvatar)
-                    : null,
-                child: widget.otherUserAvatar.isEmpty
-                    ? Text(
-                  widget.otherUserName.isNotEmpty
-                      ? widget.otherUserName[0].toUpperCase()
-                      : '?',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.primary,
-                  ),
-                )
-                    : null,
-              ),
-              const SizedBox(width: 12),
-
-              // Name
-              Expanded(
-                child: Text(
-                  widget.otherUserName,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF1C1C1E),
-                    letterSpacing: -0.4,
-                  ),
-                  overflow: TextOverflow.ellipsis,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(4, 8, 16, 12),
+        child: Row(
+          children: [
+            IconButton(
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                  size: 18, color: Color(0xFF1C1C1E)),
+            ),
+            CircleAvatar(
+              radius: 22,
+              backgroundColor: AppColors.primary.withOpacity(0.1),
+              backgroundImage: widget.otherUserAvatar.isNotEmpty
+                  ? NetworkImage(widget.otherUserAvatar)
+                  : null,
+              child: widget.otherUserAvatar.isEmpty
+                  ? Text(
+                widget.otherUserName.isNotEmpty
+                    ? widget.otherUserName[0].toUpperCase()
+                    : '?',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primary,
                 ),
+              )
+                  : null,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                widget.otherUserName,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF1C1C1E),
+                  letterSpacing: -0.4,
+                ),
+                overflow: TextOverflow.ellipsis,
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -185,11 +192,8 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
               child: CircularProgressIndicator(
                   color: AppColors.primary, strokeWidth: 2.5));
         }
-
         final messages = snapshot.data!.docs;
-
         if (messages.isEmpty) return _buildEmptyState();
-
         _scrollToBottom();
 
         return ListView.builder(
@@ -199,7 +203,6 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
           itemBuilder: (context, index) {
             final msg = messages[index].data() as Map<String, dynamic>;
             final isMe = msg['sender_id'] == currentUser?.uid;
-
             final prevSenderId = index > 0
                 ? (messages[index - 1].data()
             as Map<String, dynamic>)['sender_id']
@@ -208,17 +211,14 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                 ? (messages[index + 1].data()
             as Map<String, dynamic>)['sender_id']
                 : null;
-
             final isFirstInGroup = prevSenderId != msg['sender_id'];
             final isLastInGroup = nextSenderId != msg['sender_id'];
-
             final showDate = index == 0 ||
                 _isDifferentDay(
                   (messages[index - 1].data()
                   as Map<String, dynamic>)['sent_at'],
                   msg['sent_at'],
                 );
-
             return Column(
               children: [
                 if (showDate) _buildDateDivider(msg['sent_at']),
@@ -244,7 +244,6 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
       else if (diff == 1) label = 'Yesterday';
       else label = '${date.day}/${date.month}/${date.year}';
     }
-
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 16),
       child: Row(
@@ -262,14 +261,11 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                       color: Colors.black.withOpacity(0.05), blurRadius: 8),
                 ],
               ),
-              child: Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: Color(0xFF8E8E93),
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              child: Text(label,
+                  style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF8E8E93),
+                      fontWeight: FontWeight.w500)),
             ),
           ),
           Expanded(child: Divider(color: Colors.black.withOpacity(0.08))),
@@ -303,7 +299,6 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
         isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          // Other user avatar (only shown on last bubble in a group)
           if (!isMe) ...[
             SizedBox(
               width: 34,
@@ -320,10 +315,9 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                       ? widget.otherUserName[0].toUpperCase()
                       : '?',
                   style: TextStyle(
-                    fontSize: 13,
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.bold,
-                  ),
+                      fontSize: 13,
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.bold),
                 )
                     : null,
               )
@@ -331,17 +325,14 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
             ),
             const SizedBox(width: 8),
           ],
-
           Flexible(
             child: Column(
               crossAxisAlignment:
               isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
               children: [
-                // Bubble
                 Container(
                   constraints: BoxConstraints(
-                    maxWidth: MediaQuery.of(context).size.width * 0.68,
-                  ),
+                      maxWidth: MediaQuery.of(context).size.width * 0.68),
                   decoration: BoxDecoration(
                     gradient: isMe
                         ? LinearGradient(
@@ -368,35 +359,27 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                   ),
                   padding: const EdgeInsets.symmetric(
                       horizontal: 14, vertical: 10),
-                  child: Text(
-                    text,
-                    style: TextStyle(
-                      fontSize: 15,
-                      color: isMe ? Colors.white : const Color(0xFF1C1C1E),
-                      height: 1.45,
-                      letterSpacing: -0.1,
-                    ),
-                  ),
+                  child: Text(text,
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: isMe ? Colors.white : const Color(0xFF1C1C1E),
+                        height: 1.45,
+                        letterSpacing: -0.1,
+                      )),
                 ),
-
-                // Timestamp
                 if (isLastInGroup)
                   Padding(
                     padding:
                     const EdgeInsets.only(top: 5, left: 4, right: 4),
-                    child: Text(
-                      time,
-                      style: const TextStyle(
-                        fontSize: 10.5,
-                        color: Color(0xFFAEAEB2),
-                        fontWeight: FontWeight.w400,
-                      ),
-                    ),
+                    child: Text(time,
+                        style: const TextStyle(
+                            fontSize: 10.5,
+                            color: Color(0xFFAEAEB2),
+                            fontWeight: FontWeight.w400)),
                   ),
               ],
             ),
           ),
-
           if (isMe) const SizedBox(width: 4),
         ],
       ),
@@ -410,97 +393,87 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Color(0x0D000000),
-            blurRadius: 24,
-            offset: Offset(0, -6),
-          ),
+              color: Color(0x0D000000),
+              blurRadius: 24,
+              offset: Offset(0, -6)),
         ],
       ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              // Text field
-              Expanded(
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF2F2F7),
-                    borderRadius: BorderRadius.circular(26),
-                    border: Border.all(
-                      color: _focusNode.hasFocus
-                          ? AppColors.primary.withOpacity(0.35)
-                          : Colors.transparent,
-                      width: 1.5,
-                    ),
-                  ),
-                  child: TextField(
-                    controller: _messageController,
-                    focusNode: _focusNode,
-                    textCapitalization: TextCapitalization.sentences,
-                    minLines: 1,
-                    maxLines: 5,
-                    style: const TextStyle(
-                      fontSize: 15,
-                      color: Color(0xFF1C1C1E),
-                      height: 1.4,
-                    ),
-                    decoration: const InputDecoration(
-                      hintText: 'Aa',
-                      hintStyle: TextStyle(
-                        color: Color(0xFFAEAEB2),
-                        fontSize: 15,
-                      ),
-                      border: InputBorder.none,
-                      contentPadding: EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 12),
-                    ),
-                    onSubmitted: (_) => _sendMessage(),
-                  ),
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Expanded(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF2F2F7),
+                borderRadius: BorderRadius.circular(26),
+                border: Border.all(
+                  color: _focusNode.hasFocus
+                      ? AppColors.primary.withOpacity(0.35)
+                      : Colors.transparent,
+                  width: 1.5,
                 ),
               ),
-              const SizedBox(width: 10),
-
-              // Send button
-              GestureDetector(
-                onTap: _sendMessage,
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: 46,
-                  height: 46,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: _isTyping
-                          ? [
-                        AppColors.primary,
-                        Color.lerp(AppColors.primary,
-                            const Color(0xFF1A6B4A), 0.35)!,
-                      ]
-                          : const [Color(0xFFD1D1D6), Color(0xFFD1D1D6)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    shape: BoxShape.circle,
-                    boxShadow: _isTyping
-                        ? [
-                      BoxShadow(
-                        color: AppColors.primary.withOpacity(0.38),
-                        blurRadius: 14,
-                        offset: const Offset(0, 5),
-                      ),
-                    ]
-                        : [],
-                  ),
-                  child: const Icon(Icons.arrow_upward_rounded,
-                      color: Colors.white, size: 22),
+              child: TextField(
+                controller: _messageController,
+                focusNode: _focusNode,
+                keyboardType: TextInputType.multiline,
+                textInputAction: TextInputAction.newline,
+                textCapitalization: TextCapitalization.sentences,
+                minLines: 1,
+                maxLines: 5,
+                style: const TextStyle(
+                  fontSize: 15,
+                  color: Color(0xFF1C1C1E),
+                  height: 1.4,
+                ),
+                decoration: const InputDecoration(
+                  hintText: 'Aa',
+                  hintStyle: TextStyle(
+                      color: Color(0xFFAEAEB2), fontSize: 15),
+                  border: InputBorder.none,
+                  contentPadding: EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 12),
                 ),
               ),
-            ],
+            ),
           ),
-        ),
+          const SizedBox(width: 10),
+          GestureDetector(
+            onTap: _sendMessage,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: _isTyping
+                      ? [
+                    AppColors.primary,
+                    Color.lerp(AppColors.primary,
+                        const Color(0xFF1A6B4A), 0.35)!,
+                  ]
+                      : const [Color(0xFFD1D1D6), Color(0xFFD1D1D6)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                shape: BoxShape.circle,
+                boxShadow: _isTyping
+                    ? [
+                  BoxShadow(
+                    color: AppColors.primary.withOpacity(0.38),
+                    blurRadius: 14,
+                    offset: const Offset(0, 5),
+                  ),
+                ]
+                    : [],
+              ),
+              child: const Icon(Icons.arrow_upward_rounded,
+                  color: Colors.white, size: 22),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -523,28 +496,23 @@ class _IndividualChatScreenState extends State<IndividualChatScreen> {
                   ? widget.otherUserName[0].toUpperCase()
                   : '?',
               style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: AppColors.primary,
-              ),
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primary),
             )
                 : null,
           ),
           const SizedBox(height: 16),
-          Text(
-            widget.otherUserName,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF1C1C1E),
-              letterSpacing: -0.3,
-            ),
-          ),
+          Text(widget.otherUserName,
+              style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF1C1C1E),
+                  letterSpacing: -0.3)),
           const SizedBox(height: 6),
-          Text(
-            'Say hi to start the conversation! 👋',
-            style: TextStyle(fontSize: 14, color: Colors.black.withOpacity(0.35)),
-          ),
+          Text('Say hi to start the conversation! 👋',
+              style: TextStyle(
+                  fontSize: 14, color: Colors.black.withOpacity(0.35))),
         ],
       ),
     );
