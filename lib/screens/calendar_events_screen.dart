@@ -3,26 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:pikuru/theme/material.dart';
-
-// ── Provider: fetch ALL upcoming events for calendar ─────────────────
-// Only events from today onwards, ordered by date, no limit so all
-// dates can be marked on the calendar.
-final calendarEventsProvider =
-StreamProvider<List<Map<String, dynamic>>>((ref) {
-  final now = Timestamp.fromDate(
-    DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day),
-  );
-  return FirebaseFirestore.instance
-      .collection('events')
-      .where('event_start_date', isGreaterThanOrEqualTo: now)
-      .orderBy('event_start_date')
-      .snapshots()
-      .map((s) => s.docs.map((d) {
-    final data = d.data();
-    data['_doc_id'] = d.id;
-    return data;
-  }).toList());
-});
+import 'package:pikuru/providers/providers.dart';
+import 'package:intl/intl.dart';
 
 class CalendarEventsScreen extends ConsumerStatefulWidget {
   const CalendarEventsScreen({super.key});
@@ -53,8 +35,7 @@ class _CalendarEventsScreenState
     _fadeCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 500))
       ..forward();
-    _fadeAnim =
-        CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
+    _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
 
     _slideCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 450))
@@ -62,8 +43,7 @@ class _CalendarEventsScreenState
     _slideAnim = Tween<Offset>(
       begin: const Offset(0, 0.06),
       end: Offset.zero,
-    ).animate(
-        CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOutCubic));
+    ).animate(CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOutCubic));
   }
 
   @override
@@ -73,12 +53,13 @@ class _CalendarEventsScreenState
     super.dispose();
   }
 
-  // ── Build a map: normalised date → list of events ─────────────────
+  // ── Build a map: normalised date → list of events ─────────────────────────
   Map<DateTime, List<Map<String, dynamic>>> _buildEventMap(
       List<Map<String, dynamic>> events) {
     final map = <DateTime, List<Map<String, dynamic>>>{};
     for (final e in events) {
-      final ts = e['event_start_date'];
+      // ✅ Use event_date (new field) — fallback to event_start_date (old)
+      final ts = e['event_date'] ?? e['event_start_date'];
       if (ts == null) continue;
       final dt = (ts as Timestamp).toDate();
       final key = DateTime(dt.year, dt.month, dt.day);
@@ -93,13 +74,11 @@ class _CalendarEventsScreenState
   }
 
   void _prevMonth() => setState(() {
-    _focusedMonth =
-        DateTime(_focusedMonth.year, _focusedMonth.month - 1);
+    _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month - 1);
   });
 
   void _nextMonth() => setState(() {
-    _focusedMonth =
-        DateTime(_focusedMonth.year, _focusedMonth.month + 1);
+    _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1);
   });
 
   String _monthName(int m) => const [
@@ -111,8 +90,6 @@ class _CalendarEventsScreenState
     final uri = Uri.tryParse(url);
     if (uri == null) return;
     if (await canLaunchUrl(uri)) {
-      // externalApplication keeps the app alive in the background
-      // so users can press Back and return to Pikuru
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
       if (mounted) {
@@ -121,10 +98,10 @@ class _CalendarEventsScreenState
             content: const Text('Could not open link'),
             backgroundColor: Colors.red.shade400,
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12)),
-            margin: const EdgeInsets.symmetric(
-                horizontal: 20, vertical: 12),
+            shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            margin:
+            const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
           ),
         );
       }
@@ -133,6 +110,7 @@ class _CalendarEventsScreenState
 
   @override
   Widget build(BuildContext context) {
+    // ✅ Use the calendarEventsProvider from providers.dart (event_date field)
     final eventsAsync = ref.watch(calendarEventsProvider);
 
     return Scaffold(
@@ -149,7 +127,7 @@ class _CalendarEventsScreenState
 
           return CustomScrollView(
             slivers: [
-              // ── App Bar ───────────────────────────────────────
+              // ── App Bar ──────────────────────────────────────────────────
               SliverAppBar(
                 pinned: true,
                 backgroundColor: AppColors.primary,
@@ -175,7 +153,7 @@ class _CalendarEventsScreenState
                     position: _slideAnim,
                     child: Column(
                       children: [
-                        // ── Calendar Card ─────────────────────
+                        // ── Calendar Card ────────────────────────────────
                         Container(
                           margin: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
@@ -193,8 +171,8 @@ class _CalendarEventsScreenState
                             children: [
                               // Month navigation
                               Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                    20, 20, 20, 8),
+                                padding:
+                                const EdgeInsets.fromLTRB(20, 20, 20, 8),
                                 child: Row(
                                   mainAxisAlignment:
                                   MainAxisAlignment.spaceBetween,
@@ -235,18 +213,15 @@ class _CalendarEventsScreenState
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 12),
                                 child: Row(
-                                  children: ['SU', 'MO', 'TU', 'WE',
-                                    'TH', 'FR', 'SA']
+                                  children: ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA']
                                       .map((d) => Expanded(
                                     child: Center(
                                       child: Text(
                                         d,
                                         style: TextStyle(
                                           fontSize: 11,
-                                          fontWeight:
-                                          FontWeight.w700,
-                                          color: Colors
-                                              .grey.shade400,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.grey.shade400,
                                           letterSpacing: 0.5,
                                         ),
                                       ),
@@ -260,27 +235,25 @@ class _CalendarEventsScreenState
 
                               // Calendar grid
                               Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                    12, 0, 12, 16),
+                                padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
                                 child: _buildCalendarGrid(eventMap),
                               ),
                             ],
                           ),
                         ),
 
-                        // ── Selected date events ───────────────
+                        // ── Selected date header ─────────────────────────
                         if (_selectedDate != null) ...[
                           Padding(
-                            padding: const EdgeInsets.fromLTRB(
-                                16, 4, 16, 8),
+                            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
                             child: Row(
                               children: [
                                 Container(
-                                  width: 4, height: 18,
+                                  width: 4,
+                                  height: 18,
                                   decoration: BoxDecoration(
                                     color: AppColors.primary,
-                                    borderRadius:
-                                    BorderRadius.circular(2),
+                                    borderRadius: BorderRadius.circular(2),
                                   ),
                                 ),
                                 const SizedBox(width: 8),
@@ -298,10 +271,9 @@ class _CalendarEventsScreenState
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 10, vertical: 3),
                                     decoration: BoxDecoration(
-                                      color: AppColors.primary
-                                          .withOpacity(0.1),
-                                      borderRadius:
-                                      BorderRadius.circular(20),
+                                      color:
+                                      AppColors.primary.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(20),
                                     ),
                                     child: Text(
                                       '${selectedEvents.length} event${selectedEvents.length == 1 ? '' : 's'}',
@@ -315,6 +287,8 @@ class _CalendarEventsScreenState
                               ],
                             ),
                           ),
+
+                          // ── Event cards or empty state ───────────────
                           if (selectedEvents.isEmpty)
                             Padding(
                               padding: const EdgeInsets.symmetric(
@@ -323,18 +297,14 @@ class _CalendarEventsScreenState
                                 padding: const EdgeInsets.all(20),
                                 decoration: BoxDecoration(
                                   color: Colors.white,
-                                  borderRadius:
-                                  BorderRadius.circular(16),
-                                  border: Border.all(
-                                      color: Colors.grey.shade100),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border:
+                                  Border.all(color: Colors.grey.shade100),
                                 ),
                                 child: Row(
                                   children: [
-                                    Icon(
-                                        Icons
-                                            .event_available_rounded,
-                                        color: Colors.grey.shade300,
-                                        size: 32),
+                                    Icon(Icons.event_available_rounded,
+                                        color: Colors.grey.shade300, size: 32),
                                     const SizedBox(width: 16),
                                     Text(
                                       'No events on this day',
@@ -370,16 +340,16 @@ class _CalendarEventsScreenState
     );
   }
 
-  // ── Calendar Grid ─────────────────────────────────────────────────
+  // ── Calendar Grid ─────────────────────────────────────────────────────────
   Widget _buildCalendarGrid(
       Map<DateTime, List<Map<String, dynamic>>> eventMap) {
-    final firstDay = DateTime(_focusedMonth.year, _focusedMonth.month, 1);
+    final firstDay =
+    DateTime(_focusedMonth.year, _focusedMonth.month, 1);
     final daysInMonth =
         DateTime(_focusedMonth.year, _focusedMonth.month + 1, 0).day;
     final startWeekday = firstDay.weekday % 7; // 0=Sun
     final today = DateTime.now();
-    final todayKey =
-    DateTime(today.year, today.month, today.day);
+    final todayKey = DateTime(today.year, today.month, today.day);
 
     final List<Widget> cells = [];
 
@@ -389,8 +359,7 @@ class _CalendarEventsScreenState
     }
 
     for (int day = 1; day <= daysInMonth; day++) {
-      final date = DateTime(
-          _focusedMonth.year, _focusedMonth.month, day);
+      final date = DateTime(_focusedMonth.year, _focusedMonth.month, day);
       final dayEvents = _eventsForDate(eventMap, date);
       final hasEvents = dayEvents.isNotEmpty;
       final isToday = date == todayKey;
@@ -400,23 +369,35 @@ class _CalendarEventsScreenState
                   _selectedDate!.day);
       final isPast = date.isBefore(todayKey);
 
-      cells.add(
-        GestureDetector(
-          onTap: () => setState(() => _selectedDate = date),
-          child: Container(
-            margin: const EdgeInsets.all(2),
-            decoration: BoxDecoration(
-              color: isSelected
-                  ? AppColors.primary
-                  : isToday
-                  ? AppColors.primary.withOpacity(0.1)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(10),
+      if (hasEvents) {
+        cells.add(
+          GestureDetector(
+            onTap: () => setState(() => _selectedDate = date),
+            child: _EventThumbCell(
+              day: day,
+              events: dayEvents,
+              isSelected: isSelected,
+              isToday: isToday,
+              isPast: isPast,
             ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
+          ),
+        );
+      } else {
+        cells.add(
+          GestureDetector(
+            onTap: () => setState(() => _selectedDate = date),
+            child: Container(
+              margin: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: isSelected
+                    ? AppColors.primary
+                    : isToday
+                    ? AppColors.primary.withOpacity(0.1)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Center(
+                child: Text(
                   '$day',
                   style: TextStyle(
                     fontSize: 14,
@@ -430,25 +411,18 @@ class _CalendarEventsScreenState
                         : const Color(0xFF1A1A1A),
                   ),
                 ),
-                if (hasEvents) ...[
-                  const SizedBox(height: 3),
-                  _EventThumbnailRow(
-                    events: dayEvents,
-                    isSelected: isSelected,
-                  ),
-                ],
-              ],
+              ),
             ),
           ),
-        ),
-      );
+        );
+      }
     }
 
     return GridView.count(
       crossAxisCount: 7,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      childAspectRatio: 0.85,
+      childAspectRatio: 0.78,
       children: cells,
     );
   }
@@ -462,124 +436,177 @@ class _CalendarEventsScreenState
   }
 }
 
-// ── Event thumbnail row shown inside a calendar cell ─────────────────
-class _EventThumbnailRow extends StatelessWidget {
+// ── Event Thumbnail Cell ─────────────────────────────────────────────────────
+// Fills the grid cell with the event's image. The day number and event
+// count badge are overlaid on top, matching the design screenshot.
+class _EventThumbCell extends StatelessWidget {
+  final int day;
   final List<Map<String, dynamic>> events;
   final bool isSelected;
+  final bool isToday;
+  final bool isPast;
 
-  const _EventThumbnailRow(
-      {required this.events, required this.isSelected});
+  const _EventThumbCell({
+    required this.day,
+    required this.events,
+    required this.isSelected,
+    required this.isToday,
+    required this.isPast,
+  });
 
   @override
   Widget build(BuildContext context) {
-    // Show up to 3 stacked thumbnails like the screenshot
-    final shown = events.take(3).toList();
     final count = events.length;
+    // Pick image from first event using new field names with fallback
+    final imageUrl = (events.first['event_pic'] ??
+        events.first['event_pic_thumbnail'] ??
+        events.first['event_image'] ??
+        '')
+        .toString();
 
-    return SizedBox(
-      height: 22,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          ...shown.asMap().entries.map((entry) {
-            final i = entry.key;
-            final e = entry.value;
-            final imageUrl = e['event_image'] as String? ?? '';
-            return Positioned(
-              left: i * 10.0,
-              child: Container(
-                width: 22, height: 22,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isSelected
-                        ? AppColors.primary
-                        : Colors.white,
-                    width: 1.5,
-                  ),
-                  color: AppColors.primary.withOpacity(0.2),
-                ),
-                child: ClipOval(
-                  child: imageUrl.isNotEmpty
-                      ? Image.network(
-                    imageUrl,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) =>
-                        _fallbackDot(),
-                  )
-                      : _fallbackDot(),
+    return Container(
+      margin: const EdgeInsets.all(2),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // ── Background image ───────────────────────────────────
+            imageUrl.isNotEmpty
+                ? Image.network(
+              imageUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                color: AppColors.primary.withOpacity(0.15),
+                child: const Icon(Icons.event,
+                    size: 16, color: AppColors.primary),
+              ),
+            )
+                : Container(
+              color: AppColors.primary.withOpacity(0.15),
+              child: const Icon(Icons.event,
+                  size: 16, color: AppColors.primary),
+            ),
+
+            // ── Dark overlay so text is readable ──────────────────
+            Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withOpacity(0.08),
+                    Colors.black.withOpacity(0.45),
+                  ],
                 ),
               ),
-            );
-          }),
-          // Count badge if more than 3
-          if (count > 3)
+            ),
+
+            // ── Selected green overlay ─────────────────────────────
+            if (isSelected)
+              Container(
+                color: AppColors.primary.withOpacity(0.55),
+              ),
+
+            // ── Day number — bottom left ───────────────────────────
             Positioned(
-              left: 3 * 10.0,
+              left: 5,
+              bottom: 4,
+              child: Text(
+                '$day',
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                  shadows: [
+                    Shadow(
+                      color: Colors.black54,
+                      blurRadius: 4,
+                      offset: Offset(0, 1),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // ── Event count badge — top right ──────────────────────
+            Positioned(
+              top: 4,
+              right: 4,
               child: Container(
-                width: 22, height: 22,
+                width: 16,
+                height: 16,
                 decoration: BoxDecoration(
+                  color: isSelected ? Colors.white : AppColors.primary,
                   shape: BoxShape.circle,
-                  color: AppColors.primary,
-                  border: Border.all(color: Colors.white, width: 1.5),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.25),
+                      blurRadius: 4,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
                 ),
                 child: Center(
                   child: Text(
-                    '+${count - 3}',
-                    style: const TextStyle(
-                      fontSize: 7,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
+                    '$count',
+                    style: TextStyle(
+                      fontSize: 8,
+                      fontWeight: FontWeight.w900,
+                      color: isSelected ? AppColors.primary : Colors.white,
                     ),
                   ),
                 ),
               ),
             ),
-        ],
+          ],
+        ),
       ),
     );
   }
-
-  Widget _fallbackDot() => Container(
-    color: AppColors.primary.withOpacity(0.3),
-    child: const Icon(Icons.event, size: 12,
-        color: AppColors.primary),
-  );
 }
 
-// ── Event Card shown below calendar ───────────────────────────────────
+// ── Event Card shown below calendar ──────────────────────────────────────────
 class _EventCard extends StatelessWidget {
   final Map<String, dynamic> event;
   final Future<void> Function(String url) onOpenLink;
 
-  const _EventCard({
-    required this.event,
-    required this.onOpenLink,
-  });
+  const _EventCard({required this.event, required this.onOpenLink});
 
-  String _formatTime(dynamic ts) {
-    if (ts == null) return '';
-    final dt = (ts as Timestamp).toDate();
-    final h = dt.hour;
-    final m = dt.minute.toString().padLeft(2, '0');
-    final period = h >= 12 ? 'PM' : 'AM';
-    final hour = h % 12 == 0 ? 12 : h % 12;
-    return '$hour:$m $period';
+  String _formatTime(dynamic raw) {
+    if (raw == null) return '';
+    DateTime dt;
+    if (raw is Timestamp) {
+      dt = raw.toDate();
+    } else {
+      return raw.toString();
+    }
+    return DateFormat('h:mm a').format(dt);
   }
 
   @override
   Widget build(BuildContext context) {
-    final title = event['event_title'] ?? 'Untitled Event';
-    final imageUrl = event['event_image'] as String? ?? '';
-    final url = event['event_url'] as String? ??
-        event['event_link'] as String? ?? '';
+    final title = (event['event_title'] ?? 'Untitled Event').toString();
+
+    // ✅ Use new image fields with fallback chain
+    final imageUrl = (event['event_pic'] ??
+        event['event_pic_thumbnail'] ??
+        event['event_image'] ??
+        '')
+        .toString();
+
+    final url = (event['event_link'] ?? event['event_url'] ?? '').toString();
+
     final fee = event['event_fee'];
     final feeStr = (fee == null ||
         fee.toString().isEmpty ||
-        fee.toString() == '0')
+        fee.toString() == '0' ||
+        fee.toString() == '0.0')
         ? 'Free'
         : '¥${fee.toString()}';
-    final time = _formatTime(event['event_start_time']);
+
+    // ✅ Use event_time (new field) — fallback to event_start_time (old)
+    final time = _formatTime(event['event_time'] ?? event['event_start_time']);
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -597,11 +624,11 @@ class _EventCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Image
+          // Event image
           if (imageUrl.isNotEmpty)
             ClipRRect(
-              borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(16)),
+              borderRadius:
+              const BorderRadius.vertical(top: Radius.circular(16)),
               child: AspectRatio(
                 aspectRatio: 16 / 7,
                 child: Image.network(
@@ -663,8 +690,7 @@ class _EventCard extends StatelessWidget {
                   Row(
                     children: [
                       Icon(Icons.access_time_rounded,
-                          size: 14,
-                          color: Colors.grey.shade400),
+                          size: 14, color: Colors.grey.shade400),
                       const SizedBox(width: 4),
                       Text(
                         time,
@@ -680,13 +706,11 @@ class _EventCard extends StatelessWidget {
 
                 const SizedBox(height: 14),
 
-                // More Information button → opens browser
+                // More Information button
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: url.isNotEmpty
-                        ? () => onOpenLink(url)
-                        : null,
+                    onPressed: url.isNotEmpty ? () => onOpenLink(url) : null,
                     icon: const Icon(Icons.open_in_new_rounded,
                         size: 16, color: Colors.white),
                     label: const Text(
@@ -699,11 +723,9 @@ class _EventCard extends StatelessWidget {
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primary,
-                      disabledBackgroundColor:
-                      Colors.grey.shade200,
+                      disabledBackgroundColor: Colors.grey.shade200,
                       elevation: 0,
-                      padding: const EdgeInsets.symmetric(
-                          vertical: 12),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),
                     ),

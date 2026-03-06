@@ -6,28 +6,31 @@ import 'package:pikuru/widgets/group_card.dart';
 import 'package:pikuru/widgets/court_card.dart';
 import 'package:pikuru/providers/providers.dart';
 import 'package:pikuru/screens/chats_screen.dart';
+import 'package:pikuru/screens/what_is_pikuru_screen.dart';
+import 'package:pikuru/screens/about_pikuru_screen.dart';
+import 'package:pikuru/screens/event_detail_screen.dart';
+import 'package:pikuru/screens/group_detail_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 
 class HomeScreen extends ConsumerWidget {
-  const HomeScreen({super.key});
+  final void Function(int tabIndex)? onNavigateToTab;
+
+  const HomeScreen({super.key, this.onNavigateToTab});
 
   String _formatEventDateTime(Map<String, dynamic> data) {
     final rawDate = data['event_date'];
     final rawTime = data['event_time'];
-
     String dateStr = '';
     if (rawDate is Timestamp) {
       dateStr = DateFormat('EEE, MMM d').format(rawDate.toDate());
     }
-
     String timeStr = '';
     if (rawTime is Timestamp) {
       timeStr = DateFormat('h:mm a').format(rawTime.toDate());
     } else if (rawTime is String && rawTime.isNotEmpty) {
       timeStr = rawTime;
     }
-
     if (dateStr.isNotEmpty && timeStr.isNotEmpty) return '$dateStr · $timeStr';
     if (dateStr.isNotEmpty) return dateStr;
     return 'Date TBD';
@@ -65,7 +68,8 @@ class HomeScreen extends ConsumerWidget {
               const SizedBox(height: 10),
 
               // ── UPCOMING EVENTS ────────────────────────────────────────
-              _sectionHeader('Upcoming events'),
+              _sectionHeader('Upcoming events',
+                  onSeeAll: () => onNavigateToTab?.call(2)),
               const SizedBox(height: 16),
               SizedBox(height: 265, child: _buildEventsSection(ref)),
 
@@ -74,7 +78,8 @@ class HomeScreen extends ConsumerWidget {
               const SizedBox(height: 20),
 
               // ── LOCAL GROUPS ───────────────────────────────────────────
-              _sectionHeader('Local groups'),
+              _sectionHeader('Local groups',
+                  onSeeAll: () => onNavigateToTab?.call(3)),
               const SizedBox(height: 16),
               SizedBox(height: 235, child: _buildGroupsSection(ref)),
 
@@ -83,14 +88,15 @@ class HomeScreen extends ConsumerWidget {
               const SizedBox(height: 20),
 
               // ── PICKLEBALL COURTS ──────────────────────────────────────
-              _sectionHeader('Pickleball courts'),
+              _sectionHeader('Pickleball courts',
+                  onSeeAll: () => onNavigateToTab?.call(1)),
               const SizedBox(height: 16),
               SizedBox(height: 240, child: _buildCourtsSection(ref)),
 
               const SizedBox(height: 30),
 
               // ── WELCOME CARD ───────────────────────────────────────────
-              _buildWelcomeCard(),
+              _buildWelcomeCard(context),
 
               const SizedBox(height: 10),
             ],
@@ -101,7 +107,7 @@ class HomeScreen extends ConsumerWidget {
   }
 
   // ── Modern Welcome Card ───────────────────────────────────────────────────
-  Widget _buildWelcomeCard() {
+  Widget _buildWelcomeCard(BuildContext context) {
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
       decoration: BoxDecoration(
@@ -124,125 +130,82 @@ class HomeScreen extends ConsumerWidget {
       ),
       child: Stack(
         children: [
-          // ── Decorative circles ─────────────────────────────────────────
           Positioned(
-            right: -30,
-            top: -30,
-            child: Container(
-              width: 140,
-              height: 140,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.06),
-              ),
-            ),
+            right: -30, top: -30,
+            child: Container(width: 140, height: 140,
+                decoration: BoxDecoration(shape: BoxShape.circle,
+                    color: Colors.white.withOpacity(0.06))),
           ),
           Positioned(
-            right: 30,
-            bottom: -20,
-            child: Container(
-              width: 90,
-              height: 90,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.05),
-              ),
-            ),
+            right: 30, bottom: -20,
+            child: Container(width: 90, height: 90,
+                decoration: BoxDecoration(shape: BoxShape.circle,
+                    color: Colors.white.withOpacity(0.05))),
           ),
           Positioned(
-            left: -20,
-            bottom: 20,
-            child: Container(
-              width: 70,
-              height: 70,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withOpacity(0.04),
-              ),
-            ),
+            left: -20, bottom: 20,
+            child: Container(width: 70, height: 70,
+                decoration: BoxDecoration(shape: BoxShape.circle,
+                    color: Colors.white.withOpacity(0.04))),
           ),
-
-          // ── Content ────────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.fromLTRB(28, 32, 28, 28),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Pill badge
                 Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 5),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                      color: Colors.white.withOpacity(0.25),
-                      width: 1,
-                    ),
+                        color: Colors.white.withOpacity(0.25), width: 1),
                   ),
-                  child: const Text(
-                    '🎾  Japan\'s #1 Pickleball App',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.3,
-                    ),
-                  ),
+                  child: const Text('🎾  Japan\'s #1 Pickleball App',
+                      style: TextStyle(fontSize: 11.5, color: Colors.white,
+                          fontWeight: FontWeight.w600, letterSpacing: 0.3)),
                 ),
-
                 const SizedBox(height: 18),
-
-                // Headline
-                const Text(
-                  'Welcome to\nPikuru!',
-                  style: TextStyle(
-                    fontSize: 34,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                    height: 1.15,
-                    letterSpacing: -1.0,
-                  ),
-                ),
-
+                const Text('Welcome to\nPikuru!',
+                    style: TextStyle(fontSize: 34, fontWeight: FontWeight.w800,
+                        color: Colors.white, height: 1.15,
+                        letterSpacing: -1.0)),
                 const SizedBox(height: 10),
-
-                // Subtitle
                 Text(
                   'Find courts, join events, and connect\nwith players across Japan.',
-                  style: TextStyle(
-                    fontSize: 14.5,
-                    color: Colors.white.withOpacity(0.75),
-                    height: 1.55,
-                    letterSpacing: 0.1,
-                  ),
+                  style: TextStyle(fontSize: 14.5,
+                      color: Colors.white.withOpacity(0.75),
+                      height: 1.55, letterSpacing: 0.1),
                 ),
-
                 const SizedBox(height: 24),
 
-                // ── Quick action strips ──────────────────────────────
+                // ── Quick action strips ──────────────────────────────────
                 _quickActionStrip(
                   icon: Icons.location_on_rounded,
                   label: 'Find courts near you',
-                  onTap: () {},
+                  onTap: () => onNavigateToTab?.call(1), // → Courts tab
                 ),
                 const SizedBox(height: 10),
                 _quickActionStrip(
                   icon: Icons.event_rounded,
                   label: 'Browse upcoming events',
-                  onTap: () {},
+                  onTap: () => onNavigateToTab?.call(2), // → Events tab
                 ),
-
                 const SizedBox(height: 20),
 
-                // Buttons row
+                // ── Action buttons ───────────────────────────────────────
                 Row(
                   children: [
                     Expanded(
                       child: _cardButton(
                         label: 'What is Pickleball?',
                         isPrimary: true,
-                        onTap: () {},
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const WhatIsPikuruScreen()),
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -250,7 +213,11 @@ class HomeScreen extends ConsumerWidget {
                       child: _cardButton(
                         label: 'About Pikuru',
                         isPrimary: false,
-                        onTap: () {},
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                              builder: (_) => const AboutPikuruScreen()),
+                        ),
                       ),
                     ),
                   ],
@@ -271,20 +238,18 @@ class HomeScreen extends ConsumerWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding:
+        const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.12),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
-            color: Colors.white.withOpacity(0.18),
-            width: 1,
-          ),
+              color: Colors.white.withOpacity(0.18), width: 1),
         ),
         child: Row(
           children: [
             Container(
-              width: 36,
-              height: 36,
+              width: 36, height: 36,
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(10),
@@ -293,21 +258,13 @@ class HomeScreen extends ConsumerWidget {
             ),
             const SizedBox(width: 14),
             Expanded(
-              child: Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.white,
-                  letterSpacing: -0.2,
-                ),
-              ),
+              child: Text(label,
+                  style: const TextStyle(fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white, letterSpacing: -0.2)),
             ),
-            Icon(
-              Icons.arrow_forward_ios_rounded,
-              color: Colors.white.withOpacity(0.5),
-              size: 14,
-            ),
+            Icon(Icons.arrow_forward_ios_rounded,
+                color: Colors.white.withOpacity(0.5), size: 14),
           ],
         ),
       ),
@@ -329,29 +286,17 @@ class HomeScreen extends ConsumerWidget {
           border: isPrimary
               ? null
               : Border.all(
-            color: Colors.white.withOpacity(0.3),
-            width: 1.2,
-          ),
+              color: Colors.white.withOpacity(0.3), width: 1.2),
           boxShadow: isPrimary
-              ? [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.12),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ]
+              ? [BoxShadow(color: Colors.black.withOpacity(0.12),
+              blurRadius: 12, offset: const Offset(0, 4))]
               : null,
         ),
-        child: Text(
-          label,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-            color: isPrimary ? AppColors.primary : Colors.white,
-            letterSpacing: -0.2,
-          ),
-        ),
+        child: Text(label,
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
+                color: isPrimary ? AppColors.primary : Colors.white,
+                letterSpacing: -0.2)),
       ),
     );
   }
@@ -370,9 +315,7 @@ class HomeScreen extends ConsumerWidget {
             final data = events[index];
             final imageUrl = (data['event_pic'] ??
                 data['event_pic_thumbnail'] ??
-                data['event_image'] ??
-                '')
-                .toString();
+                data['event_image'] ?? '').toString();
             final title = (data['event_title'] ?? 'Untitled').toString();
             final formattedDateTime = _formatEventDateTime(data);
             final eventLocId = (data['event_loc_id'] ?? '').toString();
@@ -381,19 +324,19 @@ class HomeScreen extends ConsumerWidget {
                 final locationAsync =
                 ref.watch(locationResolverProvider(eventLocId));
                 return locationAsync.when(
-                  data: (location) => EventCard(
-                      imageUrl: imageUrl,
-                      title: title,
-                      dateTime: formattedDateTime,
-                      location: location),
-                  loading: () => EventCard(
-                      imageUrl: imageUrl,
-                      title: title,
-                      dateTime: formattedDateTime,
-                      location: '...'),
-                  error: (_, __) => EventCard(
-                      imageUrl: imageUrl,
-                      title: title,
+                  data: (location) => GestureDetector(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => EventDetailScreen(event: data),
+                      ),
+                    ),
+                    child: EventCard(imageUrl: imageUrl, title: title,
+                        dateTime: formattedDateTime, location: location),
+                  ),
+                  loading: () => EventCard(imageUrl: imageUrl, title: title,
+                      dateTime: formattedDateTime, location: '...'),
+                  error: (_, __) => EventCard(imageUrl: imageUrl, title: title,
                       dateTime: formattedDateTime,
                       location: 'Unknown location'),
                 );
@@ -425,10 +368,18 @@ class HomeScreen extends ConsumerWidget {
                 final locationAsync =
                 ref.watch(locationResolverProvider(orgLocId));
                 return locationAsync.when(
-                  data: (location) => GroupCard(
-                      imageUrl: (data['org_image'] ?? '').toString(),
-                      name: (data['org_name'] ?? 'Unnamed Group').toString(),
-                      location: location),
+                  data: (location) => GestureDetector(
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => GroupDetailScreen(group: data),
+                      ),
+                    ),
+                    child: GroupCard(
+                        imageUrl: (data['org_image'] ?? '').toString(),
+                        name: (data['org_name'] ?? 'Unnamed Group').toString(),
+                        location: location),
+                  ),
                   loading: () => GroupCard(
                       imageUrl: (data['org_image'] ?? '').toString(),
                       name: (data['org_name'] ?? 'Unnamed Group').toString(),
@@ -465,10 +416,13 @@ class HomeScreen extends ConsumerWidget {
             final location = city.isNotEmpty
                 ? (country.isNotEmpty ? '$city, $country' : city)
                 : 'Unknown location';
-            return CourtCard(
-              imageUrl: (data['loc_image'] ?? '').toString(),
-              name: (data['loc_name'] ?? 'Unnamed Court').toString(),
-              location: location,
+            return GestureDetector(
+              onTap: () => onNavigateToTab?.call(1),
+              child: CourtCard(
+                imageUrl: (data['loc_image'] ?? '').toString(),
+                name: (data['loc_name'] ?? 'Unnamed Court').toString(),
+                location: location,
+              ),
             );
           },
         );
@@ -479,19 +433,29 @@ class HomeScreen extends ConsumerWidget {
   }
 
   // ── UI Helpers ─────────────────────────────────────────────────────────────
-  Widget _sectionHeader(String title) {
+  Widget _sectionHeader(String title, {required VoidCallback onSeeAll}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(title,
             style: const TextStyle(
                 fontSize: 18, fontWeight: FontWeight.bold)),
-        const Text(
-          'See all',
-          style: TextStyle(
-            fontSize: 18,
-            color: AppColors.primary,
-            fontWeight: FontWeight.bold,
+        GestureDetector(
+          onTap: onSeeAll,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Text(
+              'See all',
+              style: TextStyle(
+                fontSize: 13,
+                color: AppColors.primary,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
           ),
         ),
       ],
@@ -500,6 +464,6 @@ class HomeScreen extends ConsumerWidget {
 
   Widget _divider() => Container(
     height: 1,
-    color: AppColors.primary.withOpacity(0.5),
+    color: const Color(0xFFEEEFF1),
   );
 }
