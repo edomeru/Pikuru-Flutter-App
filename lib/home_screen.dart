@@ -11,12 +11,105 @@ import 'package:pikuru/screens/about_pikuru_screen.dart';
 import 'package:pikuru/screens/event_detail_screen.dart';
 import 'package:pikuru/screens/group_detail_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 
-class HomeScreen extends ConsumerWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   final void Function(int tabIndex)? onNavigateToTab;
 
   const HomeScreen({super.key, this.onNavigateToTab});
+
+  @override
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends ConsumerState<HomeScreen> {
+  // ── Unread count streams ───────────────────────────────────────────────
+  int _unreadCount = 0;
+  int _individualUnread = 0;
+  int _groupUnread = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _listenUnread();
+  }
+
+  void _listenUnread() {
+    final me = FirebaseAuth.instance.currentUser;
+    if (me == null) return;
+
+    // ── Individual chats: unread = last_message_by != me
+    // Uses last_read map stored on the doc: last_read.{uid} = timestamp
+    FirebaseFirestore.instance
+        .collection('individual_chats')
+        .where('participants', arrayContains: me.uid)
+        .snapshots()
+        .listen((snap) {
+      int count = 0;
+      for (final doc in snap.docs) {
+        final d = doc.data();
+        final lastMsg = (d['last_message'] ?? '').toString();
+        if (lastMsg.isEmpty) continue;
+        if ((d['last_message_by'] ?? '') == me.uid) continue;
+
+        // Check last_read map: last_read.{myUid} stores when I last read
+        final lastReadMap = d['last_read'] as Map<String, dynamic>?;
+        final myLastRead = lastReadMap != null
+            ? (lastReadMap[me.uid] as Timestamp?)?.toDate()
+            : null;
+        final lastMsgAt = (d['last_message_at'] as Timestamp?)?.toDate();
+
+        if (lastMsgAt != null &&
+            (myLastRead == null || lastMsgAt.isAfter(myLastRead))) {
+          count++;
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _individualUnread = count;
+          _unreadCount = _individualUnread + _groupUnread;
+        });
+      }
+    });
+
+    // ── Group chats: check participants subcollection last_read_at
+    FirebaseFirestore.instance
+        .collection('group_chats')
+        .snapshots()
+        .listen((snap) async {
+      int count = 0;
+      for (final doc in snap.docs) {
+        final d = doc.data();
+        if ((d['last_message'] ?? '').toString().isEmpty) continue;
+        if ((d['last_message_by'] ?? '') == me.uid) continue;
+        try {
+          final pDoc = await FirebaseFirestore.instance
+              .collection('group_chats')
+              .doc(doc.id)
+              .collection('participants')
+              .doc(me.uid)
+              .get();
+          if (!pDoc.exists) continue;
+          final lastRead =
+          (pDoc.data()?['last_read_at'] as Timestamp?)?.toDate();
+          final lastMsg = (d['last_message_at'] as Timestamp?)?.toDate();
+          if (lastMsg != null &&
+              (lastRead == null || lastMsg.isAfter(lastRead))) {
+            count++;
+          }
+        } catch (_) {
+          continue;
+        }
+      }
+      if (mounted) {
+        setState(() {
+          _groupUnread = count;
+          _unreadCount = _individualUnread + _groupUnread;
+        });
+      }
+    });
+  }
 
   String _formatEventDateTime(Map<String, dynamic> data) {
     final rawDate = data['event_date'];
@@ -37,7 +130,7 @@ class HomeScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -49,12 +142,62 @@ class HomeScreen extends ConsumerWidget {
         ),
         centerTitle: true,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.chat_bubble_outline,
-                color: AppColors.primary),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const ChatsScreen()),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: GestureDetector(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ChatsScreen()),
+              ).then((_) {
+                // Refresh badge count when returning from chat
+                if (mounted) _listenUnread();
+              }),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    width: 42, height: 42,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.chat_bubble_outline_rounded,
+                        color: AppColors.primary, size: 22),
+                  ),
+                  if (_unreadCount > 0)
+                    Positioned(
+                      top: -4, right: -4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 1),
+                        constraints: const BoxConstraints(
+                            minWidth: 18, minHeight: 18),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade500,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.white, width: 1.5),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.red.withOpacity(0.4),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Text(
+                          _unreadCount > 99 ? '99+' : '$_unreadCount',
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            height: 1.2,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
             ),
           ),
         ],
@@ -69,7 +212,7 @@ class HomeScreen extends ConsumerWidget {
 
               // ── UPCOMING EVENTS ────────────────────────────────────────
               _sectionHeader('Upcoming events',
-                  onSeeAll: () => onNavigateToTab?.call(2)),
+                  onSeeAll: () => widget.onNavigateToTab?.call(2)),
               const SizedBox(height: 16),
               SizedBox(height: 265, child: _buildEventsSection(ref)),
 
@@ -79,7 +222,7 @@ class HomeScreen extends ConsumerWidget {
 
               // ── LOCAL GROUPS ───────────────────────────────────────────
               _sectionHeader('Local groups',
-                  onSeeAll: () => onNavigateToTab?.call(3)),
+                  onSeeAll: () => widget.onNavigateToTab?.call(3)),
               const SizedBox(height: 16),
               SizedBox(height: 235, child: _buildGroupsSection(ref)),
 
@@ -89,7 +232,7 @@ class HomeScreen extends ConsumerWidget {
 
               // ── PICKLEBALL COURTS ──────────────────────────────────────
               _sectionHeader('Pickleball courts',
-                  onSeeAll: () => onNavigateToTab?.call(1)),
+                  onSeeAll: () => widget.onNavigateToTab?.call(1)),
               const SizedBox(height: 16),
               SizedBox(height: 240, child: _buildCourtsSection(ref)),
 
@@ -184,13 +327,13 @@ class HomeScreen extends ConsumerWidget {
                 _quickActionStrip(
                   icon: Icons.location_on_rounded,
                   label: 'Find courts near you',
-                  onTap: () => onNavigateToTab?.call(1), // → Courts tab
+                  onTap: () => widget.onNavigateToTab?.call(1), // → Courts tab
                 ),
                 const SizedBox(height: 10),
                 _quickActionStrip(
                   icon: Icons.event_rounded,
                   label: 'Browse upcoming events',
-                  onTap: () => onNavigateToTab?.call(2), // → Events tab
+                  onTap: () => widget.onNavigateToTab?.call(2), // → Events tab
                 ),
                 const SizedBox(height: 20),
 
@@ -417,7 +560,7 @@ class HomeScreen extends ConsumerWidget {
                 ? (country.isNotEmpty ? '$city, $country' : city)
                 : 'Unknown location';
             return GestureDetector(
-              onTap: () => onNavigateToTab?.call(1),
+              onTap: () => widget.onNavigateToTab?.call(1),
               child: CourtCard(
                 imageUrl: (data['loc_image'] ?? '').toString(),
                 name: (data['loc_name'] ?? 'Unnamed Court').toString(),

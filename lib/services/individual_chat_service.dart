@@ -37,6 +37,9 @@ class IndividualChatService {
         'last_message': '',
         'last_message_at': FieldValue.serverTimestamp(),
         'last_message_by': '',
+        'last_read': {
+          me.uid: FieldValue.serverTimestamp(),
+        },
       });
     } else {
       await chatRef.update({
@@ -47,7 +50,20 @@ class IndividualChatService {
       });
     }
 
+    // Mark as read whenever you open the chat
+    await markAsRead(chatId);
     return chatId;
+  }
+
+  // ── Call in initState of IndividualChatScreen ─────────────────────────
+  static Future<void> markAsRead(String chatId) async {
+    final me = _auth.currentUser;
+    if (me == null) return;
+    try {
+      await _db.collection('individual_chats').doc(chatId).update({
+        'last_read.${me.uid}': FieldValue.serverTimestamp(),
+      });
+    } catch (_) {}
   }
 
   static Future<void> sendMessage(String chatId, String text) async {
@@ -69,6 +85,7 @@ class IndividualChatService {
       'last_message': trimmed,
       'last_message_at': FieldValue.serverTimestamp(),
       'last_message_by': me.uid,
+      'last_read.${me.uid}': FieldValue.serverTimestamp(),
     });
   }
 
