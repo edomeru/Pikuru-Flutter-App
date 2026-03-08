@@ -5,6 +5,7 @@ import 'package:pikuru/loginpage.dart';
 import 'package:pikuru/screens/resources_screen.dart';
 import 'package:pikuru/screens/edit_profile_screen.dart';
 import 'package:pikuru/screens/settings_screen.dart';
+import 'package:pikuru/screens/event_history_screen.dart'; // ← added
 
 class AccountScreen extends StatefulWidget {
   const AccountScreen({super.key});
@@ -25,30 +26,13 @@ class _AccountScreenState extends State<AccountScreen>
   @override
   void initState() {
     super.initState();
-
-    _fadeController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    )..forward();
-    _fadeAnim =
-        CurvedAnimation(parent: _fadeController, curve: Curves.easeOut);
-
-    _slideController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 700),
-    )..forward();
-    _slideAnim = Tween<Offset>(
-      begin: const Offset(0, 0.08),
-      end: Offset.zero,
-    ).animate(
-        CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic));
-
-    _avatarController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    )..forward();
-    _avatarAnim = CurvedAnimation(
-        parent: _avatarController, curve: Curves.easeOutBack);
+    _fadeController = AnimationController(vsync: this, duration: const Duration(milliseconds: 800))..forward();
+    _fadeAnim = CurvedAnimation(parent: _fadeController, curve: Curves.easeOut);
+    _slideController = AnimationController(vsync: this, duration: const Duration(milliseconds: 700))..forward();
+    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.08), end: Offset.zero)
+        .animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic));
+    _avatarController = AnimationController(vsync: this, duration: const Duration(milliseconds: 600))..forward();
+    _avatarAnim = CurvedAnimation(parent: _avatarController, curve: Curves.easeOutBack);
   }
 
   @override
@@ -61,8 +45,6 @@ class _AccountScreenState extends State<AccountScreen>
 
   @override
   Widget build(BuildContext context) {
-    // ✅ StreamBuilder listens to auth state — updates instantly when
-    // email changes, user reloads, or signs back in after token expiry.
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snapshot) {
@@ -73,7 +55,6 @@ class _AccountScreenState extends State<AccountScreen>
           backgroundColor: const Color(0xFFF4F9F5),
           body: CustomScrollView(
             slivers: [
-              // ── Hero App Bar ────────────────────────────────────
               SliverAppBar(
                 expandedHeight: 230,
                 pinned: true,
@@ -96,26 +77,12 @@ class _AccountScreenState extends State<AccountScreen>
                           ),
                         ),
                       ),
-                      Positioned(
-                        top: -50, right: -30,
-                        child: Container(
-                          width: 200, height: 200,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.white.withOpacity(0.06),
-                          ),
-                        ),
-                      ),
-                      Positioned(
-                        bottom: -30, left: -20,
-                        child: Container(
-                          width: 140, height: 140,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: Colors.white.withOpacity(0.05),
-                          ),
-                        ),
-                      ),
+                      Positioned(top: -50, right: -30,
+                          child: Container(width: 200, height: 200,
+                              decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.06)))),
+                      Positioned(bottom: -30, left: -20,
+                          child: Container(width: 140, height: 140,
+                              decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.05)))),
                       Positioned(
                         bottom: 24, left: 0, right: 0,
                         child: FadeTransition(
@@ -128,47 +95,23 @@ class _AccountScreenState extends State<AccountScreen>
                                   width: 88, height: 88,
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
-                                    border: Border.all(
-                                        color: Colors.white, width: 3),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withOpacity(0.2),
-                                        blurRadius: 14,
-                                        offset: const Offset(0, 4),
-                                      ),
-                                    ],
+                                    border: Border.all(color: Colors.white, width: 3),
+                                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 14, offset: const Offset(0, 4))],
                                   ),
                                   child: ClipOval(
                                     child: user?.photoURL != null
-                                        ? Image.network(
-                                      user!.photoURL!,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) =>
-                                          _avatarPlaceholder(),
-                                    )
+                                        ? Image.network(user!.photoURL!, fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => _avatarPlaceholder())
                                         : _avatarPlaceholder(),
                                   ),
                                 ),
                               ),
                               const SizedBox(height: 10),
-                              Text(
-                                displayName,
-                                style: const TextStyle(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white,
-                                  letterSpacing: -0.3,
-                                ),
-                              ),
+                              Text(displayName,
+                                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: -0.3)),
                               const SizedBox(height: 3),
-                              // ✅ Now reads from live stream — always current
-                              Text(
-                                user?.email ?? '',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: Colors.white.withOpacity(0.7),
-                                ),
-                              ),
+                              Text(user?.email ?? '',
+                                  style: TextStyle(fontSize: 13, color: Colors.white.withOpacity(0.7))),
                             ],
                           ),
                         ),
@@ -178,15 +121,13 @@ class _AccountScreenState extends State<AccountScreen>
                 ),
               ),
 
-              // ── Body ───────────────────────────────────────────
               SliverToBoxAdapter(
                 child: FadeTransition(
                   opacity: _fadeAnim,
                   child: SlideTransition(
                     position: _slideAnim,
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 24),
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -195,73 +136,54 @@ class _AccountScreenState extends State<AccountScreen>
 
                           const _SectionHeader(label: 'Account'),
                           const SizedBox(height: 12),
-                          _MenuCard(
-                            items: [
-                              _MenuItem(
-                                icon: Icons.person_outline_rounded,
-                                label: 'Edit Profile',
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                    const EditProfileScreen(),
-                                  ),
-                                ),
-                              ),
-                              _MenuItem(
-                                icon: Icons.history_rounded,
-                                label: 'Events History',
-                                onTap: () {},
-                              ),
-                              _MenuItem(
-                                icon: Icons.library_books_rounded,
-                                label: 'Resources',
-                                isLast: true,
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (_) =>
-                                      const ResourcesScreen()),
-                                ),
-                              ),
-                            ],
-                          ),
+                          _MenuCard(items: [
+                            _MenuItem(
+                              icon: Icons.person_outline_rounded,
+                              label: 'Edit Profile',
+                              onTap: () => Navigator.push(context,
+                                  MaterialPageRoute(builder: (_) => const EditProfileScreen())),
+                            ),
+                            _MenuItem(
+                              icon: Icons.history_rounded,
+                              label: 'Events History',
+                              // ── wired to EventHistoryScreen ──
+                              onTap: () => Navigator.push(context,
+                                  MaterialPageRoute(builder: (_) => const EventHistoryScreen())),
+                            ),
+                            _MenuItem(
+                              icon: Icons.library_books_rounded,
+                              label: 'Resources',
+                              isLast: true,
+                              onTap: () => Navigator.push(context,
+                                  MaterialPageRoute(builder: (_) => const ResourcesScreen())),
+                            ),
+                          ]),
 
                           const SizedBox(height: 20),
-
                           const _SectionHeader(label: 'Preferences'),
                           const SizedBox(height: 12),
-                          _MenuCard(
-                            items: [
-                              _MenuItem(
-                                icon: Icons.settings_rounded,
-                                label: 'Settings',
-                                isLast: true,
-                                onTap: () => Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (_) =>
-                                      const SettingsScreen()),
-                                ),
-                              ),
-                            ],
-                          ),
+                          _MenuCard(items: [
+                            _MenuItem(
+                              icon: Icons.settings_rounded,
+                              label: 'Settings',
+                              isLast: true,
+                              onTap: () => Navigator.push(context,
+                                  MaterialPageRoute(builder: (_) => const SettingsScreen())),
+                            ),
+                          ]),
 
                           const SizedBox(height: 20),
-
                           const _SectionHeader(label: 'Session'),
                           const SizedBox(height: 12),
-                          _MenuCard(
-                            items: [
-                              _MenuItem(
-                                icon: Icons.logout_rounded,
-                                label: 'Sign Out',
-                                isDestructive: true,
-                                isLast: true,
-                                onTap: () => _handleSignOut(context),
-                              ),
-                            ],
-                          ),
+                          _MenuCard(items: [
+                            _MenuItem(
+                              icon: Icons.logout_rounded,
+                              label: 'Sign Out',
+                              isDestructive: true,
+                              isLast: true,
+                              onTap: () => _handleSignOut(context),
+                            ),
+                          ]),
 
                           const SizedBox(height: 40),
                         ],
@@ -277,68 +199,39 @@ class _AccountScreenState extends State<AccountScreen>
     );
   }
 
-  Widget _avatarPlaceholder() {
-    return Container(
-      color: AppColors.primary.withOpacity(0.2),
-      child: Center(
-        child: Icon(Icons.person_rounded,
-            size: 44, color: Colors.white.withOpacity(0.9)),
-      ),
-    );
-  }
+  Widget _avatarPlaceholder() => Container(
+    color: AppColors.primary.withOpacity(0.2),
+    child: Center(child: Icon(Icons.person_rounded, size: 44, color: Colors.white.withOpacity(0.9))),
+  );
 
   Future<void> _handleSignOut(BuildContext context) async {
     final shouldSignOut = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape:
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         backgroundColor: Colors.white,
-        title: const Text(
-          'Sign Out?',
-          style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          textAlign: TextAlign.center,
-        ),
-        content: const Text(
-          'Are you sure you want to sign out of your account?',
-          textAlign: TextAlign.center,
-          style:
-          TextStyle(fontSize: 14, color: Colors.black54, height: 1.5),
-        ),
+        title: const Text('Sign Out?', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold), textAlign: TextAlign.center),
+        content: const Text('Are you sure you want to sign out of your account?',
+            textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: Colors.black54, height: 1.5)),
         actionsAlignment: MainAxisAlignment.spaceEvenly,
-        actionsPadding:
-        const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         actions: [
           OutlinedButton(
             onPressed: () => Navigator.of(ctx).pop(false),
             style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 28, vertical: 12),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-              side: BorderSide(color: Colors.grey.shade300),
-            ),
-            child: const Text('Cancel',
-                style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black54)),
+                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                side: BorderSide(color: Colors.grey.shade300)),
+            child: const Text('Cancel', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Colors.black54)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 28, vertical: 12),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-              elevation: 0,
-            ),
-            child: const Text('Sign Out',
-                style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white)),
+                backgroundColor: AppColors.primary,
+                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 0),
+            child: const Text('Sign Out', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.white)),
           ),
         ],
       ),
@@ -347,11 +240,8 @@ class _AccountScreenState extends State<AccountScreen>
     if (shouldSignOut == true) {
       await FirebaseAuth.instance.signOut();
       if (context.mounted) {
-        Navigator.pushAndRemoveUntil(
-          context,
-          MaterialPageRoute(builder: (_) => const LoginScreen()),
-              (route) => false,
-        );
+        Navigator.pushAndRemoveUntil(context,
+            MaterialPageRoute(builder: (_) => const LoginScreen()), (route) => false);
       }
     }
   }
@@ -371,24 +261,14 @@ class _GroupsJoinedBanner extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.primary.withOpacity(0.15)),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withOpacity(0.07),
-            blurRadius: 14,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        boxShadow: [BoxShadow(color: AppColors.primary.withOpacity(0.07), blurRadius: 14, offset: const Offset(0, 4))],
       ),
       child: Row(
         children: [
           Container(
             width: 52, height: 52,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.10),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: const Icon(Icons.groups_rounded,
-                color: AppColors.primary, size: 28),
+            decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.10), borderRadius: BorderRadius.circular(14)),
+            child: const Icon(Icons.groups_rounded, color: AppColors.primary, size: 28),
           ),
           const SizedBox(width: 16),
           Expanded(
@@ -396,16 +276,10 @@ class _GroupsJoinedBanner extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('Groups Joined',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.black54,
-                        letterSpacing: 0.1)),
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: Colors.black54, letterSpacing: 0.1)),
                 const SizedBox(height: 2),
                 Text(
-                  groupsCount == 0
-                      ? 'No groups yet'
-                      : '$groupsCount group${groupsCount == 1 ? '' : 's'}',
+                  groupsCount == 0 ? 'No groups yet' : '$groupsCount group${groupsCount == 1 ? '' : 's'}',
                   style: TextStyle(
                     fontSize: groupsCount == 0 ? 15 : 20,
                     fontWeight: FontWeight.w800,
@@ -417,22 +291,14 @@ class _GroupsJoinedBanner extends StatelessWidget {
             ),
           ),
           Container(
-            padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(20),
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.08), borderRadius: BorderRadius.circular(20)),
             child: const Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.add_rounded, color: AppColors.primary, size: 15),
                 SizedBox(width: 4),
-                Text('Join',
-                    style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.primary)),
+                Text('Join', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.primary)),
               ],
             ),
           ),
@@ -451,20 +317,10 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Container(
-          width: 4, height: 18,
-          decoration: BoxDecoration(
-            color: AppColors.primary,
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
+        Container(width: 4, height: 18,
+            decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(2))),
         const SizedBox(width: 8),
-        Text(label,
-            style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-                color: AppColors.primary,
-                letterSpacing: 0.1)),
+        Text(label, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.primary, letterSpacing: 0.1)),
       ],
     );
   }
@@ -477,13 +333,7 @@ class _MenuItem {
   final bool isDestructive;
   final VoidCallback onTap;
 
-  const _MenuItem({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-    this.isLast = false,
-    this.isDestructive = false,
-  });
+  const _MenuItem({required this.icon, required this.label, required this.onTap, this.isLast = false, this.isDestructive = false});
 }
 
 class _MenuCard extends StatelessWidget {
@@ -497,17 +347,9 @@ class _MenuCard extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: AppColors.primary.withOpacity(0.12)),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.primary.withOpacity(0.06),
-            blurRadius: 14,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        boxShadow: [BoxShadow(color: AppColors.primary.withOpacity(0.06), blurRadius: 14, offset: const Offset(0, 4))],
       ),
-      child: Column(
-        children: items.map((item) => _MenuTile(item: item)).toList(),
-      ),
+      child: Column(children: items.map((item) => _MenuTile(item: item)).toList()),
     );
   }
 }
@@ -518,56 +360,32 @@ class _MenuTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color =
-    item.isDestructive ? Colors.red.shade400 : AppColors.primary;
-
+    final color = item.isDestructive ? Colors.red.shade400 : AppColors.primary;
     return Column(
       children: [
         InkWell(
           onTap: item.onTap,
-          borderRadius: BorderRadius.vertical(
-            bottom:
-            item.isLast ? const Radius.circular(16) : Radius.zero,
-          ),
+          borderRadius: BorderRadius.vertical(bottom: item.isLast ? const Radius.circular(16) : Radius.zero),
           child: Padding(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 16, vertical: 15),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
             child: Row(
               children: [
                 Container(
                   width: 38, height: 38,
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(0.10),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+                  decoration: BoxDecoration(color: color.withOpacity(0.10), borderRadius: BorderRadius.circular(10)),
                   child: Icon(item.icon, color: color, size: 20),
                 ),
                 const SizedBox(width: 14),
-                Expanded(
-                  child: Text(
-                    item.label,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: item.isDestructive
-                          ? Colors.red.shade400
-                          : const Color(0xFF1A1A1A),
-                    ),
-                  ),
-                ),
-                Icon(Icons.chevron_right_rounded,
-                    color: color.withOpacity(0.4), size: 20),
+                Expanded(child: Text(item.label,
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
+                        color: item.isDestructive ? Colors.red.shade400 : const Color(0xFF1A1A1A)))),
+                Icon(Icons.chevron_right_rounded, color: color.withOpacity(0.4), size: 20),
               ],
             ),
           ),
         ),
         if (!item.isLast)
-          Divider(
-            height: 1,
-            thickness: 1,
-            indent: 68,
-            color: AppColors.primary.withOpacity(0.08),
-          ),
+          Divider(height: 1, thickness: 1, indent: 68, color: AppColors.primary.withOpacity(0.08)),
       ],
     );
   }
