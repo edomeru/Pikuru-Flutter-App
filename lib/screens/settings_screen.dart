@@ -215,7 +215,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                           icon: Icons.chat_bubble_outline_rounded,
                           label: 'Contact Us',
                           isLast: true,
-                          onTap: () {},
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => const ContactUsScreen()),
+                          ),
                         ),
                       ]),
 
