@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:pikuru/theme/material.dart';
+import 'package:pikuru/screens/change_password_verification_screen.dart';
 
 class ChangePasswordScreen extends StatefulWidget {
   const ChangePasswordScreen({super.key});
@@ -20,7 +21,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen>
   bool _showCurrent = false;
   bool _showNew = false;
   bool _showConfirm = false;
-  bool _isSubmitting = false;
+  bool _isVerifying = false; // re-auth in progress
 
   late final AnimationController _fadeController;
   late final Animation<double> _fadeAnim;
@@ -33,14 +34,15 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen>
     _fadeController = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 800))
       ..forward();
-    _fadeAnim = CurvedAnimation(parent: _fadeController, curve: Curves.easeOut);
-
+    _fadeAnim =
+        CurvedAnimation(parent: _fadeController, curve: Curves.easeOut);
     _slideController = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 700))
       ..forward();
-    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.08), end: Offset.zero)
-        .animate(CurvedAnimation(
-        parent: _slideController, curve: Curves.easeOutCubic));
+    _slideAnim =
+        Tween<Offset>(begin: const Offset(0, 0.08), end: Offset.zero).animate(
+            CurvedAnimation(
+                parent: _slideController, curve: Curves.easeOutCubic));
   }
 
   @override
@@ -53,121 +55,90 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen>
     super.dispose();
   }
 
+  // ── Step 1: re-authenticate, then navigate to OTP screen ─────────
   Future<void> _submit() async {
-    if (!_formKey.currentState!.validate()) return;
+    // Manually trigger validation and show errors
+    final valid = _formKey.currentState!.validate();
+    if (!valid) return;
+
     HapticFeedback.lightImpact();
-    setState(() => _isSubmitting = true);
+    setState(() => _isVerifying = true);
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      setState(() => _isVerifying = false);
+      _showError('You are not logged in. Please sign in again.');
+      return;
+    }
+
+    final email = user.email;
+    if (email == null || email.isEmpty) {
+      setState(() => _isVerifying = false);
+      _showError('No email found on your account.');
+      return;
+    }
 
     try {
-      final user = FirebaseAuth.instance.currentUser!;
-      final email = user.email!;
-
-      // Re-authenticate with current password
+      // Re-authenticate to verify current password is correct
       final credential = EmailAuthProvider.credential(
         email: email,
         password: _currentPwController.text,
       );
       await user.reauthenticateWithCredential(credential);
-
-      // Update password
-      await user.updatePassword(_newPwController.text);
-
-      setState(() => _isSubmitting = false);
-      HapticFeedback.mediumImpact();
-
-      if (mounted) {
-        _showSuccessDialog();
-      }
     } on FirebaseAuthException catch (e) {
-      setState(() => _isSubmitting = false);
-      String msg = 'Failed to update password. Please try again.';
-      if (e.code == 'wrong-password' || e.code == 'invalid-credential') {
-        msg = 'Current password is incorrect.';
-      } else if (e.code == 'weak-password') {
-        msg = 'New password is too weak. Use at least 6 characters.';
+      setState(() => _isVerifying = false);
+      if (e.code == 'wrong-password' ||
+          e.code == 'invalid-credential' ||
+          e.code == 'user-not-found') {
+        _showError('Current password is incorrect.');
       } else if (e.code == 'requires-recent-login') {
-        msg = 'Please sign out and sign back in before changing your password.';
+        _showError(
+            'Please sign out and sign back in before changing your password.');
+      } else {
+        _showError('Verification failed: ${e.message ?? e.code}');
       }
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(msg),
-            backgroundColor: Colors.red.shade400,
-            behavior: SnackBarBehavior.floating,
-            shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-          ),
-        );
-      }
+      return;
+    } catch (e) {
+      setState(() => _isVerifying = false);
+      _showError('Unexpected error: $e');
+      return;
     }
-  }
 
-  void _showSuccessDialog() {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 72,
-                height: 72,
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.10),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.lock_open_rounded,
-                    color: AppColors.primary, size: 36),
-              ),
-              const SizedBox(height: 20),
-              const Text('Password Updated!',
-                  style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF0D0D0D))),
-              const SizedBox(height: 10),
-              Text(
-                'Your password has been changed successfully.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.black.withOpacity(0.45),
-                    height: 1.5),
-              ),
-              const SizedBox(height: 28),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context); // close dialog
-                    Navigator.pop(context); // back to settings
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
-                    elevation: 0,
-                  ),
-                  child: const Text('Done',
-                      style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white)),
-                ),
-              ),
-            ],
-          ),
+    setState(() => _isVerifying = false);
+
+    if (!mounted) return;
+
+    final displayName = (user.displayName ?? '').trim();
+    final firstName =
+    displayName.isNotEmpty ? displayName.split(' ').first : 'User';
+
+    // Navigate to OTP verification screen
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChangePasswordVerificationScreen(
+          email: email,
+          firstName: firstName,
+          newPassword: _newPwController.text,
         ),
       ),
     );
   }
 
-  // Password strength helpers
+  void _showError(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: Colors.red.shade400,
+        behavior: SnackBarBehavior.floating,
+        shape:
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  // ── Password strength helpers ──────────────────────────────────────
   double _strength(String pw) {
     if (pw.isEmpty) return 0;
     double s = 0;
@@ -201,7 +172,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen>
       backgroundColor: const Color(0xFFF4F9F5),
       body: CustomScrollView(
         slivers: [
-          // ── Hero App Bar ──────────────────────────────────────────
+          // ── Hero App Bar ────────────────────────────────────────
           SliverAppBar(
             expandedHeight: 160,
             pinned: true,
@@ -274,7 +245,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen>
                                   letterSpacing: -0.3)),
                           const SizedBox(height: 4),
                           Text(
-                            'Choose a strong, unique password',
+                            'We\'ll send a verification code to confirm',
                             style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.white.withOpacity(0.72)),
@@ -300,16 +271,48 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // ── Form card ─────────────────────────────
+                        // ── Info banner ────────────────────────
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withOpacity(0.06),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                                color: Colors.blue.withOpacity(0.2)),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.verified_user_rounded,
+                                  size: 18,
+                                  color: Colors.blue.shade400),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'After setting your new password, we\'ll send a verification code to your email to confirm the change.',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.blue.shade700,
+                                      height: 1.4),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 16),
+
+                        // ── Form card ─────────────────────────
                         Container(
                           decoration: BoxDecoration(
                             color: Colors.white,
                             borderRadius: BorderRadius.circular(20),
                             border: Border.all(
-                                color: AppColors.primary.withOpacity(0.10)),
+                                color:
+                                AppColors.primary.withOpacity(0.10)),
                             boxShadow: [
                               BoxShadow(
-                                  color: AppColors.primary.withOpacity(0.06),
+                                  color:
+                                  AppColors.primary.withOpacity(0.06),
                                   blurRadius: 16,
                                   offset: const Offset(0, 4)),
                             ],
@@ -329,7 +332,8 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen>
                                 visible: _showCurrent,
                                 onToggle: () => setState(
                                         () => _showCurrent = !_showCurrent),
-                                validator: (v) => (v == null || v.isEmpty)
+                                validator: (v) =>
+                                (v == null || v.isEmpty)
                                     ? 'Required'
                                     : null,
                               ),
@@ -374,8 +378,10 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen>
                                           backgroundColor:
                                           Colors.grey.shade200,
                                           valueColor:
-                                          AlwaysStoppedAnimation<Color>(
-                                              _strengthColor(s)),
+                                          AlwaysStoppedAnimation<
+                                              Color>(
+                                            _strengthColor(s),
+                                          ),
                                         ),
                                       ),
                                     ),
@@ -396,7 +402,8 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen>
                               // Confirm password
                               _FieldLabel(
                                   label: 'Confirm New Password',
-                                  icon: Icons.check_circle_outline_rounded),
+                                  icon:
+                                  Icons.check_circle_outline_rounded),
                               const SizedBox(height: 8),
                               _PasswordField(
                                 controller: _confirmPwController,
@@ -427,14 +434,15 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen>
                             color: AppColors.primary.withOpacity(0.06),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                                color: AppColors.primary.withOpacity(0.12)),
+                                color:
+                                AppColors.primary.withOpacity(0.12)),
                           ),
                           child: Row(
                             children: [
                               Icon(Icons.tips_and_updates_rounded,
                                   size: 16,
-                                  color:
-                                  AppColors.primary.withOpacity(0.7)),
+                                  color: AppColors.primary
+                                      .withOpacity(0.7)),
                               const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
@@ -457,29 +465,31 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen>
                           width: double.infinity,
                           height: 56,
                           child: ElevatedButton(
-                            onPressed: _isSubmitting ? null : _submit,
+                            onPressed: _isVerifying ? null : _submit,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.primary,
                               disabledBackgroundColor:
                               AppColors.primary.withOpacity(0.5),
                               shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16)),
+                                  borderRadius:
+                                  BorderRadius.circular(16)),
                               elevation: 0,
                             ),
-                            child: _isSubmitting
+                            child: _isVerifying
                                 ? const SizedBox(
                                 width: 22,
                                 height: 22,
                                 child: CircularProgressIndicator(
-                                    color: Colors.white, strokeWidth: 2.5))
+                                    color: Colors.white,
+                                    strokeWidth: 2.5))
                                 : const Row(
                               mainAxisAlignment:
                               MainAxisAlignment.center,
                               children: [
-                                Icon(Icons.lock_rounded,
+                                Icon(Icons.send_rounded,
                                     color: Colors.white, size: 18),
                                 SizedBox(width: 10),
-                                Text('Update Password',
+                                Text('Send Verification Code',
                                     style: TextStyle(
                                         fontSize: 16,
                                         fontWeight: FontWeight.w700,
@@ -503,7 +513,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen>
   }
 }
 
-// ── Field Label ───────────────────────────────────────────────────────────────
+// ── Field Label ───────────────────────────────────────────────────────
 class _FieldLabel extends StatelessWidget {
   final String label;
   final IconData icon;
@@ -526,7 +536,7 @@ class _FieldLabel extends StatelessWidget {
   }
 }
 
-// ── Password Field ────────────────────────────────────────────────────────────
+// ── Password Field ────────────────────────────────────────────────────
 class _PasswordField extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
@@ -554,8 +564,8 @@ class _PasswordField extends StatelessWidget {
       style: const TextStyle(fontSize: 15, color: Color(0xFF0D0D0D)),
       decoration: InputDecoration(
         hintText: hint,
-        hintStyle:
-        TextStyle(fontSize: 14, color: Colors.black.withOpacity(0.3)),
+        hintStyle: TextStyle(
+            fontSize: 14, color: Colors.black.withOpacity(0.3)),
         filled: true,
         fillColor: const Color(0xFFF7F9F7),
         contentPadding:
