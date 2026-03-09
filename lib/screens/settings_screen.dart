@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/utils/app_language.dart';
 import 'package:pikuru/screens/language_screen.dart';
 import 'package:pikuru/screens/contact_us_screen.dart';
 import 'package:pikuru/screens/change_email_screen.dart';
+import 'package:pikuru/screens/change_password_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -18,6 +20,11 @@ class _SettingsScreenState extends State<SettingsScreen>
   late final Animation<double> _fadeAnim;
   late final AnimationController _slideController;
   late final Animation<Offset> _slideAnim;
+
+  bool get _isGoogleUser {
+    final user = FirebaseAuth.instance.currentUser;
+    return user?.providerData.any((p) => p.providerId == 'google.com') ?? false;
+  }
 
   @override
   void initState() {
@@ -47,8 +54,72 @@ class _SettingsScreenState extends State<SettingsScreen>
     super.dispose();
   }
 
+  void _showGoogleAccountDialog(String action) {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Google icon badge
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.08),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.g_mobiledata_rounded,
+                    color: Colors.blue, size: 40),
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Google Account',
+                style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF0D0D0D)),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'You signed in with Google. To $action, please visit your Google account settings at myaccount.google.com.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.black.withOpacity(0.5),
+                    height: 1.55),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 46,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                    elevation: 0,
+                  ),
+                  child: const Text('Got it',
+                      style: TextStyle(
+                          color: Colors.white, fontWeight: FontWeight.w700)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isGoogle = _isGoogleUser;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF4F9F5),
       body: CustomScrollView(
@@ -158,21 +229,72 @@ class _SettingsScreenState extends State<SettingsScreen>
                       // ── Account ───────────────────────────────
                       const _SectionHeader(label: 'Account'),
                       const SizedBox(height: 12),
+
+                      // Google badge shown when signed in with Google
+                      if (isGoogle) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: Colors.blue.withOpacity(0.06),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                                color: Colors.blue.withOpacity(0.2)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.g_mobiledata_rounded,
+                                  color: Colors.blue, size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Signed in with Google. Email and password are managed by Google.',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.blue.shade700,
+                                      fontWeight: FontWeight.w500,
+                                      height: 1.4),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+
                       _SettingsCard(items: [
                         _SettingsItem(
                           icon: Icons.email_rounded,
                           label: 'Change Email',
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const ChangeEmailScreen()),
-                          ),
+                          isGoogle: isGoogle,
+                          onTap: () {
+                            if (isGoogle) {
+                              _showGoogleAccountDialog('change your email');
+                              return;
+                            }
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const ChangeEmailScreen()),
+                            );
+                          },
                         ),
                         _SettingsItem(
                           icon: Icons.lock_rounded,
                           label: 'Change Password',
                           isLast: true,
-                          onTap: () {},
+                          isGoogle: isGoogle,
+                          onTap: () {
+                            if (isGoogle) {
+                              _showGoogleAccountDialog('change your password');
+                              return;
+                            }
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => const ChangePasswordScreen()),
+                            );
+                          },
                         ),
                       ]),
 
@@ -181,9 +303,6 @@ class _SettingsScreenState extends State<SettingsScreen>
                       // ── Preferences ───────────────────────────
                       const _SectionHeader(label: 'Preferences'),
                       const SizedBox(height: 12),
-
-                      // ✅ ValueListenableBuilder so the tag updates
-                      //    automatically when user picks a language
                       ValueListenableBuilder<String>(
                         valueListenable: AppLanguage.current,
                         builder: (context, _, __) {
@@ -191,7 +310,6 @@ class _SettingsScreenState extends State<SettingsScreen>
                             _SettingsItem(
                               icon: Icons.language_rounded,
                               label: 'Language',
-                              // ✅ reads live from AppLanguage.selectedLabel
                               trailing: _TrailingTag(
                                   label: AppLanguage.selectedLabel),
                               isLast: true,
@@ -217,7 +335,8 @@ class _SettingsScreenState extends State<SettingsScreen>
                           isLast: true,
                           onTap: () => Navigator.push(
                             context,
-                            MaterialPageRoute(builder: (_) => const ContactUsScreen()),
+                            MaterialPageRoute(
+                                builder: (_) => const ContactUsScreen()),
                           ),
                         ),
                       ]),
@@ -331,6 +450,7 @@ class _SettingsItem {
   final IconData icon;
   final String label;
   final bool isLast;
+  final bool isGoogle;
   final Widget? trailing;
   final VoidCallback onTap;
 
@@ -339,6 +459,7 @@ class _SettingsItem {
     required this.label,
     required this.onTap,
     this.isLast = false,
+    this.isGoogle = false,
     this.trailing,
   });
 }
@@ -385,27 +506,35 @@ class _SettingsTile extends StatelessWidget {
             bottom: item.isLast ? const Radius.circular(16) : Radius.zero,
           ),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+            padding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
             child: Row(
               children: [
                 Container(
                   width: 38,
                   height: 38,
                   decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.09),
+                    color: item.isGoogle
+                        ? Colors.grey.withOpacity(0.08)
+                        : AppColors.primary.withOpacity(0.09),
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child:
-                  Icon(item.icon, color: AppColors.primary, size: 20),
+                  child: Icon(item.icon,
+                      color: item.isGoogle
+                          ? Colors.grey.shade400
+                          : AppColors.primary,
+                      size: 20),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Text(
                     item.label,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF1A1A1A),
+                      color: item.isGoogle
+                          ? Colors.grey.shade400
+                          : const Color(0xFF1A1A1A),
                     ),
                   ),
                 ),
@@ -413,11 +542,35 @@ class _SettingsTile extends StatelessWidget {
                   item.trailing!,
                   const SizedBox(width: 6),
                 ],
-                Icon(
-                  Icons.chevron_right_rounded,
-                  color: AppColors.primary.withOpacity(0.4),
-                  size: 20,
-                ),
+                // Show Google badge instead of chevron for locked items
+                if (item.isGoogle)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.g_mobiledata_rounded,
+                            size: 14, color: Colors.blue.shade400),
+                        const SizedBox(width: 3),
+                        Text('Google',
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.blue.shade400)),
+                      ],
+                    ),
+                  )
+                else
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: AppColors.primary.withOpacity(0.4),
+                    size: 20,
+                  ),
               ],
             ),
           ),
