@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 // ── UI State Providers ────────────────────────────────────────────────────────
@@ -47,9 +48,6 @@ StreamProvider<List<Map<String, dynamic>>>((ref) {
 });
 
 // ── Organizations Provider ────────────────────────────────────────────────────
-// ✅ ONLY CHANGE FROM ORIGINAL: added data['_doc_id'] = d.id
-// This lets JoinGroupModal reliably identify the group being joined.
-// Same pattern already used by eventsProvider and calendarEventsProvider.
 final organizationsProvider =
 StreamProvider<List<Map<String, dynamic>>>((ref) {
   return FirebaseFirestore.instance
@@ -59,25 +57,45 @@ StreamProvider<List<Map<String, dynamic>>>((ref) {
       .snapshots()
       .map((s) => s.docs.map((d) {
     final data = d.data();
-    data['_doc_id'] = d.id; // ← only change
+    data['_doc_id'] = d.id;
     return data;
   }).toList());
 });
 
 // ── Locations (Courts) Provider ───────────────────────────────────────────────
+// Fetches ALL location docs then filters active client-side.
+// Handles both boolean true and string "true" for loc_active.
 final locationsProvider =
 StreamProvider<List<Map<String, dynamic>>>((ref) {
   return FirebaseFirestore.instance
       .collection('locations')
-      .orderBy('loc_created_at')
-      .limit(10)
       .snapshots()
-      .map((s) => s.docs.map((d) => d.data()).toList());
+      .map((s) {
+    final all = s.docs.map((d) {
+      final data = d.data();
+      data['_doc_id'] = d.id;
+      return data;
+    }).toList();
+
+    // Debug log — check Flutter console to diagnose missing pins
+    debugPrint('[locationsProvider] Total docs: ${all.length}');
+    for (final d in all) {
+      debugPrint('  ${d["_doc_id"]}: active=${d["loc_active"]} (${d["loc_active"]?.runtimeType}), lat=${d["loc_latitude"]}, lng=${d["loc_longitude"]}');
+    }
+
+    // Accept boolean true OR string "true"
+    final active = all.where((d) {
+      final v = d['loc_active'];
+      return v == true || v?.toString().toLowerCase() == 'true';
+    }).toList();
+
+    debugPrint('[locationsProvider] Active after filter: ${active.length}');
+    return active;
+  });
 });
 
+
 // ── Location Resolver Provider ────────────────────────────────────────────────
-// Resolves event_loc_id (e.g. "L-0000000007") → display string
-// Queries loc_id field first (the field you added), then fallbacks.
 final locationResolverProvider =
 FutureProvider.family<String, String>((ref, locId) async {
   if (locId.isEmpty) return 'Unknown location';
@@ -88,15 +106,14 @@ FutureProvider.family<String, String>((ref, locId) async {
     final country    = (d['loc_country'] ?? '').toString();
     final name       = (d['loc_name'] ?? '').toString();
 
-    if (city.isNotEmpty && prefecture.isNotEmpty) return '$city, $prefecture';
-    if (city.isNotEmpty && country.isNotEmpty)    return '$city, $country';
+    if (city.isNotEmpty && prefecture.isNotEmpty) return '\$city, \$prefecture';
+    if (city.isNotEmpty && country.isNotEmpty)    return '\$city, \$country';
     if (city.isNotEmpty)                          return city;
     if (name.isNotEmpty)                          return name;
     return 'Unknown location';
   }
 
   try {
-    // 1. loc_id field (lowercase — the field you added)
     final q1 = await FirebaseFirestore.instance
         .collection('locations')
         .where('loc_id', isEqualTo: locId)
@@ -104,7 +121,6 @@ FutureProvider.family<String, String>((ref, locId) async {
         .get();
     if (q1.docs.isNotEmpty) return _display(q1.docs.first.data());
 
-    // 2. loc_ID field (uppercase variant)
     final q2 = await FirebaseFirestore.instance
         .collection('locations')
         .where('loc_ID', isEqualTo: locId)
@@ -112,14 +128,12 @@ FutureProvider.family<String, String>((ref, locId) async {
         .get();
     if (q2.docs.isNotEmpty) return _display(q2.docs.first.data());
 
-    // 3. Direct Firestore doc ID
     final doc = await FirebaseFirestore.instance
         .collection('locations')
         .doc(locId)
         .get();
     if (doc.exists) return _display(doc.data()!);
 
-    // 4. Full scan fallback
     final all = await FirebaseFirestore.instance
         .collection('locations')
         .get();
@@ -137,8 +151,6 @@ FutureProvider.family<String, String>((ref, locId) async {
 });
 
 // ── Organizer Resolver Provider ───────────────────────────────────────────────
-// Resolves event_org_id (e.g. "O-0000000002") → org name string
-// Queries org_id field first (the field you added), then fallbacks.
 final organizerResolverProvider =
 FutureProvider.family<String, String>((ref, orgId) async {
   if (orgId.isEmpty) return '';
@@ -148,7 +160,6 @@ FutureProvider.family<String, String>((ref, orgId) async {
   }
 
   try {
-    // 1. org_id field (lowercase — the field you added)
     final q1 = await FirebaseFirestore.instance
         .collection('organizations')
         .where('org_id', isEqualTo: orgId)
@@ -156,7 +167,6 @@ FutureProvider.family<String, String>((ref, orgId) async {
         .get();
     if (q1.docs.isNotEmpty) return _display(q1.docs.first.data());
 
-    // 2. org_ID field (uppercase variant)
     final q2 = await FirebaseFirestore.instance
         .collection('organizations')
         .where('org_ID', isEqualTo: orgId)
@@ -164,14 +174,12 @@ FutureProvider.family<String, String>((ref, orgId) async {
         .get();
     if (q2.docs.isNotEmpty) return _display(q2.docs.first.data());
 
-    // 3. Direct Firestore doc ID
     final doc = await FirebaseFirestore.instance
         .collection('organizations')
         .doc(orgId)
         .get();
     if (doc.exists) return _display(doc.data()!);
 
-    // 4. Full scan fallback
     final all = await FirebaseFirestore.instance
         .collection('organizations')
         .get();

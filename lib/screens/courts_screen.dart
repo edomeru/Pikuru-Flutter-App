@@ -4,16 +4,17 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/providers/providers.dart';
 import 'dart:io' show Platform;
+import 'package:url_launcher/url_launcher.dart';
 
 // ── Filter State ──────────────────────────────────────────────────────────────
 class CourtFilter {
-  final String? country;       // null = All
-  final String? prefecture;    // null = All
-  final String? locType;       // null = All  (Arena, Gym/Club, etc.)
-  final String? priceRange;    // null = All  (free, ~1000, ~3000, ~5000)
-  final String? courtCount;    // null = Any  (1-3, 4-6, 7+)
-  final bool? indoorOnly;      // null = both
-  final Set<String> amenities; // empty = no filter
+  final String? country;
+  final String? prefecture;
+  final String? locType;
+  final String? priceRange;
+  final String? courtCount;
+  final bool? indoorOnly;
+  final Set<String> amenities;
 
   const CourtFilter({
     this.country,
@@ -45,9 +46,10 @@ class CourtFilter {
     );
   }
 
+  // isEmpty = no filters beyond the Tokyo default
   bool get isEmpty =>
-      country == null &&
-          prefecture == null &&
+      (country == null || country == 'Japan') &&
+          (prefecture == null || prefecture == '東京都') &&
           locType == null &&
           priceRange == null &&
           courtCount == null &&
@@ -55,22 +57,18 @@ class CourtFilter {
           amenities.isEmpty;
 
   bool matchesLocation(Map<String, dynamic> loc) {
-    // Country
     if (country != null) {
       final c = (loc['loc_country'] ?? '').toString();
       if (c != country) return false;
     }
-    // Prefecture
     if (prefecture != null) {
       final p = (loc['loc_prefecture'] ?? '').toString();
       if (p != prefecture) return false;
     }
-    // Type
     if (locType != null) {
       final t = (loc['loc_type'] ?? '').toString();
       if (t != locType) return false;
     }
-    // Price
     if (priceRange != null) {
       final price = (loc['loc_price'] ?? '').toString().toLowerCase();
       final isFree = loc['loc_price_free'] == true || price.contains('free');
@@ -95,7 +93,6 @@ class CourtFilter {
           break;
       }
     }
-    // Court count
     if (courtCount != null) {
       final count = _toDouble(loc['loc_court_count']);
       if (count == null) return false;
@@ -111,13 +108,11 @@ class CourtFilter {
           break;
       }
     }
-    // Indoor/outdoor
     if (indoorOnly == true) {
       if (loc['loc_court_type_indoor'] != true) return false;
     } else if (indoorOnly == false) {
       if (loc['loc_court_type_outdoor'] != true) return false;
     }
-    // Amenities
     for (final a in amenities) {
       if (loc['loc_amenities_$a'] != true) return false;
     }
@@ -141,9 +136,6 @@ class CourtFilter {
 
 const _sentinel = Object();
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Courts Screen
-// ─────────────────────────────────────────────────────────────────────────────
 class CourtsScreen extends ConsumerStatefulWidget {
   const CourtsScreen({super.key});
 
@@ -156,17 +148,19 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
   final TextEditingController _searchController = TextEditingController();
   GoogleMapController? _mapController;
   Set<Marker> _markers = {};
-  bool _hasMovedCamera = false;
   bool _mapReady = false;
-  CourtFilter _filter = const CourtFilter();
+  // ✅ Default filter: Tokyo only. User can change via filter modal.
+  CourtFilter _filter = const CourtFilter(prefecture: '東京都', country: 'Japan');
+  List<Map<String, dynamic>> _lastLocations = [];
+  Map<String, dynamic>? _selectedCourt; // court shown in bottom sheet
 
   static const CameraPosition _initialPosition = CameraPosition(
     target: LatLng(35.6762, 139.6503),
-    zoom: 12,
+    zoom: 10,
   );
 
   @override
-  bool get wantKeepAlive => false;
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -192,7 +186,23 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
   }
 
   void _moveCameraToMarkers() {
-    if (_mapController == null || _markers.isEmpty || _hasMovedCamera) return;
+    if (_mapController == null) return;
+
+    // ✅ No markers yet — stay on default Tokyo position, don't zoom out
+    if (_markers.isEmpty) {
+      _mapController!.animateCamera(
+        CameraUpdate.newLatLngZoom(
+            const LatLng(35.6762, 139.6503), 10),
+      );
+      return;
+    }
+
+    if (_markers.length == 1) {
+      _mapController!.animateCamera(
+        CameraUpdate.newLatLngZoom(_markers.first.position, 14),
+      );
+      return;
+    }
 
     double? minLat, maxLat, minLng, maxLng;
     for (final marker in _markers) {
@@ -205,15 +215,49 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
     }
 
     if (minLat != null && maxLat != null && minLng != null && maxLng != null) {
-      final bounds = LatLngBounds(
-        southwest: LatLng(minLat, minLng),
-        northeast: LatLng(maxLat, maxLng),
-      );
-      _mapController!.animateCamera(
-        CameraUpdate.newLatLngBounds(bounds, 80),
-      );
-      _hasMovedCamera = true;
+      if (minLat == maxLat && minLng == maxLng) {
+        _mapController!.animateCamera(
+          CameraUpdate.newLatLngZoom(LatLng(minLat, minLng), 14),
+        );
+      } else {
+        final bounds = LatLngBounds(
+          southwest: LatLng(minLat, minLng),
+          northeast: LatLng(maxLat, maxLng),
+        );
+        _mapController!.animateCamera(
+          CameraUpdate.newLatLngBounds(bounds, 80),
+        );
+      }
     }
+  }
+
+  void _updateMarkers(List<Map<String, dynamic>> filteredLocations) {
+    final newMarkers = <Marker>{};
+    for (int i = 0; i < filteredLocations.length; i++) {
+      final loc = filteredLocations[i];
+      final lat = _parseCoordinate(loc['loc_latitude']);
+      final lng = _parseCoordinate(loc['loc_longitude']);
+      if (lat != null && lng != null) {
+        newMarkers.add(Marker(
+          markerId: MarkerId(loc['_doc_id'] ?? 'court_$i'),
+          position: LatLng(lat, lng),
+          // ✅ No InfoWindow — we show a custom bottom sheet on tap
+          onTap: () => _showCourtSheet(loc),
+        ));
+      }
+    }
+    setState(() => _markers = newMarkers);
+    Future.delayed(const Duration(milliseconds: 800), _moveCameraToMarkers);
+  }
+
+  // ── Court detail bottom sheet ──────────────────────────────────────
+  void _showCourtSheet(Map<String, dynamic> loc) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _CourtDetailSheet(loc: loc),
+    );
   }
 
   void _openFilterModal(List<Map<String, dynamic>> allLocations) async {
@@ -227,10 +271,11 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
       ),
     );
     if (result != null && mounted) {
-      setState(() {
-        _filter = result;
-        _hasMovedCamera = false; // allow camera to re-fit
-      });
+      setState(() => _filter = result);
+      final filtered = _lastLocations.where((loc) {
+        return _filter.matchesLocation(loc);
+      }).toList();
+      _updateMarkers(filtered);
     }
   }
 
@@ -241,6 +286,29 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
     final locationsAsync = ref.watch(locationsProvider);
 
     final allLocations = locationsAsync.asData?.value ?? [];
+
+    if (locationsAsync.hasValue && allLocations.isNotEmpty) {
+      final newIds = allLocations.map((l) => l['_doc_id']?.toString() ?? '').toSet();
+      final oldIds = _lastLocations.map((l) => l['_doc_id']?.toString() ?? '').toSet();
+      if (!newIds.containsAll(oldIds) || !oldIds.containsAll(newIds)) {
+        _lastLocations = allLocations;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final filtered = _lastLocations.where((loc) {
+            final search = _searchController.text.trim().toLowerCase();
+            if (search.isNotEmpty) {
+              final name = (loc['loc_name'] ?? '').toString().toLowerCase();
+              final city = (loc['loc_city'] ?? '').toString().toLowerCase();
+              final pref = (loc['loc_prefecture'] ?? '').toString().toLowerCase();
+              if (!name.contains(search) && !city.contains(search) && !pref.contains(search)) return false;
+            }
+            return _filter.matchesLocation(loc);
+          }).toList();
+          _updateMarkers(filtered);
+        });
+      }
+    }
+
     final filteredLocations = allLocations.where((loc) {
       final search = _searchController.text.trim().toLowerCase();
       if (search.isNotEmpty) {
@@ -254,45 +322,19 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
       return _filter.matchesLocation(loc);
     }).toList();
 
-    // Update markers from filtered locations
-    locationsAsync.whenData((_) {
-      final newMarkers = <Marker>{};
-      for (int i = 0; i < filteredLocations.length; i++) {
-        final location = filteredLocations[i];
-        final lat = _parseCoordinate(location['loc_latitude']);
-        final lng = _parseCoordinate(location['loc_longitude']);
-        if (lat != null && lng != null) {
-          newMarkers.add(
-            Marker(
-              markerId: MarkerId('court_$i'),
-              position: LatLng(lat, lng),
-              infoWindow: InfoWindow(
-                title: location['loc_name'] ?? 'Court',
-                snippet: location['loc_city'] ?? '',
-              ),
-            ),
-          );
-        }
-      }
-
-      if (newMarkers.length != _markers.length) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) {
-            setState(() => _markers = newMarkers);
-            Future.delayed(const Duration(milliseconds: 800), () {
-              _moveCameraToMarkers();
-            });
-          }
-        });
-      }
-    });
-
-    final hasActiveFilter = !_filter.isEmpty;
+    // Active filter = anything beyond the Tokyo default
+    final _tokyoDefault = const CourtFilter(prefecture: '東京都', country: 'Japan');
+    final hasActiveFilter = _filter.country != _tokyoDefault.country ||
+        _filter.prefecture != _tokyoDefault.prefecture ||
+        _filter.locType != null ||
+        _filter.priceRange != null ||
+        _filter.courtCount != null ||
+        _filter.indoorOnly != null ||
+        _filter.amenities.isNotEmpty;
 
     return Scaffold(
       body: Stack(
         children: [
-          // ── Google Map ─────────────────────────────────────────────────
           RepaintBoundary(
             child: GoogleMap(
               key: const ValueKey('google_map'),
@@ -307,18 +349,11 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
               onMapCreated: (controller) {
                 _mapController = controller;
                 setState(() => _mapReady = true);
-                if (Platform.isIOS) {
-                  Future.delayed(const Duration(milliseconds: 300), () {
-                    controller.animateCamera(
-                      CameraUpdate.newCameraPosition(
-                        const CameraPosition(
-                          target: LatLng(35.6762, 139.6503),
-                          zoom: 12.01,
-                        ),
-                      ),
-                    );
-                  });
-                }
+                // ✅ Only move camera if markers are already loaded.
+                // If not, the initialCameraPosition (Tokyo zoom 10) holds.
+                Future.delayed(const Duration(milliseconds: 600), () {
+                  if (mounted && _markers.isNotEmpty) _moveCameraToMarkers();
+                });
               },
             ),
           ),
@@ -341,7 +376,6 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
               ),
             ),
 
-          // ── Header ─────────────────────────────────────────────────────
           SafeArea(
             child: Column(
               children: [
@@ -350,7 +384,6 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
             ),
           ),
 
-          // ── Result count badge ─────────────────────────────────────────
           if (hasActiveFilter || _searchController.text.isNotEmpty)
             Positioned(
               top: MediaQuery.of(context).padding.top + 130,
@@ -383,7 +416,6 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
               ),
             ),
 
-          // ── Add Court Button ───────────────────────────────────────────
           if (showAddButton)
             Positioned(
               bottom: 24,
@@ -446,7 +478,6 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
                 ),
               ),
               const SizedBox(width: 10),
-              // Filter button with active indicator
               GestureDetector(
                 onTap: () => _openFilterModal(allLocations),
                 child: Stack(
@@ -511,7 +542,20 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
             ),
             child: TextField(
               controller: _searchController,
-              onChanged: (_) => setState(() {}),
+              onChanged: (_) {
+                setState(() {});
+                final filtered = _lastLocations.where((loc) {
+                  final search = _searchController.text.trim().toLowerCase();
+                  if (search.isNotEmpty) {
+                    final name = (loc['loc_name'] ?? '').toString().toLowerCase();
+                    final city = (loc['loc_city'] ?? '').toString().toLowerCase();
+                    final pref = (loc['loc_prefecture'] ?? '').toString().toLowerCase();
+                    if (!name.contains(search) && !city.contains(search) && !pref.contains(search)) return false;
+                  }
+                  return _filter.matchesLocation(loc);
+                }).toList();
+                _updateMarkers(filtered);
+              },
               style: const TextStyle(
                   fontSize: 15, color: Color(0xFF0D0D0D)),
               decoration: InputDecoration(
@@ -610,6 +654,271 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
   }
 }
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Court Detail Bottom Sheet
+// ─────────────────────────────────────────────────────────────────────────────
+class _CourtDetailSheet extends StatelessWidget {
+  final Map<String, dynamic> loc;
+  const _CourtDetailSheet({required this.loc});
+
+  String get _name => (loc['loc_name'] ?? 'Court').toString();
+  String get _nameJp => (loc['loc_name_jp'] ?? '').toString();
+  String get _address => (loc['loc_address'] ?? '').toString();
+  String get _addressJp => (loc['loc_address_jp'] ?? '').toString();
+  String get _city => (loc['loc_city'] ?? '').toString();
+  String get _prefecture => (loc['loc_prefecture'] ?? '').toString();
+  String get _country => (loc['loc_country'] ?? '').toString();
+  String get _type => (loc['loc_type'] ?? '').toString();
+  String get _price => (loc['loc_price'] ?? '').toString();
+  String get _hours => (loc['loc_hours'] ?? '').toString();
+  String get _phone => (loc['loc_contact_email'] ?? '').toString();
+  String get _googleLink => (loc['loc_googlelink'] ?? '').toString();
+  String get _image => (loc['loc_image'] ?? '').toString();
+  int get _courtCount {
+    final v = loc['loc_court_count'];
+    if (v is int) return v;
+    if (v is double) return v.toInt();
+    if (v is String) return int.tryParse(v) ?? 0;
+    return 0;
+  }
+  bool get _isIndoor => loc['loc_court_type_indoor'] == true;
+  bool get _isOutdoor => loc['loc_court_type_outdoor'] == true;
+
+  String get _locationLine {
+    final parts = [_city, _prefecture, _country]
+        .where((s) => s.isNotEmpty).toList();
+    return parts.join(', ');
+  }
+
+  Future<void> _openLink(BuildContext context, String url) async {
+    if (url.isEmpty) return;
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open link')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.18),
+            blurRadius: 40,
+            offset: const Offset(0, -8),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ── Drag handle ───────────────────────────────────────────
+            const SizedBox(height: 12),
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 4),
+
+            // ── Hero image ────────────────────────────────────────────
+            if (_image.isNotEmpty)
+              SizedBox(
+                height: 160,
+                width: double.infinity,
+                child: Image.network(
+                  _image,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    height: 160,
+                    color: AppColors.primary.withOpacity(0.08),
+                    child: Icon(Icons.sports_tennis_rounded,
+                        size: 48, color: AppColors.primary.withOpacity(0.3)),
+                  ),
+                ),
+              )
+            else
+              Container(
+                height: 100,
+                width: double.infinity,
+                color: AppColors.primary.withOpacity(0.08),
+                child: Icon(Icons.sports_tennis_rounded,
+                    size: 48, color: AppColors.primary.withOpacity(0.3)),
+              ),
+
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── Name + type badge ─────────────────────────────
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(_name,
+                                style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF0D0D0D),
+                                    letterSpacing: -0.3)),
+                            if (_nameJp.isNotEmpty) ...[
+                              const SizedBox(height: 2),
+                              Text(_nameJp,
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.black.withOpacity(0.45))),
+                            ],
+                          ],
+                        ),
+                      ),
+                      if (_type.isNotEmpty)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(_type,
+                              style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.primary)),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+
+                  // ── Info rows ─────────────────────────────────────
+                  if (_locationLine.isNotEmpty)
+                    _infoRow(Icons.location_on_rounded, _locationLine),
+                  if (_address.isNotEmpty)
+                    _infoRow(Icons.home_rounded, _address),
+                  if (_addressJp.isNotEmpty && _addressJp != _address)
+                    _infoRow(Icons.home_outlined, _addressJp),
+                  if (_price.isNotEmpty)
+                    _infoRow(Icons.payments_outlined, _price),
+                  if (_hours.isNotEmpty)
+                    _infoRow(Icons.access_time_rounded, _hours),
+                  if (_phone.isNotEmpty)
+                    _infoRow(Icons.phone_outlined, _phone),
+
+                  // ── Court setting chips ───────────────────────────
+                  if (_isIndoor || _isOutdoor || _courtCount > 0) ...[
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8, runSpacing: 6,
+                      children: [
+                        if (_isIndoor)   _tag('Indoor',   Icons.roofing_rounded),
+                        if (_isOutdoor)  _tag('Outdoor',  Icons.park_rounded),
+                        if (_courtCount > 0)
+                          _tag('$_courtCount court${_courtCount == 1 ? '' : 's'}',
+                              Icons.grid_view_rounded),
+                      ],
+                    ),
+                  ],
+
+                  const SizedBox(height: 18),
+
+                  // ── More Information button ───────────────────────
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton.icon(
+                      onPressed: _googleLink.isNotEmpty
+                          ? () => _openLink(context, _googleLink)
+                          : null,
+                      icon: const Icon(Icons.open_in_browser_rounded,
+                          size: 18, color: Colors.white),
+                      label: const Text('More Information',
+                          style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: 0.1)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _googleLink.isNotEmpty
+                            ? AppColors.primary
+                            : Colors.grey.shade300,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16)),
+                        shadowColor: AppColors.primary.withOpacity(0.3),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _infoRow(IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 15, color: AppColors.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(text,
+                style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.black.withOpacity(0.65),
+                    height: 1.4)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tag(String label, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: AppColors.primary),
+          const SizedBox(width: 4),
+          Text(label,
+              style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.primary)),
+        ],
+      ),
+    );
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Filter Modal
 // ─────────────────────────────────────────────────────────────────────────────
@@ -629,16 +938,15 @@ class _CourtFilterModal extends StatefulWidget {
 class _CourtFilterModalState extends State<_CourtFilterModal> {
   late CourtFilter _draft;
 
-  // Derived option lists from actual data
   late final List<String> _countries;
   late final List<String> _locTypes;
   late final Map<String, List<String>> _prefecturesByCountry;
 
   static const _priceOptions = ['All', 'Free', '~¥1,000', '~¥3,000', '~¥5,000'];
-  static const _priceValues  = [null,  'free', '~1000',       '~3000',       '~5000'];
+  static const _priceValues  = [null,  'free', '~1000',   '~3000',   '~5000'];
 
   static const _countOptions = ['Any', '1–3', '4–6', '7+'];
-  static const _countValues  = [null,  '1-3',      '4-6',      '7+'];
+  static const _countValues  = [null,  '1-3', '4-6', '7+'];
 
   static const _amenityOptions = [
     ('Open Play',   'openplay'),
@@ -679,13 +987,12 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
           : [];
 
   void _applyAndClose() => Navigator.of(context, rootNavigator: false).pop(_draft);
-  void _resetAndClose() => Navigator.of(context, rootNavigator: false).pop(const CourtFilter());
+  // ✅ Reset goes back to Tokyo default, not truly empty
+  void _resetAndClose() => Navigator.of(context, rootNavigator: false).pop(const CourtFilter(prefecture: '東京都', country: 'Japan'));
 
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
-    final bottomPadding = MediaQuery.of(context).viewInsets.bottom +
-        MediaQuery.of(context).padding.bottom;
 
     return Material(
       color: Colors.transparent,
@@ -694,9 +1001,7 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
           bottom: MediaQuery.of(context).viewInsets.bottom,
         ),
         child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: screenHeight * 0.88,
-          ),
+          constraints: BoxConstraints(maxHeight: screenHeight * 0.88),
           child: Container(
             margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
             decoration: BoxDecoration(
@@ -715,26 +1020,21 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // ── Drag handle ──────────────────────────────────────────────
                   const SizedBox(height: 12),
                   Container(
-                    width: 40,
-                    height: 4,
+                    width: 40, height: 4,
                     decoration: BoxDecoration(
                       color: Colors.black.withOpacity(0.12),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
                   const SizedBox(height: 12),
-
-                  // ── Title bar ────────────────────────────────────────────────
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     child: Row(
                       children: [
                         Container(
-                          width: 36,
-                          height: 36,
+                          width: 36, height: 36,
                           decoration: BoxDecoration(
                             color: AppColors.primary.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(10),
@@ -743,48 +1043,38 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
                               color: AppColors.primary, size: 20),
                         ),
                         const SizedBox(width: 12),
-                        const Text(
-                          'Filter Courts',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF0D0D0D),
-                            letterSpacing: -0.5,
-                          ),
-                        ),
+                        const Text('Filter Courts',
+                            style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF0D0D0D),
+                                letterSpacing: -0.5)),
                         const Spacer(),
                         IconButton(
                           onPressed: () => Navigator.of(context, rootNavigator: false).pop(),
                           style: IconButton.styleFrom(
                             backgroundColor: Colors.black.withOpacity(0.06),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
+                                borderRadius: BorderRadius.circular(10)),
                             minimumSize: const Size(34, 34),
                             padding: EdgeInsets.zero,
                           ),
                           icon: Icon(Icons.close_rounded,
-                              size: 18,
-                              color: Colors.black.withOpacity(0.5)),
+                              size: 18, color: Colors.black.withOpacity(0.5)),
                         ),
                       ],
                     ),
                   ),
-
                   const SizedBox(height: 4),
-                  Divider(
-                      height: 20,
-                      thickness: 1,
+                  Divider(height: 20, thickness: 1,
                       color: Colors.black.withOpacity(0.06)),
-
-                  // ── Scrollable filter body ───────────────────────────────────
                   Flexible(
                     child: SingleChildScrollView(
-                      padding: EdgeInsets.fromLTRB(20, 4, 20, MediaQuery.of(context).padding.bottom + 16),
+                      padding: EdgeInsets.fromLTRB(20, 4, 20,
+                          MediaQuery.of(context).padding.bottom + 16),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // ── Country ──────────────────────────────────────────
                           _sectionLabel('Country', Icons.public_rounded),
                           const SizedBox(height: 10),
                           _buildDropdown(
@@ -795,7 +1085,6 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
                                     () => _draft = _draft.copyWith(country: v, prefecture: null)),
                           ),
                           const SizedBox(height: 20),
-                          // ── Prefecture / State ───────────────────────────────
                           if (_currentPrefectures.isNotEmpty) ...[
                             _sectionLabel('Prefecture / State', Icons.map_outlined),
                             const SizedBox(height: 10),
@@ -808,45 +1097,29 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
                             ),
                             const SizedBox(height: 20),
                           ],
-
-
-                          // ── Court Type ───────────────────────────────────────
                           _sectionLabel('Court Type', Icons.sports_tennis_rounded),
                           const SizedBox(height: 10),
                           Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
+                            spacing: 8, runSpacing: 8,
                             children: [
                               _chip('All', _draft.locType == null,
-                                      () => setState(
-                                          () => _draft = _draft.copyWith(locType: null))),
-                              ..._locTypes.map((t) => _chip(
-                                t,
-                                _draft.locType == t,
-                                    () => setState(
-                                        () => _draft = _draft.copyWith(locType: t)),
-                              )),
+                                      () => setState(() => _draft = _draft.copyWith(locType: null))),
+                              ..._locTypes.map((t) => _chip(t, _draft.locType == t,
+                                      () => setState(() => _draft = _draft.copyWith(locType: t)))),
                             ],
                           ),
                           const SizedBox(height: 20),
-
-                          // ── Price ────────────────────────────────────────────
                           _sectionLabel('Price per Hour', Icons.payments_outlined),
                           const SizedBox(height: 10),
                           Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
+                            spacing: 8, runSpacing: 8,
                             children: List.generate(_priceOptions.length, (i) {
                               final val = _priceValues[i];
-                              final selected = _draft.priceRange == val;
-                              return _chip(_priceOptions[i], selected,
-                                      () => setState(
-                                          () => _draft = _draft.copyWith(priceRange: val)));
+                              return _chip(_priceOptions[i], _draft.priceRange == val,
+                                      () => setState(() => _draft = _draft.copyWith(priceRange: val)));
                             }),
                           ),
                           const SizedBox(height: 20),
-
-                          // ── Number of Courts ─────────────────────────────────
                           _sectionLabel('Number of Courts', Icons.grid_view_rounded),
                           const SizedBox(height: 10),
                           Row(
@@ -868,95 +1141,65 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
                                           : Colors.black.withOpacity(0.04),
                                       borderRadius: BorderRadius.circular(12),
                                       border: Border.all(
-                                        color: selected
-                                            ? AppColors.primary
-                                            : Colors.transparent,
+                                        color: selected ? AppColors.primary : Colors.transparent,
                                         width: 1.5,
                                       ),
                                     ),
-                                    child: Text(
-                                      _countOptions[i],
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w700,
-                                        color: selected
-                                            ? Colors.white
-                                            : Colors.black.withOpacity(0.55),
-                                      ),
-                                    ),
+                                    child: Text(_countOptions[i],
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                            color: selected
+                                                ? Colors.white
+                                                : Colors.black.withOpacity(0.55))),
                                   ),
                                 ),
                               );
                             }),
                           ),
                           const SizedBox(height: 20),
-
-                          // ── Indoor / Outdoor ─────────────────────────────────
                           _sectionLabel('Court Setting', Icons.wb_sunny_outlined),
                           const SizedBox(height: 10),
                           Row(
                             children: [
-                              _settingTile(
-                                label: 'All',
-                                icon: Icons.all_inclusive_rounded,
-                                selected: _draft.indoorOnly == null,
-                                onTap: () => setState(
-                                        () => _draft = _draft.copyWith(indoorOnly: null)),
-                              ),
+                              _settingTile(label: 'All', icon: Icons.all_inclusive_rounded,
+                                  selected: _draft.indoorOnly == null,
+                                  onTap: () => setState(() => _draft = _draft.copyWith(indoorOnly: null))),
                               const SizedBox(width: 10),
-                              _settingTile(
-                                label: 'Indoor',
-                                icon: Icons.roofing_rounded,
-                                selected: _draft.indoorOnly == true,
-                                onTap: () => setState(
-                                        () => _draft = _draft.copyWith(indoorOnly: true)),
-                              ),
+                              _settingTile(label: 'Indoor', icon: Icons.roofing_rounded,
+                                  selected: _draft.indoorOnly == true,
+                                  onTap: () => setState(() => _draft = _draft.copyWith(indoorOnly: true))),
                               const SizedBox(width: 10),
-                              _settingTile(
-                                label: 'Outdoor',
-                                icon: Icons.park_rounded,
-                                selected: _draft.indoorOnly == false,
-                                onTap: () => setState(
-                                        () => _draft = _draft.copyWith(indoorOnly: false)),
-                              ),
+                              _settingTile(label: 'Outdoor', icon: Icons.park_rounded,
+                                  selected: _draft.indoorOnly == false,
+                                  onTap: () => setState(() => _draft = _draft.copyWith(indoorOnly: false))),
                             ],
                           ),
                           const SizedBox(height: 20),
-
-                          // ── Amenities ────────────────────────────────────────
                           _sectionLabel('Amenities', Icons.star_outline_rounded),
                           const SizedBox(height: 10),
                           Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
+                            spacing: 8, runSpacing: 8,
                             children: _amenityOptions.map((a) {
                               final (label, key) = a;
                               final active = _draft.amenities.contains(key);
                               return GestureDetector(
                                 onTap: () {
                                   final next = Set<String>.from(_draft.amenities);
-                                  if (active) {
-                                    next.remove(key);
-                                  } else {
-                                    next.add(key);
-                                  }
-                                  setState(() =>
-                                  _draft = _draft.copyWith(amenities: next));
+                                  if (active) next.remove(key); else next.add(key);
+                                  setState(() => _draft = _draft.copyWith(amenities: next));
                                 },
                                 child: AnimatedContainer(
                                   duration: const Duration(milliseconds: 180),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 14, vertical: 9),
+                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
                                   decoration: BoxDecoration(
                                     color: active
                                         ? AppColors.primary.withOpacity(0.1)
                                         : Colors.black.withOpacity(0.04),
                                     borderRadius: BorderRadius.circular(24),
                                     border: Border.all(
-                                      color: active
-                                          ? AppColors.primary
-                                          : Colors.transparent,
+                                      color: active ? AppColors.primary : Colors.transparent,
                                       width: 1.5,
                                     ),
                                   ),
@@ -964,30 +1207,23 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       if (active) ...[
-                                        Icon(Icons.check_rounded,
-                                            size: 14, color: AppColors.primary),
+                                        Icon(Icons.check_rounded, size: 14, color: AppColors.primary),
                                         const SizedBox(width: 4),
                                       ],
-                                      Text(
-                                        label,
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w600,
-                                          color: active
-                                              ? AppColors.primary
-                                              : Colors.black.withOpacity(0.55),
-                                        ),
-                                      ),
+                                      Text(label,
+                                          style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                              color: active
+                                                  ? AppColors.primary
+                                                  : Colors.black.withOpacity(0.55))),
                                     ],
                                   ),
                                 ),
                               );
                             }).toList(),
                           ),
-
                           const SizedBox(height: 28),
-
-                          // ── Action buttons ───────────────────────────────────
                           Row(
                             children: [
                               Expanded(
@@ -1000,14 +1236,11 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
                                       borderRadius: BorderRadius.circular(16),
                                     ),
                                     child: Center(
-                                      child: Text(
-                                        'Reset',
-                                        style: TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w700,
-                                          color: Colors.black.withOpacity(0.55),
-                                        ),
-                                      ),
+                                      child: Text('Reset to Tokyo',
+                                          style: TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w700,
+                                              color: Colors.black.withOpacity(0.55))),
                                     ),
                                   ),
                                 ),
@@ -1024,23 +1257,19 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
                                       borderRadius: BorderRadius.circular(16),
                                       boxShadow: [
                                         BoxShadow(
-                                          color:
-                                          AppColors.primary.withOpacity(0.35),
+                                          color: AppColors.primary.withOpacity(0.35),
                                           blurRadius: 16,
                                           offset: const Offset(0, 6),
                                         ),
                                       ],
                                     ),
                                     child: const Center(
-                                      child: Text(
-                                        'Apply Filters',
-                                        style: TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w800,
-                                          color: Colors.white,
-                                          letterSpacing: 0.2,
-                                        ),
-                                      ),
+                                      child: Text('Apply Filters',
+                                          style: TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w800,
+                                              color: Colors.white,
+                                              letterSpacing: 0.2)),
                                     ),
                                   ),
                                 ),
@@ -1065,15 +1294,12 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
       children: [
         Icon(icon, size: 15, color: AppColors.primary),
         const SizedBox(width: 6),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w800,
-            color: Color(0xFF0D0D0D),
-            letterSpacing: 0.2,
-          ),
-        ),
+        Text(label,
+            style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF0D0D0D),
+                letterSpacing: 0.2)),
       ],
     );
   }
@@ -1092,14 +1318,11 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
             width: 1.5,
           ),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-            color: selected ? Colors.white : Colors.black.withOpacity(0.55),
-          ),
-        ),
+        child: Text(label,
+            style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: selected ? Colors.white : Colors.black.withOpacity(0.55))),
       ),
     );
   }
@@ -1117,30 +1340,20 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
-            color: selected
-                ? AppColors.primary
-                : Colors.black.withOpacity(0.04),
+            color: selected ? AppColors.primary : Colors.black.withOpacity(0.04),
             borderRadius: BorderRadius.circular(14),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon,
-                  size: 20,
-                  color: selected
-                      ? Colors.white
-                      : Colors.black.withOpacity(0.4)),
+              Icon(icon, size: 20,
+                  color: selected ? Colors.white : Colors.black.withOpacity(0.4)),
               const SizedBox(height: 4),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: selected
-                      ? Colors.white
-                      : Colors.black.withOpacity(0.5),
-                ),
-              ),
+              Text(label,
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: selected ? Colors.white : Colors.black.withOpacity(0.5))),
             ],
           ),
         ),
@@ -1159,9 +1372,7 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
         color: Colors.black.withOpacity(0.04),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: value != null
-              ? AppColors.primary.withOpacity(0.5)
-              : Colors.transparent,
+          color: value != null ? AppColors.primary.withOpacity(0.5) : Colors.transparent,
           width: 1.5,
         ),
       ),
@@ -1170,13 +1381,11 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
           value: value,
           hint: Padding(
             padding: const EdgeInsets.only(left: 14),
-            child: Text(
-              hint,
-              style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.black.withOpacity(0.38),
-                  fontWeight: FontWeight.w500),
-            ),
+            child: Text(hint,
+                style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.black.withOpacity(0.38),
+                    fontWeight: FontWeight.w500)),
           ),
           isExpanded: true,
           padding: const EdgeInsets.only(left: 14, right: 8),
@@ -1187,9 +1396,7 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
             DropdownMenuItem<String>(
               value: null,
               child: Text(hint,
-                  style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.black.withOpacity(0.4))),
+                  style: TextStyle(fontSize: 14, color: Colors.black.withOpacity(0.4))),
             ),
             ...items.map((item) => DropdownMenuItem<String>(
               value: item,
