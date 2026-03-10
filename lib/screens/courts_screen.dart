@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/providers/providers.dart';
+import 'dart:async';
 import 'dart:io' show Platform;
 import 'package:url_launcher/url_launcher.dart';
 
@@ -119,6 +120,64 @@ class CourtFilter {
     return true;
   }
 
+  // matchesNonGeo: applies only non-geographic filters (type, price, courts, indoor, amenities).
+  // Used when the user is actively searching by text — lets them find courts
+  // outside the current country/prefecture filter area.
+  bool matchesNonGeo(Map<String, dynamic> loc) {
+    if (locType != null) {
+      final t = (loc['loc_type'] ?? '').toString();
+      if (t != locType) return false;
+    }
+    if (priceRange != null) {
+      final price = (loc['loc_price'] ?? '').toString().toLowerCase();
+      final isFree = loc['loc_price_free'] == true || price.contains('free');
+      switch (priceRange) {
+        case 'free':
+          if (!isFree) return false;
+          break;
+        case '~1000':
+          if (isFree) break;
+          final num = _extractYen(price);
+          if (num == null || num > 1000) return false;
+          break;
+        case '~3000':
+          if (isFree) break;
+          final num = _extractYen(price);
+          if (num == null || num > 3000) return false;
+          break;
+        case '~5000':
+          if (isFree) break;
+          final num = _extractYen(price);
+          if (num == null || num > 5000) return false;
+          break;
+      }
+    }
+    if (courtCount != null) {
+      final count = _toDouble(loc['loc_court_count']);
+      if (count == null) return false;
+      switch (courtCount) {
+        case '1-3':
+          if (count < 1 || count > 3) return false;
+          break;
+        case '4-6':
+          if (count < 4 || count > 6) return false;
+          break;
+        case '7+':
+          if (count < 7) return false;
+          break;
+      }
+    }
+    if (indoorOnly == true) {
+      if (loc['loc_court_type_indoor'] != true) return false;
+    } else if (indoorOnly == false) {
+      if (loc['loc_court_type_outdoor'] != true) return false;
+    }
+    for (final a in amenities) {
+      if (loc['loc_amenities_$a'] != true) return false;
+    }
+    return true;
+  }
+
   double? _extractYen(String price) {
     final match = RegExp(r'[¥¥](\d[\d,]*)').firstMatch(price);
     if (match == null) return null;
@@ -153,6 +212,7 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
   CourtFilter _filter = const CourtFilter(prefecture: '東京都', country: 'Japan');
   List<Map<String, dynamic>> _lastLocations = [];
   Map<String, dynamic>? _selectedCourt; // court shown in bottom sheet
+  Timer? _searchDebounce;
 
   static const CameraPosition _initialPosition = CameraPosition(
     target: LatLng(35.6762, 139.6503),
@@ -172,6 +232,7 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchController.dispose();
     _mapController?.dispose();
     super.dispose();
@@ -250,6 +311,40 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
     Future.delayed(const Duration(milliseconds: 800), _moveCameraToMarkers);
   }
 
+  // ── Search + filter helper ────────────────────────────────────────
+  void _applySearchAndFilter() {
+    final search = _searchController.text.trim().toLowerCase();
+    final filtered = _lastLocations.where((loc) {
+      if (search.isNotEmpty) {
+        // ✅ Text search: match against name/city/prefecture/address globally
+        // (bypass the geographic prefecture/country filter so user can find
+        //  courts outside the current filter area by typing)
+        final name     = (loc['loc_name'] ?? '').toString().toLowerCase();
+        final nameJp   = (loc['loc_name_jp'] ?? '').toString();
+        final city     = (loc['loc_city'] ?? '').toString().toLowerCase();
+        final cityEn   = (loc['loc_city_en'] ?? '').toString().toLowerCase();
+        final pref     = (loc['loc_prefecture'] ?? '').toString().toLowerCase();
+        final prefEn   = (loc['loc_prefecture_en'] ?? '').toString().toLowerCase();
+        final addr     = (loc['loc_address'] ?? '').toString().toLowerCase();
+        final addrJp   = (loc['loc_address_jp'] ?? '').toString();
+        // Japanese strings are not lowercased (CJK has no case)
+        if (!name.contains(search) &&
+            !nameJp.contains(search) &&
+            !city.contains(search) &&
+            !cityEn.contains(search) &&
+            !pref.contains(search) &&
+            !prefEn.contains(search) &&
+            !addr.contains(search) &&
+            !addrJp.contains(search)) return false;
+        // When searching: only apply non-geographic filters (type, price, etc.)
+        return _filter.matchesNonGeo(loc);
+      }
+      // No search text: apply full filter including prefecture/country
+      return _filter.matchesLocation(loc);
+    }).toList();
+    _updateMarkers(filtered);
+  }
+
   // ── Court detail bottom sheet ──────────────────────────────────────
   void _showCourtSheet(Map<String, dynamic> loc) {
     showModalBottomSheet(
@@ -272,10 +367,7 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
     );
     if (result != null && mounted) {
       setState(() => _filter = result);
-      final filtered = _lastLocations.where((loc) {
-        return _filter.matchesLocation(loc);
-      }).toList();
-      _updateMarkers(filtered);
+      _applySearchAndFilter();
     }
   }
 
@@ -294,30 +386,31 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
         _lastLocations = allLocations;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
-          final filtered = _lastLocations.where((loc) {
-            final search = _searchController.text.trim().toLowerCase();
-            if (search.isNotEmpty) {
-              final name = (loc['loc_name'] ?? '').toString().toLowerCase();
-              final city = (loc['loc_city'] ?? '').toString().toLowerCase();
-              final pref = (loc['loc_prefecture'] ?? '').toString().toLowerCase();
-              if (!name.contains(search) && !city.contains(search) && !pref.contains(search)) return false;
-            }
-            return _filter.matchesLocation(loc);
-          }).toList();
-          _updateMarkers(filtered);
+          _applySearchAndFilter();
         });
       }
     }
 
+    final _searchQuery = _searchController.text.trim().toLowerCase();
     final filteredLocations = allLocations.where((loc) {
-      final search = _searchController.text.trim().toLowerCase();
-      if (search.isNotEmpty) {
-        final name = (loc['loc_name'] ?? '').toString().toLowerCase();
-        final city = (loc['loc_city'] ?? '').toString().toLowerCase();
-        final pref = (loc['loc_prefecture'] ?? '').toString().toLowerCase();
-        if (!name.contains(search) &&
-            !city.contains(search) &&
-            !pref.contains(search)) return false;
+      if (_searchQuery.isNotEmpty) {
+        final name     = (loc['loc_name'] ?? '').toString().toLowerCase();
+        final nameJp   = (loc['loc_name_jp'] ?? '').toString();
+        final city     = (loc['loc_city'] ?? '').toString().toLowerCase();
+        final cityEn   = (loc['loc_city_en'] ?? '').toString().toLowerCase();
+        final pref     = (loc['loc_prefecture'] ?? '').toString().toLowerCase();
+        final prefEn   = (loc['loc_prefecture_en'] ?? '').toString().toLowerCase();
+        final addr     = (loc['loc_address'] ?? '').toString().toLowerCase();
+        final addrJp   = (loc['loc_address_jp'] ?? '').toString();
+        if (!name.contains(_searchQuery) &&
+            !nameJp.contains(_searchQuery) &&
+            !city.contains(_searchQuery) &&
+            !cityEn.contains(_searchQuery) &&
+            !pref.contains(_searchQuery) &&
+            !prefEn.contains(_searchQuery) &&
+            !addr.contains(_searchQuery) &&
+            !addrJp.contains(_searchQuery)) return false;
+        return _filter.matchesNonGeo(loc);
       }
       return _filter.matchesLocation(loc);
     }).toList();
@@ -384,7 +477,7 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
             ),
           ),
 
-          if (hasActiveFilter || _searchController.text.isNotEmpty)
+          if (_lastLocations.isNotEmpty && (_searchController.text.isNotEmpty || hasActiveFilter))
             Positioned(
               top: MediaQuery.of(context).padding.top + 130,
               left: 0,
@@ -543,18 +636,12 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
             child: TextField(
               controller: _searchController,
               onChanged: (_) {
-                setState(() {});
-                final filtered = _lastLocations.where((loc) {
-                  final search = _searchController.text.trim().toLowerCase();
-                  if (search.isNotEmpty) {
-                    final name = (loc['loc_name'] ?? '').toString().toLowerCase();
-                    final city = (loc['loc_city'] ?? '').toString().toLowerCase();
-                    final pref = (loc['loc_prefecture'] ?? '').toString().toLowerCase();
-                    if (!name.contains(search) && !city.contains(search) && !pref.contains(search)) return false;
-                  }
-                  return _filter.matchesLocation(loc);
-                }).toList();
-                _updateMarkers(filtered);
+                setState(() {}); // update suffix icon / badge immediately
+                _searchDebounce?.cancel();
+                _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+                  if (!mounted) return;
+                  _applySearchAndFilter();
+                });
               },
               style: const TextStyle(
                   fontSize: 15, color: Color(0xFF0D0D0D)),
@@ -569,8 +656,11 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
                     color: Colors.black.withOpacity(0.35), size: 22),
                 suffixIcon: _searchController.text.isNotEmpty
                     ? GestureDetector(
-                  onTap: () =>
-                      setState(() => _searchController.clear()),
+                  onTap: () {
+                    _searchController.clear();
+                    setState(() {});
+                    _applySearchAndFilter();
+                  },
                   child: Icon(Icons.close_rounded,
                       color: Colors.black.withOpacity(0.35),
                       size: 20),
@@ -662,16 +752,30 @@ class _CourtDetailSheet extends StatelessWidget {
   final Map<String, dynamic> loc;
   const _CourtDetailSheet({required this.loc});
 
+  // ── English-only getters ───────────────────────────────────────────
   String get _name => (loc['loc_name'] ?? 'Court').toString();
-  String get _nameJp => (loc['loc_name_jp'] ?? '').toString();
   String get _address => (loc['loc_address'] ?? '').toString();
-  String get _addressJp => (loc['loc_address_jp'] ?? '').toString();
-  String get _city => (loc['loc_city'] ?? '').toString();
-  String get _prefecture => (loc['loc_prefecture'] ?? '').toString();
+  // Prefer English variants; fall back to base field (with JP→EN map for prefecture)
+  String get _city {
+    final en = (loc['loc_city_en'] ?? '').toString().trim();
+    if (en.isNotEmpty) return en;
+    return (loc['loc_city'] ?? '').toString();
+  }
+  String get _prefecture {
+    final en = (loc['loc_prefecture_en'] ?? '').toString().trim();
+    if (en.isNotEmpty) return en;
+    const jpToEn = {
+      '東京都': 'Tokyo', '大阪府': 'Osaka', '京都府': 'Kyoto',
+      '神奈川県': 'Kanagawa', '愛知県': 'Aichi', '埼玉県': 'Saitama',
+      '千葉県': 'Chiba', '兵庫県': 'Hyogo', '北海道': 'Hokkaido',
+      '福岡県': 'Fukuoka', '静岡県': 'Shizuoka', '広島県': 'Hiroshima',
+    };
+    final jp = (loc['loc_prefecture'] ?? '').toString();
+    return jpToEn[jp] ?? jp;
+  }
   String get _country => (loc['loc_country'] ?? '').toString();
   String get _type => (loc['loc_type'] ?? '').toString();
   String get _price => (loc['loc_price'] ?? '').toString();
-  String get _hours => (loc['loc_hours'] ?? '').toString();
   String get _phone => (loc['loc_contact_email'] ?? '').toString();
   String get _googleLink => (loc['loc_googlelink'] ?? '').toString();
   String get _image => (loc['loc_image'] ?? '').toString();
@@ -684,6 +788,50 @@ class _CourtDetailSheet extends StatelessWidget {
   }
   bool get _isIndoor => loc['loc_court_type_indoor'] == true;
   bool get _isOutdoor => loc['loc_court_type_outdoor'] == true;
+
+  // Builds a clean English hours string from per-day fields.
+  // Falls back to loc_hours only if no per-day fields exist.
+  String get _hoursFormatted {
+    const days = [
+      ('Mon', 'loc_hours_mon'),
+      ('Tue', 'loc_hours_tues'),
+      ('Wed', 'loc_hours_weds'),
+      ('Thu', 'loc_hours_thurs'),
+      ('Fri', 'loc_hours_fri'),
+      ('Sat', 'loc_hours_sat'),
+      ('Sun', 'loc_hours_sun'),
+    ];
+
+    // Collect non-empty per-day values
+    final filled = <(String, String)>[];
+    for (final (label, field) in days) {
+      final v = (loc[field] ?? '').toString().trim();
+      if (v.isNotEmpty) filled.add((label, v));
+    }
+
+    if (filled.isEmpty) return ''; // no per-day data — skip hours entirely
+
+    // Group consecutive days with the same hours
+    final groups = <({String range, String hours})>[];
+    String startDay = filled[0].$1;
+    String prevDay  = filled[0].$1;
+    String curHours = filled[0].$2;
+
+    for (int i = 1; i < filled.length; i++) {
+      final (day, hours) = filled[i];
+      if (hours == curHours) {
+        prevDay = day;
+      } else {
+        groups.add((range: startDay == prevDay ? startDay : '$startDay–$prevDay', hours: curHours));
+        startDay = day;
+        prevDay  = day;
+        curHours = hours;
+      }
+    }
+    groups.add((range: startDay == prevDay ? startDay : '$startDay–$prevDay', hours: curHours));
+
+    return groups.map((g) => '${g.range}: ${g.hours}').join('  •  ');
+  }
 
   String get _locationLine {
     final parts = [_city, _prefecture, _country]
@@ -781,13 +929,7 @@ class _CourtDetailSheet extends StatelessWidget {
                                     fontWeight: FontWeight.w800,
                                     color: Color(0xFF0D0D0D),
                                     letterSpacing: -0.3)),
-                            if (_nameJp.isNotEmpty) ...[
-                              const SizedBox(height: 2),
-                              Text(_nameJp,
-                                  style: TextStyle(
-                                      fontSize: 13,
-                                      color: Colors.black.withOpacity(0.45))),
-                            ],
+                            // JP subtitle hidden for English version
                           ],
                         ),
                       ),
@@ -809,17 +951,15 @@ class _CourtDetailSheet extends StatelessWidget {
                   ),
                   const SizedBox(height: 14),
 
-                  // ── Info rows ─────────────────────────────────────
+                  // ── Info rows (English only) ──────────────────────
                   if (_locationLine.isNotEmpty)
                     _infoRow(Icons.location_on_rounded, _locationLine),
                   if (_address.isNotEmpty)
                     _infoRow(Icons.home_rounded, _address),
-                  if (_addressJp.isNotEmpty && _addressJp != _address)
-                    _infoRow(Icons.home_outlined, _addressJp),
                   if (_price.isNotEmpty)
                     _infoRow(Icons.payments_outlined, _price),
-                  if (_hours.isNotEmpty)
-                    _infoRow(Icons.access_time_rounded, _hours),
+                  if (_hoursFormatted.isNotEmpty)
+                    _infoRow(Icons.access_time_rounded, _hoursFormatted),
                   if (_phone.isNotEmpty)
                     _infoRow(Icons.phone_outlined, _phone),
 
