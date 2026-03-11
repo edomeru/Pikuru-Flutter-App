@@ -37,25 +37,34 @@ class CourtFilter {
     Set<String>? amenities,
   }) {
     return CourtFilter(
-      country:     country     == _sentinel ? this.country     : country as String?,
-      prefecture:  prefecture  == _sentinel ? this.prefecture  : prefecture as String?,
-      locType:     locType     == _sentinel ? this.locType     : locType as String?,
-      priceRange:  priceRange  == _sentinel ? this.priceRange  : priceRange as String?,
-      courtCount:  courtCount  == _sentinel ? this.courtCount  : courtCount as String?,
-      indoorOnly:  indoorOnly  == _sentinel ? this.indoorOnly  : indoorOnly as bool?,
-      amenities:   amenities   ?? this.amenities,
+      country:    country    == _sentinel ? this.country    : country as String?,
+      prefecture: prefecture == _sentinel ? this.prefecture : prefecture as String?,
+      locType:    locType    == _sentinel ? this.locType    : locType as String?,
+      priceRange: priceRange == _sentinel ? this.priceRange : priceRange as String?,
+      courtCount: courtCount == _sentinel ? this.courtCount : courtCount as String?,
+      indoorOnly: indoorOnly == _sentinel ? this.indoorOnly : indoorOnly as bool?,
+      amenities:  amenities  ?? this.amenities,
     );
   }
 
-  // isEmpty = no filters beyond the Tokyo default
   bool get isEmpty =>
       (country == null || country == 'Japan') &&
-          (prefecture == null || prefecture == '東京都') &&
+          (prefecture == null || prefecture == 'Tokyo') &&
           locType == null &&
           priceRange == null &&
           courtCount == null &&
           indoorOnly == null &&
           amenities.isEmpty;
+
+  // ── _prefValue: reads loc_prefecture (English now) ────────────────────────
+  // Firestore field loc_prefecture is now stored in English (e.g. "Tokyo").
+  // loc_prefecture_en is the same value. loc_prefecture_jp holds Japanese.
+  static String _prefValue(Map<String, dynamic> loc) {
+    // Prefer loc_prefecture_en if set, fall back to loc_prefecture
+    final en = (loc['loc_prefecture_en'] ?? '').toString().trim();
+    if (en.isNotEmpty) return en;
+    return (loc['loc_prefecture'] ?? '').toString().trim();
+  }
 
   bool matchesLocation(Map<String, dynamic> loc) {
     if (country != null) {
@@ -63,74 +72,23 @@ class CourtFilter {
       if (c != country) return false;
     }
     if (prefecture != null) {
-      final p = (loc['loc_prefecture'] ?? '').toString();
-      if (p != prefecture) return false;
+      if (_prefValue(loc) != prefecture) return false;
     }
-    if (locType != null) {
-      final t = (loc['loc_type'] ?? '').toString();
-      if (t != locType) return false;
-    }
-    if (priceRange != null) {
-      final price = (loc['loc_price'] ?? '').toString().toLowerCase();
-      final isFree = loc['loc_price_free'] == true || price.contains('free');
-      switch (priceRange) {
-        case 'free':
-          if (!isFree) return false;
-          break;
-        case '~1000':
-          if (isFree) break;
-          final num = _extractYen(price);
-          if (num == null || num > 1000) return false;
-          break;
-        case '~3000':
-          if (isFree) break;
-          final num = _extractYen(price);
-          if (num == null || num > 3000) return false;
-          break;
-        case '~5000':
-          if (isFree) break;
-          final num = _extractYen(price);
-          if (num == null || num > 5000) return false;
-          break;
-      }
-    }
-    if (courtCount != null) {
-      final count = _toDouble(loc['loc_court_count']);
-      if (count == null) return false;
-      switch (courtCount) {
-        case '1-3':
-          if (count < 1 || count > 3) return false;
-          break;
-        case '4-6':
-          if (count < 4 || count > 6) return false;
-          break;
-        case '7+':
-          if (count < 7) return false;
-          break;
-      }
-    }
-    if (indoorOnly == true) {
-      if (loc['loc_court_type_indoor'] != true) return false;
-    } else if (indoorOnly == false) {
-      if (loc['loc_court_type_outdoor'] != true) return false;
-    }
-    for (final a in amenities) {
-      if (loc['loc_amenities_$a'] != true) return false;
-    }
-    return true;
+    return _matchesNonGeo(loc);
   }
 
-  // matchesNonGeo: applies only non-geographic filters (type, price, courts, indoor, amenities).
-  // Used when the user is actively searching by text — lets them find courts
-  // outside the current country/prefecture filter area.
-  bool matchesNonGeo(Map<String, dynamic> loc) {
+  bool matchesNonGeo(Map<String, dynamic> loc) => _matchesNonGeo(loc);
+
+  bool _matchesNonGeo(Map<String, dynamic> loc) {
     if (locType != null) {
       final t = (loc['loc_type'] ?? '').toString();
       if (t != locType) return false;
     }
     if (priceRange != null) {
       final price = (loc['loc_price'] ?? '').toString().toLowerCase();
-      final isFree = loc['loc_price_free'] == true || price.contains('free');
+      final isFree = loc['loc_price_free'] == true ||
+          loc['loc_price_free'].toString() == 'true' ||
+          price.contains('free');
       switch (priceRange) {
         case 'free':
           if (!isFree) return false;
@@ -195,6 +153,10 @@ class CourtFilter {
 
 const _sentinel = Object();
 
+// ── Default filter: Tokyo (English field value) ────────────────────────────
+// loc_prefecture is now stored as English in Firestore.
+const _tokyoDefault = CourtFilter(prefecture: 'Tokyo', country: 'Japan');
+
 class CourtsScreen extends ConsumerStatefulWidget {
   const CourtsScreen({super.key});
 
@@ -208,10 +170,8 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
   GoogleMapController? _mapController;
   Set<Marker> _markers = {};
   bool _mapReady = false;
-  // ✅ Default filter: Tokyo only. User can change via filter modal.
-  CourtFilter _filter = const CourtFilter(prefecture: '東京都', country: 'Japan');
+  CourtFilter _filter = _tokyoDefault;
   List<Map<String, dynamic>> _lastLocations = [];
-  Map<String, dynamic>? _selectedCourt; // court shown in bottom sheet
   Timer? _searchDebounce;
 
   static const CameraPosition _initialPosition = CameraPosition(
@@ -248,86 +208,70 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
 
   void _moveCameraToMarkers() {
     if (_mapController == null) return;
-
-    // ✅ No markers yet — stay on default Tokyo position, don't zoom out
     if (_markers.isEmpty) {
       _mapController!.animateCamera(
-        CameraUpdate.newLatLngZoom(
-            const LatLng(35.6762, 139.6503), 10),
-      );
+          CameraUpdate.newLatLngZoom(const LatLng(35.6762, 139.6503), 10));
       return;
     }
-
     if (_markers.length == 1) {
       _mapController!.animateCamera(
-        CameraUpdate.newLatLngZoom(_markers.first.position, 14),
-      );
+          CameraUpdate.newLatLngZoom(_markers.first.position, 14));
       return;
     }
-
     double? minLat, maxLat, minLng, maxLng;
-    for (final marker in _markers) {
-      final lat = marker.position.latitude;
-      final lng = marker.position.longitude;
+    for (final m in _markers) {
+      final lat = m.position.latitude;
+      final lng = m.position.longitude;
       minLat = minLat == null ? lat : (lat < minLat ? lat : minLat);
       maxLat = maxLat == null ? lat : (lat > maxLat ? lat : maxLat);
       minLng = minLng == null ? lng : (lng < minLng ? lng : minLng);
       maxLng = maxLng == null ? lng : (lng > maxLng ? lng : maxLng);
     }
-
     if (minLat != null && maxLat != null && minLng != null && maxLng != null) {
       if (minLat == maxLat && minLng == maxLng) {
         _mapController!.animateCamera(
-          CameraUpdate.newLatLngZoom(LatLng(minLat, minLng), 14),
-        );
+            CameraUpdate.newLatLngZoom(LatLng(minLat, minLng), 14));
       } else {
-        final bounds = LatLngBounds(
-          southwest: LatLng(minLat, minLng),
-          northeast: LatLng(maxLat, maxLng),
-        );
-        _mapController!.animateCamera(
-          CameraUpdate.newLatLngBounds(bounds, 80),
-        );
+        _mapController!.animateCamera(CameraUpdate.newLatLngBounds(
+            LatLngBounds(
+                southwest: LatLng(minLat, minLng),
+                northeast: LatLng(maxLat, maxLng)),
+            80));
       }
     }
   }
 
-  void _updateMarkers(List<Map<String, dynamic>> filteredLocations) {
+  void _updateMarkers(List<Map<String, dynamic>> filtered) {
     final newMarkers = <Marker>{};
-    for (int i = 0; i < filteredLocations.length; i++) {
-      final loc = filteredLocations[i];
+    for (int i = 0; i < filtered.length; i++) {
+      final loc = filtered[i];
       final lat = _parseCoordinate(loc['loc_latitude']);
       final lng = _parseCoordinate(loc['loc_longitude']);
       if (lat != null && lng != null) {
         newMarkers.add(Marker(
           markerId: MarkerId(loc['_doc_id'] ?? 'court_$i'),
           position: LatLng(lat, lng),
-          // ✅ No InfoWindow — we show a custom bottom sheet on tap
           onTap: () => _showCourtSheet(loc),
         ));
       }
     }
     setState(() => _markers = newMarkers);
-    Future.delayed(const Duration(milliseconds: 800), _moveCameraToMarkers);
+    Future.delayed(
+        const Duration(milliseconds: 800), _moveCameraToMarkers);
   }
 
-  // ── Search + filter helper ────────────────────────────────────────
   void _applySearchAndFilter() {
     final search = _searchController.text.trim().toLowerCase();
     final filtered = _lastLocations.where((loc) {
       if (search.isNotEmpty) {
-        // ✅ Text search: match against name/city/prefecture/address globally
-        // (bypass the geographic prefecture/country filter so user can find
-        //  courts outside the current filter area by typing)
-        final name     = (loc['loc_name'] ?? '').toString().toLowerCase();
-        final nameJp   = (loc['loc_name_jp'] ?? '').toString();
-        final city     = (loc['loc_city'] ?? '').toString().toLowerCase();
-        final cityEn   = (loc['loc_city_en'] ?? '').toString().toLowerCase();
-        final pref     = (loc['loc_prefecture'] ?? '').toString().toLowerCase();
-        final prefEn   = (loc['loc_prefecture_en'] ?? '').toString().toLowerCase();
-        final addr     = (loc['loc_address'] ?? '').toString().toLowerCase();
-        final addrJp   = (loc['loc_address_jp'] ?? '').toString();
-        // Japanese strings are not lowercased (CJK has no case)
+        final name   = (loc['loc_name']          ?? '').toString().toLowerCase();
+        final nameJp = (loc['loc_name_jp']        ?? '').toString();
+        final city   = (loc['loc_city']           ?? '').toString().toLowerCase();
+        final cityEn = (loc['loc_city_en']        ?? '').toString().toLowerCase();
+        final pref   = (loc['loc_prefecture']     ?? '').toString().toLowerCase();
+        final prefEn = (loc['loc_prefecture_en']  ?? '').toString().toLowerCase();
+        final addr   = (loc['loc_address']        ?? '').toString().toLowerCase();
+        final addrJp = (loc['loc_address_jp']     ?? '').toString();
         if (!name.contains(search) &&
             !nameJp.contains(search) &&
             !city.contains(search) &&
@@ -336,16 +280,13 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
             !prefEn.contains(search) &&
             !addr.contains(search) &&
             !addrJp.contains(search)) return false;
-        // When searching: only apply non-geographic filters (type, price, etc.)
         return _filter.matchesNonGeo(loc);
       }
-      // No search text: apply full filter including prefecture/country
       return _filter.matchesLocation(loc);
     }).toList();
     _updateMarkers(filtered);
   }
 
-  // ── Court detail bottom sheet ──────────────────────────────────────
   void _showCourtSheet(Map<String, dynamic> loc) {
     showModalBottomSheet(
       context: context,
@@ -376,12 +317,13 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
     super.build(context);
     final showAddButton = ref.watch(showAddCourtButtonProvider);
     final locationsAsync = ref.watch(locationsProvider);
-
     final allLocations = locationsAsync.asData?.value ?? [];
 
     if (locationsAsync.hasValue && allLocations.isNotEmpty) {
-      final newIds = allLocations.map((l) => l['_doc_id']?.toString() ?? '').toSet();
-      final oldIds = _lastLocations.map((l) => l['_doc_id']?.toString() ?? '').toSet();
+      final newIds =
+      allLocations.map((l) => l['_doc_id']?.toString() ?? '').toSet();
+      final oldIds =
+      _lastLocations.map((l) => l['_doc_id']?.toString() ?? '').toSet();
       if (!newIds.containsAll(oldIds) || !oldIds.containsAll(newIds)) {
         _lastLocations = allLocations;
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -391,32 +333,30 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
       }
     }
 
-    final _searchQuery = _searchController.text.trim().toLowerCase();
+    final searchQuery = _searchController.text.trim().toLowerCase();
     final filteredLocations = allLocations.where((loc) {
-      if (_searchQuery.isNotEmpty) {
-        final name     = (loc['loc_name'] ?? '').toString().toLowerCase();
-        final nameJp   = (loc['loc_name_jp'] ?? '').toString();
-        final city     = (loc['loc_city'] ?? '').toString().toLowerCase();
-        final cityEn   = (loc['loc_city_en'] ?? '').toString().toLowerCase();
-        final pref     = (loc['loc_prefecture'] ?? '').toString().toLowerCase();
-        final prefEn   = (loc['loc_prefecture_en'] ?? '').toString().toLowerCase();
-        final addr     = (loc['loc_address'] ?? '').toString().toLowerCase();
-        final addrJp   = (loc['loc_address_jp'] ?? '').toString();
-        if (!name.contains(_searchQuery) &&
-            !nameJp.contains(_searchQuery) &&
-            !city.contains(_searchQuery) &&
-            !cityEn.contains(_searchQuery) &&
-            !pref.contains(_searchQuery) &&
-            !prefEn.contains(_searchQuery) &&
-            !addr.contains(_searchQuery) &&
-            !addrJp.contains(_searchQuery)) return false;
+      if (searchQuery.isNotEmpty) {
+        final name   = (loc['loc_name']         ?? '').toString().toLowerCase();
+        final nameJp = (loc['loc_name_jp']       ?? '').toString();
+        final city   = (loc['loc_city']          ?? '').toString().toLowerCase();
+        final cityEn = (loc['loc_city_en']       ?? '').toString().toLowerCase();
+        final pref   = (loc['loc_prefecture']    ?? '').toString().toLowerCase();
+        final prefEn = (loc['loc_prefecture_en'] ?? '').toString().toLowerCase();
+        final addr   = (loc['loc_address']       ?? '').toString().toLowerCase();
+        final addrJp = (loc['loc_address_jp']    ?? '').toString();
+        if (!name.contains(searchQuery) &&
+            !nameJp.contains(searchQuery) &&
+            !city.contains(searchQuery) &&
+            !cityEn.contains(searchQuery) &&
+            !pref.contains(searchQuery) &&
+            !prefEn.contains(searchQuery) &&
+            !addr.contains(searchQuery) &&
+            !addrJp.contains(searchQuery)) return false;
         return _filter.matchesNonGeo(loc);
       }
       return _filter.matchesLocation(loc);
     }).toList();
 
-    // Active filter = anything beyond the Tokyo default
-    final _tokyoDefault = const CourtFilter(prefecture: '東京都', country: 'Japan');
     final hasActiveFilter = _filter.country != _tokyoDefault.country ||
         _filter.prefecture != _tokyoDefault.prefecture ||
         _filter.locType != null ||
@@ -442,8 +382,6 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
               onMapCreated: (controller) {
                 _mapController = controller;
                 setState(() => _mapReady = true);
-                // ✅ Only move camera if markers are already loaded.
-                // If not, the initialCameraPosition (Tokyo zoom 10) holds.
                 Future.delayed(const Duration(milliseconds: 600), () {
                   if (mounted && _markers.isNotEmpty) _moveCameraToMarkers();
                 });
@@ -477,7 +415,8 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
             ),
           ),
 
-          if (_lastLocations.isNotEmpty && (_searchController.text.isNotEmpty || hasActiveFilter))
+          if (_lastLocations.isNotEmpty &&
+              (searchQuery.isNotEmpty || hasActiveFilter))
             Positioned(
               top: MediaQuery.of(context).padding.top + 130,
               left: 0,
@@ -494,16 +433,15 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
                         color: AppColors.primary.withOpacity(0.4),
                         blurRadius: 12,
                         offset: const Offset(0, 4),
-                      )
+                      ),
                     ],
                   ),
                   child: Text(
                     '${filteredLocations.length} court${filteredLocations.length == 1 ? '' : 's'} found',
                     style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                    ),
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700),
                   ),
                 ),
               ),
@@ -636,12 +574,13 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
             child: TextField(
               controller: _searchController,
               onChanged: (_) {
-                setState(() {}); // update suffix icon / badge immediately
+                setState(() {});
                 _searchDebounce?.cancel();
-                _searchDebounce = Timer(const Duration(milliseconds: 300), () {
-                  if (!mounted) return;
-                  _applySearchAndFilter();
-                });
+                _searchDebounce =
+                    Timer(const Duration(milliseconds: 300), () {
+                      if (!mounted) return;
+                      _applySearchAndFilter();
+                    });
               },
               style: const TextStyle(
                   fontSize: 15, color: Color(0xFF0D0D0D)),
@@ -744,7 +683,6 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
   }
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Court Detail Bottom Sheet
 // ─────────────────────────────────────────────────────────────────────────────
@@ -752,33 +690,27 @@ class _CourtDetailSheet extends StatelessWidget {
   final Map<String, dynamic> loc;
   const _CourtDetailSheet({required this.loc});
 
-  // ── English-only getters ───────────────────────────────────────────
   String get _name => (loc['loc_name'] ?? 'Court').toString();
   String get _address => (loc['loc_address'] ?? '').toString();
-  // Prefer English variants; fall back to base field (with JP→EN map for prefecture)
   String get _city {
     final en = (loc['loc_city_en'] ?? '').toString().trim();
-    if (en.isNotEmpty) return en;
-    return (loc['loc_city'] ?? '').toString();
+    return en.isNotEmpty ? en : (loc['loc_city'] ?? '').toString();
   }
+
   String get _prefecture {
     final en = (loc['loc_prefecture_en'] ?? '').toString().trim();
     if (en.isNotEmpty) return en;
-    const jpToEn = {
-      '東京都': 'Tokyo', '大阪府': 'Osaka', '京都府': 'Kyoto',
-      '神奈川県': 'Kanagawa', '愛知県': 'Aichi', '埼玉県': 'Saitama',
-      '千葉県': 'Chiba', '兵庫県': 'Hyogo', '北海道': 'Hokkaido',
-      '福岡県': 'Fukuoka', '静岡県': 'Shizuoka', '広島県': 'Hiroshima',
-    };
-    final jp = (loc['loc_prefecture'] ?? '').toString();
-    return jpToEn[jp] ?? jp;
+    // loc_prefecture is now stored in English — use directly
+    return (loc['loc_prefecture'] ?? '').toString();
   }
-  String get _country => (loc['loc_country'] ?? '').toString();
-  String get _type => (loc['loc_type'] ?? '').toString();
-  String get _price => (loc['loc_price'] ?? '').toString();
-  String get _phone => (loc['loc_contact_email'] ?? '').toString();
-  String get _googleLink => (loc['loc_googlelink'] ?? '').toString();
-  String get _image => (loc['loc_image'] ?? '').toString();
+
+  String get _country  => (loc['loc_country']       ?? '').toString();
+  String get _type     => (loc['loc_type']           ?? '').toString();
+  String get _price    => (loc['loc_price']          ?? '').toString();
+  String get _phone    => (loc['loc_contact_email']  ?? '').toString();
+  String get _googleLink => (loc['loc_googlelink']   ?? '').toString();
+  String get _image    => (loc['loc_image']          ?? '').toString();
+
   int get _courtCount {
     final v = loc['loc_court_count'];
     if (v is int) return v;
@@ -786,57 +718,50 @@ class _CourtDetailSheet extends StatelessWidget {
     if (v is String) return int.tryParse(v) ?? 0;
     return 0;
   }
-  bool get _isIndoor => loc['loc_court_type_indoor'] == true;
+
+  bool get _isIndoor  => loc['loc_court_type_indoor']  == true;
   bool get _isOutdoor => loc['loc_court_type_outdoor'] == true;
 
-  // Builds a clean English hours string from per-day fields.
-  // Falls back to loc_hours only if no per-day fields exist.
   String get _hoursFormatted {
     const days = [
-      ('Mon', 'loc_hours_mon'),
-      ('Tue', 'loc_hours_tues'),
-      ('Wed', 'loc_hours_weds'),
-      ('Thu', 'loc_hours_thurs'),
-      ('Fri', 'loc_hours_fri'),
-      ('Sat', 'loc_hours_sat'),
+      ('Mon', 'loc_hours_mon'), ('Tue', 'loc_hours_tues'),
+      ('Wed', 'loc_hours_weds'), ('Thu', 'loc_hours_thurs'),
+      ('Fri', 'loc_hours_fri'), ('Sat', 'loc_hours_sat'),
       ('Sun', 'loc_hours_sun'),
     ];
-
-    // Collect non-empty per-day values
     final filled = <(String, String)>[];
     for (final (label, field) in days) {
       final v = (loc[field] ?? '').toString().trim();
       if (v.isNotEmpty) filled.add((label, v));
     }
-
-    if (filled.isEmpty) return ''; // no per-day data — skip hours entirely
-
-    // Group consecutive days with the same hours
+    if (filled.isEmpty) return '';
     final groups = <({String range, String hours})>[];
-    String startDay = filled[0].$1;
-    String prevDay  = filled[0].$1;
-    String curHours = filled[0].$2;
-
+    String startDay = filled[0].$1, prevDay = filled[0].$1,
+        curHours = filled[0].$2;
     for (int i = 1; i < filled.length; i++) {
       final (day, hours) = filled[i];
       if (hours == curHours) {
         prevDay = day;
       } else {
-        groups.add((range: startDay == prevDay ? startDay : '$startDay–$prevDay', hours: curHours));
-        startDay = day;
-        prevDay  = day;
+        groups.add((
+        range: startDay == prevDay ? startDay : '$startDay–$prevDay',
+        hours: curHours
+        ));
+        startDay = prevDay = day;
         curHours = hours;
       }
     }
-    groups.add((range: startDay == prevDay ? startDay : '$startDay–$prevDay', hours: curHours));
-
+    groups.add((
+    range: startDay == prevDay ? startDay : '$startDay–$prevDay',
+    hours: curHours
+    ));
     return groups.map((g) => '${g.range}: ${g.hours}').join('  •  ');
   }
 
   String get _locationLine {
-    final parts = [_city, _prefecture, _country]
-        .where((s) => s.isNotEmpty).toList();
-    return parts.join(', ');
+    return [_city, _prefecture, _country]
+        .where((s) => s.isNotEmpty)
+        .join(', ');
   }
 
   Future<void> _openLink(BuildContext context, String url) async {
@@ -845,12 +770,6 @@ class _CourtDetailSheet extends StatelessWidget {
     if (uri == null) return;
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not open link')),
-        );
-      }
     }
   }
 
@@ -863,10 +782,9 @@ class _CourtDetailSheet extends StatelessWidget {
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.18),
-            blurRadius: 40,
-            offset: const Offset(0, -8),
-          ),
+              color: Colors.black.withOpacity(0.18),
+              blurRadius: 40,
+              offset: const Offset(0, -8)),
         ],
       ),
       child: ClipRRect(
@@ -874,32 +792,28 @@ class _CourtDetailSheet extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // ── Drag handle ───────────────────────────────────────────
             const SizedBox(height: 12),
             Container(
-              width: 40, height: 4,
+              width: 40,
+              height: 4,
               decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(2),
-              ),
+                  color: Colors.black.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(2)),
             ),
             const SizedBox(height: 4),
-
-            // ── Hero image ────────────────────────────────────────────
             if (_image.isNotEmpty)
               SizedBox(
                 height: 160,
                 width: double.infinity,
-                child: Image.network(
-                  _image,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    height: 160,
-                    color: AppColors.primary.withOpacity(0.08),
-                    child: Icon(Icons.sports_tennis_rounded,
-                        size: 48, color: AppColors.primary.withOpacity(0.3)),
-                  ),
-                ),
+                child: Image.network(_image,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      height: 160,
+                      color: AppColors.primary.withOpacity(0.08),
+                      child: Icon(Icons.sports_tennis_rounded,
+                          size: 48,
+                          color: AppColors.primary.withOpacity(0.3)),
+                    )),
               )
             else
               Container(
@@ -909,29 +823,21 @@ class _CourtDetailSheet extends StatelessWidget {
                 child: Icon(Icons.sports_tennis_rounded,
                     size: 48, color: AppColors.primary.withOpacity(0.3)),
               ),
-
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ── Name + type badge ─────────────────────────────
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(_name,
-                                style: const TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.w800,
-                                    color: Color(0xFF0D0D0D),
-                                    letterSpacing: -0.3)),
-                            // JP subtitle hidden for English version
-                          ],
-                        ),
+                        child: Text(_name,
+                            style: const TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF0D0D0D),
+                                letterSpacing: -0.3)),
                       ),
                       if (_type.isNotEmpty)
                         Container(
@@ -950,8 +856,6 @@ class _CourtDetailSheet extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 14),
-
-                  // ── Info rows (English only) ──────────────────────
                   if (_locationLine.isNotEmpty)
                     _infoRow(Icons.location_on_rounded, _locationLine),
                   if (_address.isNotEmpty)
@@ -962,25 +866,24 @@ class _CourtDetailSheet extends StatelessWidget {
                     _infoRow(Icons.access_time_rounded, _hoursFormatted),
                   if (_phone.isNotEmpty)
                     _infoRow(Icons.phone_outlined, _phone),
-
-                  // ── Court setting chips ───────────────────────────
                   if (_isIndoor || _isOutdoor || _courtCount > 0) ...[
                     const SizedBox(height: 10),
                     Wrap(
-                      spacing: 8, runSpacing: 6,
+                      spacing: 8,
+                      runSpacing: 6,
                       children: [
-                        if (_isIndoor)   _tag('Indoor',   Icons.roofing_rounded),
-                        if (_isOutdoor)  _tag('Outdoor',  Icons.park_rounded),
+                        if (_isIndoor)
+                          _tag('Indoor', Icons.roofing_rounded),
+                        if (_isOutdoor)
+                          _tag('Outdoor', Icons.park_rounded),
                         if (_courtCount > 0)
-                          _tag('$_courtCount court${_courtCount == 1 ? '' : 's'}',
+                          _tag(
+                              '$_courtCount court${_courtCount == 1 ? '' : 's'}',
                               Icons.grid_view_rounded),
                       ],
                     ),
                   ],
-
                   const SizedBox(height: 18),
-
-                  // ── More Information button ───────────────────────
                   SizedBox(
                     width: double.infinity,
                     height: 52,
@@ -1003,7 +906,6 @@ class _CourtDetailSheet extends StatelessWidget {
                         elevation: 0,
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(16)),
-                        shadowColor: AppColors.primary.withOpacity(0.3),
                       ),
                     ),
                   ),
@@ -1080,14 +982,14 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
 
   late final List<String> _countries;
   late final List<String> _locTypes;
+
+  // Maps country → sorted unique prefecture list (English values from loc_prefecture_en / loc_prefecture)
   late final Map<String, List<String>> _prefecturesByCountry;
 
   static const _priceOptions = ['All', 'Free', '~¥1,000', '~¥3,000', '~¥5,000'];
   static const _priceValues  = [null,  'free', '~1000',   '~3000',   '~5000'];
-
   static const _countOptions = ['Any', '1–3', '4–6', '7+'];
   static const _countValues  = [null,  '1-3', '4-6', '7+'];
-
   static const _amenityOptions = [
     ('Open Play',   'openplay'),
     ('Reservation', 'reservation'),
@@ -1102,21 +1004,32 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
     _draft = widget.currentFilter;
 
     final countries = <String>{};
-    final types = <String>{};
-    final prefMap = <String, Set<String>>{};
+    final types     = <String>{};
+    // Use a Set per country to automatically deduplicate
+    final prefMap   = <String, Set<String>>{};
 
     for (final loc in widget.allLocations) {
-      final c = (loc['loc_country']    ?? '').toString().trim();
-      final t = (loc['loc_type']       ?? '').toString().trim();
-      final p = (loc['loc_prefecture'] ?? '').toString().trim();
-      if (c.isNotEmpty) {
-        countries.add(c);
-        if (p.isNotEmpty) prefMap.putIfAbsent(c, () => <String>{}).add(p);
+      final country = (loc['loc_country'] ?? '').toString().trim();
+      final type    = (loc['loc_type']    ?? '').toString().trim();
+
+      // Prefecture: prefer loc_prefecture_en, fall back to loc_prefecture
+      // Both are now English, but loc_prefecture_en is the canonical field.
+      final prefEn  = (loc['loc_prefecture_en'] ?? '').toString().trim();
+      final pref    = (loc['loc_prefecture']     ?? '').toString().trim();
+      final prefValue = prefEn.isNotEmpty ? prefEn : pref;
+
+      if (country.isNotEmpty) {
+        countries.add(country);
+        if (prefValue.isNotEmpty) {
+          prefMap.putIfAbsent(country, () => <String>{}).add(prefValue);
+        }
       }
-      if (t.isNotEmpty) types.add(t);
+      if (type.isNotEmpty) types.add(type);
     }
+
     _countries = countries.toList()..sort();
     _locTypes  = types.toList()..sort();
+    // Convert Sets → sorted Lists (deduplication already handled by Set)
     _prefecturesByCountry =
         prefMap.map((k, v) => MapEntry(k, v.toList()..sort()));
   }
@@ -1126,9 +1039,19 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
           ? (_prefecturesByCountry[_draft.country] ?? [])
           : [];
 
-  void _applyAndClose() => Navigator.of(context, rootNavigator: false).pop(_draft);
-  // ✅ Reset goes back to Tokyo default, not truly empty
-  void _resetAndClose() => Navigator.of(context, rootNavigator: false).pop(const CourtFilter(prefecture: '東京都', country: 'Japan'));
+  // ── Validate that _draft.prefecture actually exists in the current list ──
+  // If the stored value is no longer present (e.g. switched country),
+  // reset it to null so the dropdown doesn't crash.
+  String? get _safePrefecture {
+    if (_draft.prefecture == null) return null;
+    if (_currentPrefectures.contains(_draft.prefecture)) return _draft.prefecture;
+    return null; // value not in list — treat as "All"
+  }
+
+  void _applyAndClose() =>
+      Navigator.of(context, rootNavigator: false).pop(_draft);
+  void _resetAndClose() =>
+      Navigator.of(context, rootNavigator: false).pop(_tokyoDefault);
 
   @override
   Widget build(BuildContext context) {
@@ -1137,9 +1060,8 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
     return Material(
       color: Colors.transparent,
       child: Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.of(context).viewInsets.bottom,
-        ),
+        padding:
+        EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
         child: ConstrainedBox(
           constraints: BoxConstraints(maxHeight: screenHeight * 0.88),
           child: Container(
@@ -1149,10 +1071,9 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
               borderRadius: BorderRadius.circular(28),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.18),
-                  blurRadius: 40,
-                  offset: const Offset(0, -8),
-                ),
+                    color: Colors.black.withOpacity(0.18),
+                    blurRadius: 40,
+                    offset: const Offset(0, -8)),
               ],
             ),
             child: ClipRRect(
@@ -1162,11 +1083,11 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
                 children: [
                   const SizedBox(height: 12),
                   Container(
-                    width: 40, height: 4,
+                    width: 40,
+                    height: 4,
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
+                        color: Colors.black.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(2)),
                   ),
                   const SizedBox(height: 12),
                   Padding(
@@ -1174,7 +1095,8 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
                     child: Row(
                       children: [
                         Container(
-                          width: 36, height: 36,
+                          width: 36,
+                          height: 36,
                           decoration: BoxDecoration(
                             color: AppColors.primary.withOpacity(0.1),
                             borderRadius: BorderRadius.circular(10),
@@ -1191,26 +1113,35 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
                                 letterSpacing: -0.5)),
                         const Spacer(),
                         IconButton(
-                          onPressed: () => Navigator.of(context, rootNavigator: false).pop(),
+                          onPressed: () =>
+                              Navigator.of(context, rootNavigator: false)
+                                  .pop(),
                           style: IconButton.styleFrom(
-                            backgroundColor: Colors.black.withOpacity(0.06),
+                            backgroundColor:
+                            Colors.black.withOpacity(0.06),
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(10)),
                             minimumSize: const Size(34, 34),
                             padding: EdgeInsets.zero,
                           ),
                           icon: Icon(Icons.close_rounded,
-                              size: 18, color: Colors.black.withOpacity(0.5)),
+                              size: 18,
+                              color: Colors.black.withOpacity(0.5)),
                         ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 4),
-                  Divider(height: 20, thickness: 1,
+                  Divider(
+                      height: 20,
+                      thickness: 1,
                       color: Colors.black.withOpacity(0.06)),
                   Flexible(
                     child: SingleChildScrollView(
-                      padding: EdgeInsets.fromLTRB(20, 4, 20,
+                      padding: EdgeInsets.fromLTRB(
+                          20,
+                          4,
+                          20,
                           MediaQuery.of(context).padding.bottom + 16),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1221,125 +1152,180 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
                             value: _draft.country,
                             hint: 'All countries',
                             items: _countries,
-                            onChanged: (v) => setState(
-                                    () => _draft = _draft.copyWith(country: v, prefecture: null)),
+                            onChanged: (v) => setState(() => _draft =
+                                _draft.copyWith(
+                                    country: v, prefecture: null)),
                           ),
                           const SizedBox(height: 20),
+
                           if (_currentPrefectures.isNotEmpty) ...[
-                            _sectionLabel('Prefecture / State', Icons.map_outlined),
+                            _sectionLabel(
+                                'Prefecture / State', Icons.map_outlined),
                             const SizedBox(height: 10),
                             _buildDropdown(
-                              value: _draft.prefecture,
+                              // Use _safePrefecture to avoid crash when value
+                              // isn't in the items list
+                              value: _safePrefecture,
                               hint: 'All prefectures',
                               items: _currentPrefectures,
-                              onChanged: (v) => setState(
-                                      () => _draft = _draft.copyWith(prefecture: v)),
+                              onChanged: (v) => setState(() =>
+                              _draft = _draft.copyWith(prefecture: v)),
                             ),
                             const SizedBox(height: 20),
                           ],
-                          _sectionLabel('Court Type', Icons.sports_tennis_rounded),
+
+                          _sectionLabel(
+                              'Court Type', Icons.sports_tennis_rounded),
                           const SizedBox(height: 10),
                           Wrap(
-                            spacing: 8, runSpacing: 8,
+                            spacing: 8,
+                            runSpacing: 8,
                             children: [
                               _chip('All', _draft.locType == null,
-                                      () => setState(() => _draft = _draft.copyWith(locType: null))),
-                              ..._locTypes.map((t) => _chip(t, _draft.locType == t,
-                                      () => setState(() => _draft = _draft.copyWith(locType: t)))),
+                                      () => setState(() => _draft =
+                                      _draft.copyWith(locType: null))),
+                              ..._locTypes.map((t) => _chip(
+                                  t,
+                                  _draft.locType == t,
+                                      () => setState(() => _draft =
+                                      _draft.copyWith(locType: t)))),
                             ],
                           ),
                           const SizedBox(height: 20),
-                          _sectionLabel('Price per Hour', Icons.payments_outlined),
+
+                          _sectionLabel(
+                              'Price per Hour', Icons.payments_outlined),
                           const SizedBox(height: 10),
                           Wrap(
-                            spacing: 8, runSpacing: 8,
-                            children: List.generate(_priceOptions.length, (i) {
-                              final val = _priceValues[i];
-                              return _chip(_priceOptions[i], _draft.priceRange == val,
-                                      () => setState(() => _draft = _draft.copyWith(priceRange: val)));
-                            }),
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: List.generate(_priceOptions.length,
+                                    (i) {
+                                  final val = _priceValues[i];
+                                  return _chip(
+                                      _priceOptions[i],
+                                      _draft.priceRange == val,
+                                          () => setState(() => _draft =
+                                          _draft.copyWith(priceRange: val)));
+                                }),
                           ),
                           const SizedBox(height: 20),
-                          _sectionLabel('Number of Courts', Icons.grid_view_rounded),
+
+                          _sectionLabel('Number of Courts',
+                              Icons.grid_view_rounded),
                           const SizedBox(height: 10),
                           Row(
-                            children: List.generate(_countOptions.length, (i) {
-                              final val = _countValues[i];
-                              final selected = _draft.courtCount == val;
-                              return Expanded(
-                                child: GestureDetector(
-                                  onTap: () => setState(
-                                          () => _draft = _draft.copyWith(courtCount: val)),
-                                  child: AnimatedContainer(
-                                    duration: const Duration(milliseconds: 180),
-                                    margin: EdgeInsets.only(
-                                        right: i < _countOptions.length - 1 ? 8 : 0),
-                                    padding: const EdgeInsets.symmetric(vertical: 12),
-                                    decoration: BoxDecoration(
-                                      color: selected
-                                          ? AppColors.primary
-                                          : Colors.black.withOpacity(0.04),
-                                      borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                        color: selected ? AppColors.primary : Colors.transparent,
-                                        width: 1.5,
+                            children: List.generate(_countOptions.length,
+                                    (i) {
+                                  final val = _countValues[i];
+                                  final selected = _draft.courtCount == val;
+                                  return Expanded(
+                                    child: GestureDetector(
+                                      onTap: () => setState(() => _draft =
+                                          _draft.copyWith(courtCount: val)),
+                                      child: AnimatedContainer(
+                                        duration:
+                                        const Duration(milliseconds: 180),
+                                        margin: EdgeInsets.only(
+                                            right: i < _countOptions.length - 1
+                                                ? 8
+                                                : 0),
+                                        padding: const EdgeInsets.symmetric(
+                                            vertical: 12),
+                                        decoration: BoxDecoration(
+                                          color: selected
+                                              ? AppColors.primary
+                                              : Colors.black.withOpacity(0.04),
+                                          borderRadius:
+                                          BorderRadius.circular(12),
+                                          border: Border.all(
+                                            color: selected
+                                                ? AppColors.primary
+                                                : Colors.transparent,
+                                            width: 1.5,
+                                          ),
+                                        ),
+                                        child: Text(_countOptions[i],
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                                fontSize: 13,
+                                                fontWeight: FontWeight.w700,
+                                                color: selected
+                                                    ? Colors.white
+                                                    : Colors.black
+                                                    .withOpacity(0.55))),
                                       ),
                                     ),
-                                    child: Text(_countOptions[i],
-                                        textAlign: TextAlign.center,
-                                        style: TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w700,
-                                            color: selected
-                                                ? Colors.white
-                                                : Colors.black.withOpacity(0.55))),
-                                  ),
-                                ),
-                              );
-                            }),
+                                  );
+                                }),
                           ),
                           const SizedBox(height: 20),
-                          _sectionLabel('Court Setting', Icons.wb_sunny_outlined),
+
+                          _sectionLabel(
+                              'Court Setting', Icons.wb_sunny_outlined),
                           const SizedBox(height: 10),
                           Row(
                             children: [
-                              _settingTile(label: 'All', icon: Icons.all_inclusive_rounded,
+                              _settingTile(
+                                  label: 'All',
+                                  icon: Icons.all_inclusive_rounded,
                                   selected: _draft.indoorOnly == null,
-                                  onTap: () => setState(() => _draft = _draft.copyWith(indoorOnly: null))),
+                                  onTap: () => setState(() => _draft =
+                                      _draft.copyWith(indoorOnly: null))),
                               const SizedBox(width: 10),
-                              _settingTile(label: 'Indoor', icon: Icons.roofing_rounded,
+                              _settingTile(
+                                  label: 'Indoor',
+                                  icon: Icons.roofing_rounded,
                                   selected: _draft.indoorOnly == true,
-                                  onTap: () => setState(() => _draft = _draft.copyWith(indoorOnly: true))),
+                                  onTap: () => setState(() => _draft =
+                                      _draft.copyWith(indoorOnly: true))),
                               const SizedBox(width: 10),
-                              _settingTile(label: 'Outdoor', icon: Icons.park_rounded,
+                              _settingTile(
+                                  label: 'Outdoor',
+                                  icon: Icons.park_rounded,
                                   selected: _draft.indoorOnly == false,
-                                  onTap: () => setState(() => _draft = _draft.copyWith(indoorOnly: false))),
+                                  onTap: () => setState(() => _draft =
+                                      _draft.copyWith(indoorOnly: false))),
                             ],
                           ),
                           const SizedBox(height: 20),
-                          _sectionLabel('Amenities', Icons.star_outline_rounded),
+
+                          _sectionLabel(
+                              'Amenities', Icons.star_outline_rounded),
                           const SizedBox(height: 10),
                           Wrap(
-                            spacing: 8, runSpacing: 8,
+                            spacing: 8,
+                            runSpacing: 8,
                             children: _amenityOptions.map((a) {
                               final (label, key) = a;
-                              final active = _draft.amenities.contains(key);
+                              final active =
+                              _draft.amenities.contains(key);
                               return GestureDetector(
                                 onTap: () {
-                                  final next = Set<String>.from(_draft.amenities);
-                                  if (active) next.remove(key); else next.add(key);
-                                  setState(() => _draft = _draft.copyWith(amenities: next));
+                                  final next =
+                                  Set<String>.from(_draft.amenities);
+                                  if (active)
+                                    next.remove(key);
+                                  else
+                                    next.add(key);
+                                  setState(() => _draft =
+                                      _draft.copyWith(amenities: next));
                                 },
                                 child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 180),
-                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                                  duration:
+                                  const Duration(milliseconds: 180),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 14, vertical: 9),
                                   decoration: BoxDecoration(
                                     color: active
                                         ? AppColors.primary.withOpacity(0.1)
                                         : Colors.black.withOpacity(0.04),
-                                    borderRadius: BorderRadius.circular(24),
+                                    borderRadius:
+                                    BorderRadius.circular(24),
                                     border: Border.all(
-                                      color: active ? AppColors.primary : Colors.transparent,
+                                      color: active
+                                          ? AppColors.primary
+                                          : Colors.transparent,
                                       width: 1.5,
                                     ),
                                   ),
@@ -1347,7 +1333,9 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       if (active) ...[
-                                        Icon(Icons.check_rounded, size: 14, color: AppColors.primary),
+                                        Icon(Icons.check_rounded,
+                                            size: 14,
+                                            color: AppColors.primary),
                                         const SizedBox(width: 4),
                                       ],
                                       Text(label,
@@ -1356,7 +1344,8 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
                                               fontWeight: FontWeight.w600,
                                               color: active
                                                   ? AppColors.primary
-                                                  : Colors.black.withOpacity(0.55))),
+                                                  : Colors.black
+                                                  .withOpacity(0.55))),
                                     ],
                                   ),
                                 ),
@@ -1364,6 +1353,7 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
                             }).toList(),
                           ),
                           const SizedBox(height: 28),
+
                           Row(
                             children: [
                               Expanded(
@@ -1372,15 +1362,18 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
                                   child: Container(
                                     height: 54,
                                     decoration: BoxDecoration(
-                                      color: Colors.black.withOpacity(0.05),
-                                      borderRadius: BorderRadius.circular(16),
+                                      color:
+                                      Colors.black.withOpacity(0.05),
+                                      borderRadius:
+                                      BorderRadius.circular(16),
                                     ),
                                     child: Center(
                                       child: Text('Reset to Tokyo',
                                           style: TextStyle(
                                               fontSize: 15,
                                               fontWeight: FontWeight.w700,
-                                              color: Colors.black.withOpacity(0.55))),
+                                              color: Colors.black
+                                                  .withOpacity(0.55))),
                                     ),
                                   ),
                                 ),
@@ -1394,10 +1387,12 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
                                     height: 54,
                                     decoration: BoxDecoration(
                                       color: AppColors.primary,
-                                      borderRadius: BorderRadius.circular(16),
+                                      borderRadius:
+                                      BorderRadius.circular(16),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: AppColors.primary.withOpacity(0.35),
+                                          color: AppColors.primary
+                                              .withOpacity(0.35),
                                           blurRadius: 16,
                                           offset: const Offset(0, 6),
                                         ),
@@ -1449,9 +1444,12 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+        padding:
+        const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
         decoration: BoxDecoration(
-          color: selected ? AppColors.primary : Colors.black.withOpacity(0.04),
+          color: selected
+              ? AppColors.primary
+              : Colors.black.withOpacity(0.04),
           borderRadius: BorderRadius.circular(24),
           border: Border.all(
             color: selected ? AppColors.primary : Colors.transparent,
@@ -1462,7 +1460,9 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
             style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
-                color: selected ? Colors.white : Colors.black.withOpacity(0.55))),
+                color: selected
+                    ? Colors.white
+                    : Colors.black.withOpacity(0.55))),
       ),
     );
   }
@@ -1480,20 +1480,27 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
-            color: selected ? AppColors.primary : Colors.black.withOpacity(0.04),
+            color: selected
+                ? AppColors.primary
+                : Colors.black.withOpacity(0.04),
             borderRadius: BorderRadius.circular(14),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 20,
-                  color: selected ? Colors.white : Colors.black.withOpacity(0.4)),
+              Icon(icon,
+                  size: 20,
+                  color: selected
+                      ? Colors.white
+                      : Colors.black.withOpacity(0.4)),
               const SizedBox(height: 4),
               Text(label,
                   style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
-                      color: selected ? Colors.white : Colors.black.withOpacity(0.5))),
+                      color: selected
+                          ? Colors.white
+                          : Colors.black.withOpacity(0.5))),
             ],
           ),
         ),
@@ -1501,24 +1508,36 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
     );
   }
 
+  /// Crash-safe dropdown. Deduplicates items and validates value existence.
   Widget _buildDropdown({
     required String? value,
     required String hint,
     required List<String> items,
     required void Function(String?) onChanged,
   }) {
+    // Deduplicate items just in case (Set already handles this in initState,
+    // but this is a final safety net for the DropdownButton assertion).
+    final uniqueItems = items.toSet().toList()..sort();
+
+    // If the current value is not present in uniqueItems, reset to null
+    // so the dropdown renders without crashing.
+    final safeValue =
+    (value != null && uniqueItems.contains(value)) ? value : null;
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.black.withOpacity(0.04),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-          color: value != null ? AppColors.primary.withOpacity(0.5) : Colors.transparent,
+          color: safeValue != null
+              ? AppColors.primary.withOpacity(0.5)
+              : Colors.transparent,
           width: 1.5,
         ),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
-          value: value,
+          value: safeValue,
           hint: Padding(
             padding: const EdgeInsets.only(left: 14),
             child: Text(hint,
@@ -1536,9 +1555,11 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
             DropdownMenuItem<String>(
               value: null,
               child: Text(hint,
-                  style: TextStyle(fontSize: 14, color: Colors.black.withOpacity(0.4))),
+                  style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.black.withOpacity(0.4))),
             ),
-            ...items.map((item) => DropdownMenuItem<String>(
+            ...uniqueItems.map((item) => DropdownMenuItem<String>(
               value: item,
               child: Text(item,
                   style: const TextStyle(

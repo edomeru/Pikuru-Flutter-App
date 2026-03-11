@@ -17,7 +17,8 @@ final eventsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
       .collection('events')
       .where('event_active', isEqualTo: true)
       .where('event_date', isGreaterThanOrEqualTo: Timestamp.fromDate(today))
-      .where('event_date', isLessThanOrEqualTo: Timestamp.fromDate(thirtyDaysLater))
+      .where('event_date',
+      isLessThanOrEqualTo: Timestamp.fromDate(thirtyDaysLater))
       .orderBy('event_date')
       .limit(50)
       .snapshots()
@@ -52,8 +53,8 @@ final organizationsProvider =
 StreamProvider<List<Map<String, dynamic>>>((ref) {
   return FirebaseFirestore.instance
       .collection('organizations')
+      .where('org_active', isEqualTo: true)
       .orderBy('org_created_at')
-      .limit(10)
       .snapshots()
       .map((s) => s.docs.map((d) {
     final data = d.data();
@@ -63,8 +64,6 @@ StreamProvider<List<Map<String, dynamic>>>((ref) {
 });
 
 // ── Locations (Courts) Provider ───────────────────────────────────────────────
-// Fetches ALL location docs then filters active client-side.
-// Handles both boolean true and string "true" for loc_active.
 final locationsProvider =
 StreamProvider<List<Map<String, dynamic>>>((ref) {
   return FirebaseFirestore.instance
@@ -77,13 +76,13 @@ StreamProvider<List<Map<String, dynamic>>>((ref) {
       return data;
     }).toList();
 
-    // Debug log — check Flutter console to diagnose missing pins
     debugPrint('[locationsProvider] Total docs: ${all.length}');
     for (final d in all) {
-      debugPrint('  ${d["_doc_id"]}: active=${d["loc_active"]} (${d["loc_active"]?.runtimeType}), lat=${d["loc_latitude"]}, lng=${d["loc_longitude"]}');
+      debugPrint(
+          '  ${d["_doc_id"]}: active=${d["loc_active"]} (${d["loc_active"]?.runtimeType}), '
+              'lat=${d["loc_latitude"]}, lng=${d["loc_longitude"]}');
     }
 
-    // Accept boolean true OR string "true"
     final active = all.where((d) {
       final v = d['loc_active'];
       return v == true || v?.toString().toLowerCase() == 'true';
@@ -94,60 +93,85 @@ StreamProvider<List<Map<String, dynamic>>>((ref) {
   });
 });
 
-
 // ── Location Resolver Provider ────────────────────────────────────────────────
+// Resolves a loc_id → "City, Prefecture" display label (English).
+//
+// Field priority (English first, then legacy fallbacks):
+//   city       : loc_city_en  → loc_city
+//   prefecture : loc_prefecture_en → loc_prefecture
+//   country    : loc_country
+//   last resort: loc_name (the venue name — only shown if nothing else works)
+//
+// Returns '' on failure so callers can show org_country as a fallback.
 final locationResolverProvider =
 FutureProvider.family<String, String>((ref, locId) async {
-  if (locId.isEmpty) return 'Unknown location';
+  if (locId.isEmpty) return '';
 
   String _display(Map<String, dynamic> d) {
-    final city       = (d['loc_city'] ?? '').toString();
-    final prefecture = (d['loc_prefecture'] ?? '').toString();
-    final country    = (d['loc_country'] ?? '').toString();
-    final name       = (d['loc_name'] ?? '').toString();
+    // City: prefer the dedicated English field
+    final city = ((d['loc_city_en'] ?? '').toString().trim().isNotEmpty
+        ? d['loc_city_en']
+        : d['loc_city'] ?? '')
+        .toString()
+        .trim();
 
-    if (city.isNotEmpty && prefecture.isNotEmpty) return '\$city, \$prefecture';
-    if (city.isNotEmpty && country.isNotEmpty)    return '\$city, \$country';
+    // Prefecture: prefer the dedicated English field
+    final prefecture =
+    ((d['loc_prefecture_en'] ?? '').toString().trim().isNotEmpty
+        ? d['loc_prefecture_en']
+        : d['loc_prefecture'] ?? '')
+        .toString()
+        .trim();
+
+    final country = (d['loc_country'] ?? '').toString().trim();
+
+    // Build label — never fall back to loc_name so venue names don't show
+    if (city.isNotEmpty && prefecture.isNotEmpty) return '$city, $prefecture';
+    if (city.isNotEmpty && country.isNotEmpty)    return '$city, $country';
     if (city.isNotEmpty)                          return city;
-    if (name.isNotEmpty)                          return name;
-    return 'Unknown location';
+    if (prefecture.isNotEmpty && country.isNotEmpty) return '$prefecture, $country';
+    if (prefecture.isNotEmpty)                    return prefecture;
+    if (country.isNotEmpty)                       return country;
+    return '';
   }
 
   try {
+    // 1️⃣ Query by loc_id field (lowercase)
     final q1 = await FirebaseFirestore.instance
         .collection('locations')
         .where('loc_id', isEqualTo: locId)
         .limit(1)
         .get();
-    if (q1.docs.isNotEmpty) return _display(q1.docs.first.data());
+    if (q1.docs.isNotEmpty) {
+      final label = _display(q1.docs.first.data());
+      if (label.isNotEmpty) return label;
+    }
 
-    final q2 = await FirebaseFirestore.instance
-        .collection('locations')
-        .where('loc_ID', isEqualTo: locId)
-        .limit(1)
-        .get();
-    if (q2.docs.isNotEmpty) return _display(q2.docs.first.data());
-
+    // 2️⃣ Try Firestore document ID
     final doc = await FirebaseFirestore.instance
         .collection('locations')
         .doc(locId)
         .get();
-    if (doc.exists) return _display(doc.data()!);
+    if (doc.exists) {
+      final label = _display(doc.data()!);
+      if (label.isNotEmpty) return label;
+    }
 
-    final all = await FirebaseFirestore.instance
-        .collection('locations')
-        .get();
+    // 3️⃣ Full-scan fallback
+    final all =
+    await FirebaseFirestore.instance.collection('locations').get();
     for (final d in all.docs) {
       final data = d.data();
-      if (d.id == locId ||
-          data['loc_id']?.toString() == locId ||
-          data['loc_ID']?.toString() == locId) {
-        return _display(data);
+      if (d.id == locId || data['loc_id']?.toString() == locId) {
+        final label = _display(data);
+        if (label.isNotEmpty) return label;
       }
     }
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('[locationResolverProvider] Error for locId=$locId: $e');
+  }
 
-  return 'Unknown location';
+  return '';
 });
 
 // ── Organizer Resolver Provider ───────────────────────────────────────────────
@@ -155,9 +179,8 @@ final organizerResolverProvider =
 FutureProvider.family<String, String>((ref, orgId) async {
   if (orgId.isEmpty) return '';
 
-  String _display(Map<String, dynamic> d) {
-    return (d['org_name'] ?? '').toString().trim();
-  }
+  String _display(Map<String, dynamic> d) =>
+      (d['org_name'] ?? '').toString().trim();
 
   try {
     final q1 = await FirebaseFirestore.instance
@@ -166,13 +189,6 @@ FutureProvider.family<String, String>((ref, orgId) async {
         .limit(1)
         .get();
     if (q1.docs.isNotEmpty) return _display(q1.docs.first.data());
-
-    final q2 = await FirebaseFirestore.instance
-        .collection('organizations')
-        .where('org_ID', isEqualTo: orgId)
-        .limit(1)
-        .get();
-    if (q2.docs.isNotEmpty) return _display(q2.docs.first.data());
 
     final doc = await FirebaseFirestore.instance
         .collection('organizations')
@@ -185,9 +201,7 @@ FutureProvider.family<String, String>((ref, orgId) async {
         .get();
     for (final d in all.docs) {
       final data = d.data();
-      if (d.id == orgId ||
-          data['org_id']?.toString() == orgId ||
-          data['org_ID']?.toString() == orgId) {
+      if (d.id == orgId || data['org_id']?.toString() == orgId) {
         return _display(data);
       }
     }
