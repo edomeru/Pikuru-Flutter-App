@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/services/chat_service.dart';
 import 'package:pikuru/screens/chat_members_screen.dart';
+import 'package:pikuru/screens/group_detail_screen.dart';
 
 class GroupChatScreen extends StatefulWidget {
   final Map<String, dynamic> group;
@@ -90,7 +91,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     HapticFeedback.lightImpact();
     final text = _messageController.text;
     _messageController.clear();
-    _focusNode.requestFocus(); // keep keyboard open after sending
+    _focusNode.requestFocus();
     await ChatService.sendMessage(_chatId!, text);
     _scrollToBottom();
   }
@@ -127,14 +128,11 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     final orgImage = widget.group['org_image'] ?? '';
 
     return Scaffold(
-      // ── Key: pushes input bar up when keyboard opens ──────────────────
       resizeToAvoidBottomInset: true,
       backgroundColor: const Color(0xFFF2F2F7),
       body: Column(
         children: [
-          // AppBar with top SafeArea only
           _buildAppBar(orgName, orgImage),
-          // Messages fill remaining space, shrinks when keyboard opens
           Expanded(
             child: GestureDetector(
               onTap: () => FocusScope.of(context).unfocus(),
@@ -145,8 +143,6 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                   : _buildMessageList(),
             ),
           ),
-          // Input bar — Scaffold pushes this up with keyboard
-          // SafeArea(top:false) handles home indicator on gesture phones
           SafeArea(
             top: false,
             child: _buildInputBar(),
@@ -333,12 +329,10 @@ class _GroupChatScreenState extends State<GroupChatScreen>
             final isMe = msg['sender_id'] == currentUser?.uid;
 
             final prevSenderId = index > 0
-                ? (messages[index - 1].data()
-            as Map<String, dynamic>)['sender_id']
+                ? (messages[index - 1].data() as Map<String, dynamic>)['sender_id']
                 : null;
             final nextSenderId = index < messages.length - 1
-                ? (messages[index + 1].data()
-            as Map<String, dynamic>)['sender_id']
+                ? (messages[index + 1].data() as Map<String, dynamic>)['sender_id']
                 : null;
 
             final isFirstInGroup = prevSenderId != msg['sender_id'];
@@ -346,8 +340,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
 
             final showDate = index == 0 ||
                 _isDifferentDay(
-                  (messages[index - 1].data()
-                  as Map<String, dynamic>)['sent_at'],
+                  (messages[index - 1].data() as Map<String, dynamic>)['sent_at'],
                   msg['sent_at'],
                 );
 
@@ -410,18 +403,25 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     );
   }
 
-  // ── Message Bubble ─────────────────────────────────────────────────────
+  // ── Message Bubble — routes to card or plain text ──────────────────────
   Widget _buildMessageBubble(
       Map<String, dynamic> msg,
       bool isMe,
       bool isFirstInGroup,
       bool isLastInGroup,
       ) {
+    final Timestamp? sentAt = msg['sent_at'];
+    final time = sentAt != null ? _formatTime(sentAt.toDate()) : '';
+
+    // ── Group share card ───────────────────────────────────────────────
+    if ((msg['type'] ?? '') == 'group_share') {
+      return _buildGroupShareBubble(msg, isMe, isFirstInGroup, isLastInGroup, time);
+    }
+
+    // ── Normal text bubble ─────────────────────────────────────────────
     final text = msg['text'] ?? '';
     final senderName = msg['sender_name'] ?? '';
     final avatarUrl = msg['sender_avatar'] ?? '';
-    final Timestamp? sentAt = msg['sent_at'];
-    final time = sentAt != null ? _formatTime(sentAt.toDate()) : '';
 
     final bubbleRadius = BorderRadius.only(
       topLeft: Radius.circular(!isMe && !isFirstInGroup ? 6 : 20),
@@ -449,9 +449,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                     : null,
                 child: avatarUrl.isEmpty
                     ? Text(
-                  senderName.isNotEmpty
-                      ? senderName[0].toUpperCase()
-                      : '?',
+                  senderName.isNotEmpty ? senderName[0].toUpperCase() : '?',
                   style: TextStyle(
                     fontSize: 13,
                     color: AppColors.primary,
@@ -527,8 +525,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
 
                 if (isLastInGroup)
                   Padding(
-                    padding:
-                    const EdgeInsets.only(top: 5, left: 4, right: 4),
+                    padding: const EdgeInsets.only(top: 5, left: 4, right: 4),
                     child: Text(
                       time,
                       style: const TextStyle(
@@ -548,6 +545,219 @@ class _GroupChatScreenState extends State<GroupChatScreen>
       ),
     );
   }
+
+  // ── Group share card bubble ────────────────────────────────────────────
+  Widget _buildGroupShareBubble(
+      Map<String, dynamic> msg,
+      bool isMe,
+      bool isFirstInGroup,
+      bool isLastInGroup,
+      String time,
+      ) {
+    final groupName = (msg['group_name'] ?? 'Unknown Group').toString();
+    final groupImage = (msg['group_image'] ?? '').toString();
+    final groupType = (msg['group_type'] ?? '').toString();
+    final senderName = (msg['sender_name'] ?? '').toString();
+    final avatarUrl = (msg['sender_avatar'] ?? '').toString();
+
+    // Reconstruct group map for GroupDetailScreen
+    final groupData = Map<String, dynamic>.from(msg['group_data'] as Map? ?? {});
+    if (groupData.isEmpty) {
+      groupData['org_name'] = groupName;
+      groupData['org_image'] = groupImage;
+      groupData['org_type'] = groupType;
+      groupData['org_id'] = (msg['group_id'] ?? '').toString();
+    }
+
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: isLastInGroup ? 10 : 2,
+        left: isMe ? 60 : 42,
+        right: isMe ? 4 : 60,
+      ),
+      child: Column(
+        crossAxisAlignment:
+        isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          // Sender name + avatar (only for other people, first in group)
+          if (!isMe && isFirstInGroup)
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 5),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircleAvatar(
+                    radius: 10,
+                    backgroundColor: AppColors.primary.withOpacity(0.12),
+                    backgroundImage: avatarUrl.isNotEmpty
+                        ? NetworkImage(avatarUrl)
+                        : null,
+                    child: avatarUrl.isEmpty
+                        ? Text(
+                      senderName.isNotEmpty
+                          ? senderName[0].toUpperCase()
+                          : '?',
+                      style: TextStyle(
+                          fontSize: 8,
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.bold),
+                    )
+                        : null,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    senderName,
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primary,
+                      letterSpacing: 0.1,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          // ── Tappable group card ──────────────────────────────────────
+          GestureDetector(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => GroupDetailScreen(group: groupData),
+              ),
+            ),
+            child: Container(
+              width: MediaQuery.of(context).size.width * 0.66,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                    color: AppColors.primary.withOpacity(0.15), width: 1),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.07),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Banner image
+                  ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(15)),
+                    child: groupImage.isNotEmpty
+                        ? Image.network(
+                      groupImage,
+                      height: 110,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          _groupSharePlaceholder(),
+                    )
+                        : _groupSharePlaceholder(),
+                  ),
+
+                  // Info + arrow
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (groupType.isNotEmpty)
+                                Container(
+                                  margin: const EdgeInsets.only(bottom: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: AppColors.primary.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text(
+                                    groupType,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                ),
+                              Text(
+                                groupName,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF1A1A1A),
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.all(7),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            borderRadius: BorderRadius.circular(9),
+                          ),
+                          child: const Icon(Icons.arrow_forward_rounded,
+                              color: Colors.white, size: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // Hint
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                    child: Text(
+                      'Tap to view group',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppColors.primary.withOpacity(0.6),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          if (isLastInGroup)
+            Padding(
+              padding: EdgeInsets.only(
+                  top: 5, left: isMe ? 0 : 4, right: isMe ? 4 : 0),
+              child: Text(
+                time,
+                style: const TextStyle(
+                  fontSize: 10.5,
+                  color: Color(0xFFAEAEB2),
+                  fontWeight: FontWeight.w400,
+                  letterSpacing: 0.1,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _groupSharePlaceholder() => Container(
+    height: 110,
+    color: AppColors.primary.withOpacity(0.08),
+    child: Center(
+      child: Icon(Icons.group_rounded,
+          size: 40, color: AppColors.primary.withOpacity(0.4)),
+    ),
+  );
 
   // ── Input Bar ──────────────────────────────────────────────────────────
   Widget _buildInputBar() {
@@ -582,7 +792,6 @@ class _GroupChatScreenState extends State<GroupChatScreen>
               child: TextField(
                 controller: _messageController,
                 focusNode: _focusNode,
-                // ── Keyboard fixes ──────────────────────────────────────
                 keyboardType: TextInputType.multiline,
                 textInputAction: TextInputAction.newline,
                 textCapitalization: TextCapitalization.sentences,

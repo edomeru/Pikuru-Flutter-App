@@ -369,10 +369,17 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
       bool isFirstInGroup,
       bool isLastInGroup,
       ) {
-    final text = msg['text'] ?? '';
     final Timestamp? sentAt = msg['sent_at'];
     final time = sentAt != null ? _formatTime(sentAt.toDate()) : '';
     final hiResAvatar = _hiRes(widget.otherUserAvatar);
+
+    // ── Group share card ──────────────────────────────────────────────────
+    if ((msg['type'] ?? '') == 'group_share') {
+      return _buildGroupShareBubble(msg, isMe, isLastInGroup, time, hiResAvatar);
+    }
+
+    // ── Normal text bubble ────────────────────────────────────────────────
+    final text = msg['text'] ?? '';
 
     final bubbleRadius = BorderRadius.only(
       topLeft: Radius.circular(!isMe && !isFirstInGroup ? 5 : 22),
@@ -462,6 +469,202 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
       ),
     );
   }
+
+  // ── Group share card bubble ───────────────────────────────────────────────
+  Widget _buildGroupShareBubble(
+      Map<String, dynamic> msg,
+      bool isMe,
+      bool isLastInGroup,
+      String time,
+      String hiResAvatar,
+      ) {
+    final groupName = (msg['group_name'] ?? 'Unknown Group').toString();
+    final groupImage = (msg['group_image'] ?? '').toString();
+    final groupType = (msg['group_type'] ?? '').toString();
+
+    // Reconstruct the group map so GroupDetailScreen can receive it
+    final groupData = Map<String, dynamic>.from(msg['group_data'] as Map? ?? {});
+    if (groupData.isEmpty) {
+      // Fallback: build minimal group map from message fields
+      groupData['org_name'] = groupName;
+      groupData['org_image'] = groupImage;
+      groupData['org_type'] = groupType;
+      groupData['org_id'] = (msg['group_id'] ?? '').toString();
+    }
+
+    return Padding(
+      padding: EdgeInsets.only(
+          bottom: isLastInGroup ? 12 : 2,
+          left: isMe ? 60 : 38,
+          right: isMe ? 4 : 60),
+      child: Column(
+        crossAxisAlignment:
+        isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          if (!isMe)
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 4),
+              child: Row(
+                children: [
+                  _Avatar(
+                    url: hiResAvatar,
+                    name: widget.otherUserName,
+                    radius: 10,
+                    fontSize: 8,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    widget.otherUserName,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          // ── Tappable card ───────────────────────────────────────────
+          GestureDetector(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => GroupDetailScreen(group: groupData),
+              ),
+            ),
+            child: Container(
+              width: MediaQuery.of(context).size.width * 0.68,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                    color: AppColors.primary.withOpacity(0.15), width: 1),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.07),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Image banner
+                  ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(15)),
+                    child: groupImage.isNotEmpty
+                        ? Image.network(
+                      groupImage,
+                      height: 110,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          _groupSharePlaceholder(),
+                    )
+                        : _groupSharePlaceholder(),
+                  ),
+
+                  // Info row
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (groupType.isNotEmpty)
+                                Container(
+                                  margin: const EdgeInsets.only(bottom: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color:
+                                    AppColors.primary.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text(
+                                    groupType,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                ),
+                              Text(
+                                groupName,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF1A1A1A),
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.all(7),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            borderRadius: BorderRadius.circular(9),
+                          ),
+                          child: const Icon(Icons.arrow_forward_rounded,
+                              color: Colors.white, size: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // "Tap to view group" hint
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                    child: Text(
+                      'Tap to view group',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppColors.primary.withOpacity(0.6),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          if (isLastInGroup)
+            Padding(
+              padding: EdgeInsets.only(
+                  top: 4, left: isMe ? 0 : 4, right: isMe ? 4 : 0),
+              child: Text(
+                time,
+                style: TextStyle(
+                  fontSize: 10.5,
+                  color: Colors.black.withOpacity(0.28),
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _groupSharePlaceholder() => Container(
+    height: 110,
+    color: AppColors.primary.withOpacity(0.08),
+    child: Center(
+      child: Icon(Icons.group_rounded,
+          size: 40, color: AppColors.primary.withOpacity(0.4)),
+    ),
+  );
 
   // ── Input Bar ────────────────────────────────────────────────────────────
   Widget _buildInputBar() {

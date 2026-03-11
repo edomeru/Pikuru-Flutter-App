@@ -9,6 +9,7 @@ import 'package:pikuru/providers/providers.dart';
 import 'package:pikuru/utils/date_formatter.dart';
 import 'package:pikuru/modal/join_group_modal.dart';
 import 'package:pikuru/modal/mark_interested_modal.dart';
+import 'package:pikuru/modal/share_group_modal.dart';
 
 // ── Data helpers ──────────────────────────────────────────────────────────────
 
@@ -128,7 +129,6 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
 
   Future<void> _launchUrl(String url) async {
     if (url.isEmpty) return;
-    // Ensure URL has a scheme
     final raw = url.startsWith('http') ? url : 'https://$url';
     final uri = Uri.tryParse(raw);
     if (uri == null) return;
@@ -149,7 +149,7 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
     final orgLocId = (widget.group['org_loc_id'] ?? '').toString();
     final locationAsync = ref.watch(locationResolverProvider(orgLocId));
 
-    String locationLabel = locationAsync.when(
+    final locationLabel = locationAsync.when(
       data: (l) {
         if (l.isEmpty) {
           final country = (widget.group['org_country'] ?? '').toString();
@@ -177,9 +177,7 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
     final imageUrl =
     (widget.group['org_image'] ?? widget.group['org_pic'] ?? '').toString();
 
-    // org_website field from Firestore
     final website = (widget.group['org_website'] ?? '').toString().trim();
-    // Display label: strip https:// and trailing slash for readability
     final websiteLabel = website
         .replaceFirst(RegExp(r'^https?://'), '')
         .replaceFirst(RegExp(r'/$'), '');
@@ -210,7 +208,11 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
                 padding: const EdgeInsets.all(8),
                 child: _GlassButton(
                   icon: Icons.ios_share_rounded,
-                  onTap: () {},
+                  // ── Opens the share modal ──────────────────────────────
+                  onTap: () => ShareGroupModal.show(
+                    context,
+                    group: widget.group,
+                  ),
                 ),
               ),
             ],
@@ -222,6 +224,7 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
               background: Stack(
                 fit: StackFit.expand,
                 children: [
+                  // Hero image
                   imageUrl.isNotEmpty
                       ? Image.network(
                     imageUrl,
@@ -247,6 +250,8 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
                     child: const Icon(Icons.group,
                         size: 80, color: Colors.white38),
                   ),
+
+                  // Gradient overlay
                   DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
@@ -260,6 +265,8 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
                       ),
                     ),
                   ),
+
+                  // Type badge + org name
                   Positioned(
                     left: 20,
                     right: 20,
@@ -339,35 +346,32 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
 
                     const SizedBox(height: 24),
 
-                    // ── Info Grid (2 × 2) ─────────────────────────────────
+                    // ── Info Grid (2 × 2) + website ───────────────────────
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
                       child: Column(
                         children: [
                           Row(
                             children: [
-                              Expanded(
-                                  child: _buildInfoItem(
-                                      Icons.location_on, locationLabel)),
+                              Expanded(child: _buildInfoItem(
+                                  Icons.location_on, locationLabel)),
                               const SizedBox(width: 16),
-                              Expanded(
-                                  child: _buildInfoItem(
-                                      Icons.people, ageLabel)),
+                              Expanded(child: _buildInfoItem(
+                                  Icons.people, ageLabel)),
                             ],
                           ),
                           const SizedBox(height: 16),
                           Row(
                             children: [
-                              Expanded(
-                                  child: _buildInfoItem(
-                                      Icons.calendar_month, scheduleLabel)),
+                              Expanded(child: _buildInfoItem(
+                                  Icons.calendar_month, scheduleLabel)),
                               const SizedBox(width: 16),
-                              Expanded(
-                                  child: _buildInfoItem(
-                                      Icons.sports, skillLabel)),
+                              Expanded(child: _buildInfoItem(
+                                  Icons.sports, skillLabel)),
                             ],
                           ),
-                          // ── Website row (only shown when org_website is set)
+
+                          // Website — only rendered when org_website is set
                           if (websiteLabel.isNotEmpty) ...[
                             const SizedBox(height: 16),
                             GestureDetector(
@@ -386,8 +390,8 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
                                         color: AppColors.primary,
                                         fontWeight: FontWeight.w500,
                                         decoration: TextDecoration.underline,
-                                        decorationColor: AppColors.primary
-                                            .withOpacity(0.5),
+                                        decorationColor:
+                                        AppColors.primary.withOpacity(0.5),
                                         height: 1.4,
                                       ),
                                       maxLines: 1,
@@ -682,6 +686,7 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
           ),
           child: Row(
             children: [
+              // Date badge
               Container(
                 width: 62,
                 margin: const EdgeInsets.all(12),
@@ -724,6 +729,8 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
                   ],
                 ),
               ),
+
+              // Event details
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 12),
@@ -783,6 +790,8 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
                   ),
                 ),
               ),
+
+              // Arrow
               Padding(
                 padding: const EdgeInsets.only(right: 14),
                 child: Container(
