@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/providers/providers.dart';
 import 'package:pikuru/utils/date_formatter.dart';
@@ -107,10 +108,8 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
         vsync: this, duration: const Duration(milliseconds: 550));
     _fadeAnim =
         CurvedAnimation(parent: _animController, curve: Curves.easeOut);
-    _slideAnim = Tween<Offset>(
-        begin: const Offset(0, 0.05), end: Offset.zero)
-        .animate(
-        CurvedAnimation(parent: _animController, curve: Curves.easeOut));
+    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.05), end: Offset.zero)
+        .animate(CurvedAnimation(parent: _animController, curve: Curves.easeOut));
     _animController.forward();
   }
 
@@ -127,6 +126,17 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
     if (mounted) setState(() => _isJoined = joined);
   }
 
+  Future<void> _launchUrl(String url) async {
+    if (url.isEmpty) return;
+    // Ensure URL has a scheme
+    final raw = url.startsWith('http') ? url : 'https://$url';
+    final uri = Uri.tryParse(raw);
+    if (uri == null) return;
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
   String get _orgId =>
       (widget.group['org_id'] ??
           widget.group['org_ID'] ??
@@ -134,44 +144,45 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
           '')
           .toString();
 
-  // ── build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final orgLocId = (widget.group['org_loc_id'] ?? '').toString();
-
-    // locationResolverProvider tries loc_id, loc_ID, doc-id, and a full-scan
-    // fallback — so it will find the location regardless of field name casing.
     final locationAsync = ref.watch(locationResolverProvider(orgLocId));
 
-    // When the provider returns "Unknown location" (e.g. loc_id not yet in
-    // Firestore) fall back to org_country from the org document itself.
     String locationLabel = locationAsync.when(
       data: (l) {
-        if (l == 'Unknown location' || l.isEmpty) {
+        if (l.isEmpty) {
           final country = (widget.group['org_country'] ?? '').toString();
           return country.isNotEmpty ? country : 'Unknown location';
         }
         return l;
       },
       loading: () => 'Loading...',
-      error:   (_, __) {
+      error: (_, __) {
         final country = (widget.group['org_country'] ?? '').toString();
         return country.isNotEmpty ? country : 'Unknown';
       },
     );
 
-    final skillLabel    = (widget.group['org_skill_level'] ?? '').toString().trim().isNotEmpty
+    final skillLabel = (widget.group['org_skill_level'] ?? '').toString().trim().isNotEmpty
         ? widget.group['org_skill_level'].toString()
         : _resolveSkillLevel(widget.group);
-    final ageLabel      = (widget.group['org_age_groups'] ?? '').toString().trim().isNotEmpty
+    final ageLabel = (widget.group['org_age_groups'] ?? '').toString().trim().isNotEmpty
         ? widget.group['org_age_groups'].toString()
         : _resolveAgeGroups(widget.group);
     final scheduleLabel = (widget.group['org_schedule'] ?? '').toString().trim().isNotEmpty
         ? widget.group['org_schedule'].toString()
         : _resolveSchedule(widget.group);
 
-    // Hero image — tries org_image first (Firestore field), then org_pic (Excel field)
-    final imageUrl = (widget.group['org_image'] ?? widget.group['org_pic'] ?? '').toString();
+    final imageUrl =
+    (widget.group['org_image'] ?? widget.group['org_pic'] ?? '').toString();
+
+    // org_website field from Firestore
+    final website = (widget.group['org_website'] ?? '').toString().trim();
+    // Display label: strip https:// and trailing slash for readability
+    final websiteLabel = website
+        .replaceFirst(RegExp(r'^https?://'), '')
+        .replaceFirst(RegExp(r'/$'), '');
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
@@ -179,7 +190,7 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
         physics: const BouncingScrollPhysics(),
         slivers: [
 
-          // ── Hero App Bar ─────────────────────────────────────────────────
+          // ── Hero App Bar ──────────────────────────────────────────────────
           SliverAppBar(
             expandedHeight: 320,
             pinned: true,
@@ -211,7 +222,6 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
               background: Stack(
                 fit: StackFit.expand,
                 children: [
-                  // ── Hero image (org_image from Firestore) ──────────────
                   imageUrl.isNotEmpty
                       ? Image.network(
                     imageUrl,
@@ -237,8 +247,6 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
                     child: const Icon(Icons.group,
                         size: 80, color: Colors.white38),
                   ),
-
-                  // Gradient for text legibility
                   DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
@@ -252,8 +260,6 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
                       ),
                     ),
                   ),
-
-                  // Org type badge + name pinned to bottom of hero
                   Positioned(
                     left: 20,
                     right: 20,
@@ -318,7 +324,7 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
                   children: [
                     const SizedBox(height: 24),
 
-                    // ── Description ──────────────────────────────────────
+                    // Description
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
                       child: Text(
@@ -334,7 +340,6 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
                     const SizedBox(height: 24),
 
                     // ── Info Grid (2 × 2) ─────────────────────────────────
-                    // Matches the original layout from the screenshot exactly
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
                       child: Column(
@@ -342,38 +347,60 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
                           Row(
                             children: [
                               Expanded(
-                                child: _buildInfoItem(
-                                  Icons.location_on,
-                                  locationLabel,
-                                ),
-                              ),
+                                  child: _buildInfoItem(
+                                      Icons.location_on, locationLabel)),
                               const SizedBox(width: 16),
                               Expanded(
-                                child: _buildInfoItem(
-                                  Icons.people,
-                                  ageLabel,
-                                ),
-                              ),
+                                  child: _buildInfoItem(
+                                      Icons.people, ageLabel)),
                             ],
                           ),
                           const SizedBox(height: 16),
                           Row(
                             children: [
                               Expanded(
-                                child: _buildInfoItem(
-                                  Icons.calendar_month,
-                                  scheduleLabel,
-                                ),
-                              ),
+                                  child: _buildInfoItem(
+                                      Icons.calendar_month, scheduleLabel)),
                               const SizedBox(width: 16),
                               Expanded(
-                                child: _buildInfoItem(
-                                  Icons.sports,
-                                  skillLabel,
-                                ),
-                              ),
+                                  child: _buildInfoItem(
+                                      Icons.sports, skillLabel)),
                             ],
                           ),
+                          // ── Website row (only shown when org_website is set)
+                          if (websiteLabel.isNotEmpty) ...[
+                            const SizedBox(height: 16),
+                            GestureDetector(
+                              onTap: () => _launchUrl(website),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.language_rounded,
+                                      color: AppColors.primary, size: 22),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      websiteLabel,
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        color: AppColors.primary,
+                                        fontWeight: FontWeight.w500,
+                                        decoration: TextDecoration.underline,
+                                        decorationColor: AppColors.primary
+                                            .withOpacity(0.5),
+                                        height: 1.4,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  Icon(Icons.open_in_new_rounded,
+                                      size: 14,
+                                      color: AppColors.primary.withOpacity(0.6)),
+                                ],
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -446,7 +473,6 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
                             ],
                           ),
 
-                          // Already-joined banner
                           if (_isJoined == true) ...[
                             const SizedBox(height: 12),
                             Container(
@@ -527,7 +553,6 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
     );
   }
 
-  // ── 2×2 info item (original style from screenshot) ────────────────────────
   Widget _buildInfoItem(IconData icon, String text) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -545,7 +570,6 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
     );
   }
 
-  // ── Events list ───────────────────────────────────────────────────────────
   Widget _buildUpcomingEventsList() {
     if (_orgId.isEmpty) return _buildEmptyEvents();
 
@@ -575,8 +599,7 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
               child: Center(
                 child: Text(
                   'Error loading events.\n${snapshot.error}',
-                  style: const TextStyle(
-                      fontSize: 13, color: Colors.black54),
+                  style: const TextStyle(fontSize: 13, color: Colors.black54),
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -592,9 +615,11 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
         if (events.isEmpty) return _buildEmptyEvents();
 
         return Column(
-          children: events.take(3).map((doc) {
-            return _buildEventItem(doc.data() as Map<String, dynamic>);
-          }).toList(),
+          children: events
+              .take(3)
+              .map((doc) =>
+              _buildEventItem(doc.data() as Map<String, dynamic>))
+              .toList(),
         );
       },
     );
@@ -639,7 +664,8 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
     };
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20).copyWith(bottom: 12),
+      padding:
+      const EdgeInsets.symmetric(horizontal: 20).copyWith(bottom: 12),
       child: GestureDetector(
         onTap: () => MarkInterestedModal.show(context, eventWithGroup),
         child: Container(
@@ -656,7 +682,6 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
           ),
           child: Row(
             children: [
-              // Date badge
               Container(
                 width: 62,
                 margin: const EdgeInsets.all(12),
@@ -699,8 +724,6 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
                   ],
                 ),
               ),
-
-              // Details
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 12),
@@ -742,7 +765,8 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
                                 return loc.when(
                                   data: (l) => Text(l,
                                       style: const TextStyle(
-                                          fontSize: 12, color: Colors.black45),
+                                          fontSize: 12,
+                                          color: Colors.black45),
                                       maxLines: 1,
                                       overflow: TextOverflow.ellipsis),
                                   loading: () => const Text('...',
@@ -759,8 +783,6 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
                   ),
                 ),
               ),
-
-              // Arrow CTA
               Padding(
                 padding: const EdgeInsets.only(right: 14),
                 child: Container(
