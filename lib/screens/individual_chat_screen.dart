@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/services/individual_chat_service.dart';
 import 'package:pikuru/screens/group_detail_screen.dart';
+import 'package:pikuru/screens/event_detail_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // UTILITY — upgrades Google profile photo URLs to full resolution
@@ -378,6 +379,11 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
       return _buildGroupShareBubble(msg, isMe, isLastInGroup, time, hiResAvatar);
     }
 
+    // ── Event share card ──────────────────────────────────────────────────
+    if ((msg['type'] ?? '') == 'event_share') {
+      return _buildEventShareBubble(msg, isMe, isLastInGroup, time, hiResAvatar);
+    }
+
     // ── Normal text bubble ────────────────────────────────────────────────
     final text = msg['text'] ?? '';
 
@@ -666,7 +672,223 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
     ),
   );
 
-  // ── Input Bar ────────────────────────────────────────────────────────────
+  // ── Event share card bubble ───────────────────────────────────────────────
+  Widget _buildEventShareBubble(
+      Map<String, dynamic> msg,
+      bool isMe,
+      bool isLastInGroup,
+      String time,
+      String hiResAvatar,
+      ) {
+    final eventTitle = (msg['event_title'] ?? 'Untitled Event').toString();
+    final eventImage = (msg['event_image'] ?? '').toString();
+    final eventDate = (msg['event_date'] ?? '').toString();
+    final eventType = (msg['event_type'] ?? '').toString();
+
+    final eventData =
+    Map<String, dynamic>.from(msg['event_data'] as Map? ?? {});
+    if (eventData.isEmpty) {
+      eventData['event_title'] = eventTitle;
+      eventData['event_pic'] = eventImage;
+      eventData['event_type'] = eventType;
+      eventData['event_id'] = (msg['event_id'] ?? '').toString();
+    }
+
+    return Padding(
+      padding: EdgeInsets.only(
+          bottom: isLastInGroup ? 12 : 2,
+          left: isMe ? 60 : 38,
+          right: isMe ? 4 : 60),
+      child: Column(
+        crossAxisAlignment:
+        isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        children: [
+          if (!isMe)
+            Padding(
+              padding: const EdgeInsets.only(left: 4, bottom: 4),
+              child: Row(
+                children: [
+                  _Avatar(
+                    url: hiResAvatar,
+                    name: widget.otherUserName,
+                    radius: 10,
+                    fontSize: 8,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    widget.otherUserName,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          GestureDetector(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => EventDetailScreen(event: eventData),
+              ),
+            ),
+            child: Container(
+              width: MediaQuery.of(context).size.width * 0.68,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                    color: AppColors.primary.withOpacity(0.15), width: 1),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.07),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Banner image
+                  ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(15)),
+                    child: eventImage.isNotEmpty
+                        ? Image.network(
+                      eventImage,
+                      height: 110,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          _eventSharePlaceholder(),
+                    )
+                        : _eventSharePlaceholder(),
+                  ),
+
+                  // Info + arrow
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (eventType.isNotEmpty)
+                                Container(
+                                  margin: const EdgeInsets.only(bottom: 4),
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color:
+                                    AppColors.primary.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text(
+                                    eventType,
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.primary,
+                                    ),
+                                  ),
+                                ),
+                              Text(
+                                eventTitle,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF1A1A1A),
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              if (eventDate.isNotEmpty)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 3),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.calendar_today_rounded,
+                                          size: 11,
+                                          color: AppColors.primary
+                                              .withOpacity(0.7)),
+                                      const SizedBox(width: 3),
+                                      Text(
+                                        eventDate,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: AppColors.primary
+                                              .withOpacity(0.8),
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.all(7),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            borderRadius: BorderRadius.circular(9),
+                          ),
+                          child: const Icon(Icons.arrow_forward_rounded,
+                              color: Colors.white, size: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                    child: Text(
+                      'Tap to view event',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: AppColors.primary.withOpacity(0.6),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          if (isLastInGroup)
+            Padding(
+              padding: EdgeInsets.only(
+                  top: 4, left: isMe ? 0 : 4, right: isMe ? 4 : 0),
+              child: Text(
+                time,
+                style: TextStyle(
+                  fontSize: 10.5,
+                  color: Colors.black.withOpacity(0.28),
+                  letterSpacing: 0.2,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _eventSharePlaceholder() => Container(
+    height: 110,
+    color: AppColors.primary.withOpacity(0.08),
+    child: Center(
+      child: Icon(Icons.event_rounded,
+          size: 40, color: AppColors.primary.withOpacity(0.4)),
+    ),
+  );
+
+
   Widget _buildInputBar() {
     return Container(
       decoration: BoxDecoration(

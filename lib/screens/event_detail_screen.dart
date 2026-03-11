@@ -7,7 +7,7 @@ import 'package:pikuru/providers/providers.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:pikuru/screens/share_modal.dart';
+import 'package:pikuru/modal/share_event_modal.dart';
 import 'package:intl/intl.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -193,12 +193,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
   }
 
   void _showShareModal() {
-    final title = widget.event['event_title'] ?? 'Check out this event!';
-    final eId = widget.event['event_id']?.toString() ?? '';
-    final eventUrl = eId.isNotEmpty
-        ? 'https://pikuru.app/events/$eId'
-        : 'https://pikuru.app/events';
-    ShareModal.show(context, eventTitle: title, eventUrl: eventUrl);
+    ShareEventModal.show(context, event: widget.event);
   }
 
   Future<Map<String, dynamic>?> _fetchLocation() async {
