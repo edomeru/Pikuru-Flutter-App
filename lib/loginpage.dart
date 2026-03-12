@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:modal_progress_hud_nsn/modal_progress_hud_nsn.dart';
 import 'package:pikuru/Utils/auth_service.dart';
+import 'package:pikuru/screens/reset_password_dialog.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -20,11 +21,11 @@ class _LoginScreenState extends State<LoginScreen> {
   String email = '';
   String password = '';
 
-  // ── Capitalize first letter, lowercase the rest ──────────────────────
+  // ── Capitalize first letter, lowercase the rest ───────────────────────
   String _capitalize(String s) =>
       s.isEmpty ? s : s[0].toUpperCase() + s.substring(1).toLowerCase();
 
-  // ── Ensure Google user has a complete registration doc ───────────────
+  // ── Ensure Google user has a complete registration doc ────────────────
   Future<void> _ensureRegistrationDoc(User user) async {
     try {
       final docRef = FirebaseFirestore.instance
@@ -33,7 +34,6 @@ class _LoginScreenState extends State<LoginScreen> {
       final doc = await docRef.get();
       final data = doc.data() ?? {};
 
-      // Only write if doc is missing or firstName is empty
       if (!doc.exists || (data['firstName'] ?? '').toString().isEmpty) {
         final displayName = (user.displayName ?? '').trim();
         final parts = displayName.split(' ');
@@ -44,6 +44,11 @@ class _LoginScreenState extends State<LoginScreen> {
             ? parts.sublist(1).map(_capitalize).join(' ')
             : '';
 
+        // Determine the provider from the user's providerData
+        final provider = user.providerData.isNotEmpty
+            ? user.providerData.first.providerId
+            : 'password';
+
         await docRef.set({
           'firstName': firstName,
           'lastName': lastName,
@@ -51,175 +56,23 @@ class _LoginScreenState extends State<LoginScreen> {
           'uid': user.uid,
           'address': data['address'] ?? '',
           'description': data['description'] ?? '',
-          'createdAt': data['createdAt'] ?? FieldValue.serverTimestamp(),
+          // Preserve existing provider if already set, otherwise write new one
+          'provider': data['provider']?.toString().isNotEmpty == true
+              ? data['provider']
+              : provider,
+          'createdAt':
+          data['createdAt'] ?? FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
+      } else if ((data['provider'] ?? '').toString().isEmpty) {
+        // Doc exists but has no provider field — backfill it
+        final provider = user.providerData.isNotEmpty
+            ? user.providerData.first.providerId
+            : 'password';
+        await docRef.set({'provider': provider}, SetOptions(merge: true));
       }
     } catch (e) {
       debugPrint('Error ensuring registration doc: $e');
     }
-  }
-
-  // ── Forgot Password dialog ───────────────────────────────────────────
-  void _showForgotPassword() {
-    final controller = TextEditingController(text: email.trim());
-    bool sending = false;
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlgState) => Dialog(
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(24)),
-          child: Padding(
-            padding: const EdgeInsets.all(28),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 60,
-                  height: 60,
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.10),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.lock_reset_rounded,
-                      color: AppColors.primary, size: 30),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Reset Password',
-                  style: TextStyle(
-                      fontSize: 18, fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  "Enter your email and we'll send you a reset link.",
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.black.withOpacity(0.45),
-                      height: 1.5),
-                ),
-                const SizedBox(height: 20),
-                TextField(
-                  controller: controller,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: InputDecoration(
-                    hintText: 'Enter your email',
-                    prefixIcon: const Icon(Icons.email_outlined,
-                        color: AppColors.primary, size: 20),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide(
-                          color: AppColors.primary.withOpacity(0.3)),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: const BorderSide(
-                          color: AppColors.primary, width: 1.5),
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 14),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        style: OutlinedButton.styleFrom(
-                          side:
-                          BorderSide(color: Colors.grey.shade300),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 12),
-                        ),
-                        child: Text(
-                          'Cancel',
-                          style: TextStyle(
-                              color: Colors.grey.shade500,
-                              fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: sending
-                            ? null
-                            : () async {
-                          final resetEmail =
-                          controller.text.trim();
-                          if (resetEmail.isEmpty ||
-                              !resetEmail.contains('@')) {
-                            ScaffoldMessenger.of(context)
-                                .showSnackBar(const SnackBar(
-                              content: Text(
-                                  'Please enter a valid email.'),
-                            ));
-                            return;
-                          }
-                          setDlgState(() => sending = true);
-                          try {
-                            await _auth.sendPasswordResetEmail(
-                                email: resetEmail);
-                            if (!context.mounted) return;
-                            Navigator.pop(ctx);
-                            ScaffoldMessenger.of(context)
-                                .showSnackBar(SnackBar(
-                              content: Text(
-                                  'Reset link sent to $resetEmail'),
-                              backgroundColor: AppColors.primary,
-                            ));
-                          } on FirebaseAuthException catch (e) {
-                            setDlgState(() => sending = false);
-                            String msg =
-                                'Failed to send reset email.';
-                            if (e.code == 'user-not-found') {
-                              msg =
-                              'No account found with this email.';
-                            }
-                            ScaffoldMessenger.of(context)
-                                .showSnackBar(SnackBar(
-                                content: Text(msg)));
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          disabledBackgroundColor:
-                          AppColors.primary.withOpacity(0.5),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 12),
-                        ),
-                        child: sending
-                            ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2),
-                        )
-                            : const Text(
-                          'Send Link',
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
   }
 
   @override
@@ -240,7 +93,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   children: [
                     const SizedBox(height: 36),
 
-                    // ── Email ────────────────────────────────────
+                    // ── Email ─────────────────────────────────────
                     TextFormField(
                       onChanged: (v) => email = v,
                       keyboardType: TextInputType.emailAddress,
@@ -253,7 +106,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     const SizedBox(height: 16),
 
-                    // ── Password ─────────────────────────────────
+                    // ── Password ──────────────────────────────────
                     TextFormField(
                       obscureText: true,
                       onChanged: (v) => password = v,
@@ -266,11 +119,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     const SizedBox(height: 6),
 
-                    // ── Forgot Password ──────────────────────────
+                    // ── Forgot Password ───────────────────────────
                     Align(
                       alignment: Alignment.centerRight,
                       child: TextButton(
-                        onPressed: _showForgotPassword,
+                        onPressed: () => showResetPasswordDialog(
+                          context,
+                          prefillEmail: email.trim(),
+                        ),
                         style: TextButton.styleFrom(
                           padding: EdgeInsets.zero,
                           tapTargetSize:
@@ -286,7 +142,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     const SizedBox(height: 20),
 
-                    // ── Sign In Button ───────────────────────────
+                    // ── Sign In Button ────────────────────────────
                     SizedBox(
                       height: 54,
                       child: ElevatedButton(
@@ -302,14 +158,11 @@ class _LoginScreenState extends State<LoginScreen> {
                             Navigator.pushReplacement(
                               context,
                               MaterialPageRoute(
-                                builder: (_) =>
-                                const MainNavigation(),
+                                builder: (_) => const MainNavigation(),
                               ),
                             );
                           } on FirebaseAuthException catch (e) {
                             setState(() => showSpinner = false);
-                            // Firebase now returns 'invalid-credential'
-                            // for both wrong email and wrong password
                             String msg;
                             switch (e.code) {
                               case 'invalid-credential':
@@ -323,30 +176,25 @@ class _LoginScreenState extends State<LoginScreen> {
                                 'Please enter a valid email address.';
                                 break;
                               case 'user-disabled':
-                                msg =
-                                'This account has been disabled.';
+                                msg = 'This account has been disabled.';
                                 break;
                               case 'too-many-requests':
                                 msg =
                                 'Too many attempts. Please try again later.';
                                 break;
                               default:
-                                msg =
-                                'Login failed. Please try again.';
+                                msg = 'Login failed. Please try again.';
                             }
                             if (!mounted) return;
-                            ScaffoldMessenger.of(context)
-                                .showSnackBar(
+                            ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(content: Text(msg)),
                             );
                           } catch (e) {
                             setState(() => showSpinner = false);
                             if (!mounted) return;
-                            ScaffoldMessenger.of(context)
-                                .showSnackBar(
+                            ScaffoldMessenger.of(context).showSnackBar(
                               SnackBar(
-                                  content: Text(
-                                      'Error: ${e.toString()}')),
+                                  content: Text('Error: ${e.toString()}')),
                             );
                           }
                         },
@@ -370,7 +218,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     const SizedBox(height: 28),
 
-                    // ── Divider ──────────────────────────────────
+                    // ── Divider ───────────────────────────────────
                     const Row(
                       children: [
                         Expanded(child: Divider()),
@@ -380,8 +228,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           child: Text(
                             'Or Sign In With',
                             style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.black45),
+                                fontSize: 12, color: Colors.black45),
                           ),
                         ),
                         Expanded(child: Divider()),
@@ -390,7 +237,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     const SizedBox(height: 20),
 
-                    // ── Google + Apple buttons ───────────────────
+                    // ── Google + Apple buttons ────────────────────
                     Row(
                       children: [
                         Expanded(
@@ -402,17 +249,9 @@ class _LoginScreenState extends State<LoginScreen> {
                               setState(() => showSpinner = false);
 
                               if (result != null) {
-                                // ✅ Force token refresh so Firestore
-                                // rules receive a valid auth token
-                                // immediately — fixes permission-denied
-                                // errors on first load after sign-in
                                 await result.user!.getIdToken(true);
-
-                                // Ensure complete registration doc
-                                // for Google users (new or incomplete)
                                 await _ensureRegistrationDoc(
                                     result.user!);
-
                                 if (!mounted) return;
                                 Navigator.pushReplacement(
                                   context,
@@ -426,8 +265,8 @@ class _LoginScreenState extends State<LoginScreen> {
                                 ScaffoldMessenger.of(context)
                                     .showSnackBar(
                                   const SnackBar(
-                                    content: Text(
-                                        'Google sign-in failed'),
+                                    content:
+                                    Text('Google sign-in failed'),
                                   ),
                                 );
                               }
@@ -480,7 +319,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     const SizedBox(height: 28),
 
-                    // ── Sign Up link ─────────────────────────────
+                    // ── Sign Up link ──────────────────────────────
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -519,7 +358,7 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // ── Header ─────────────────────────────────────────────────────────────
+  // ── Header ──────────────────────────────────────────────────────────────
   Widget _buildHeader(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
     return SizedBox(
@@ -580,7 +419,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-// ── Input decoration ────────────────────────────────────────────────────
+// ── Input decoration ─────────────────────────────────────────────────────
 InputDecoration _inputDecoration(String hint) {
   return InputDecoration(
     hintText: hint,
@@ -603,7 +442,7 @@ InputDecoration _inputDecoration(String hint) {
   );
 }
 
-// ── Pill-shaped social button ────────────────────────────────────────────
+// ── Pill-shaped social button ─────────────────────────────────────────────
 Widget _pillButton({
   required VoidCallback onPressed,
   required Widget child,
@@ -666,11 +505,8 @@ class _GoogleGPainter extends CustomPainter {
       ..color = Colors.white
       ..style = PaintingStyle.fill;
     canvas.drawRect(
-      Rect.fromLTWH(
-          center.dx,
-          center.dy - size.height * 0.15,
-          size.width * 0.55,
-          size.height * 0.30),
+      Rect.fromLTWH(center.dx, center.dy - size.height * 0.15,
+          size.width * 0.55, size.height * 0.30),
       whitePaint,
     );
 
@@ -678,11 +514,8 @@ class _GoogleGPainter extends CustomPainter {
       ..color = const Color(0xFF4285F4)
       ..style = PaintingStyle.fill;
     canvas.drawRect(
-      Rect.fromLTWH(
-          center.dx,
-          center.dy - size.height * 0.10,
-          size.width * 0.50,
-          size.height * 0.20),
+      Rect.fromLTWH(center.dx, center.dy - size.height * 0.10,
+          size.width * 0.50, size.height * 0.20),
       bluePaint,
     );
   }

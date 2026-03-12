@@ -5,6 +5,7 @@ import 'package:pikuru/screens/events_screen.dart';
 import 'package:pikuru/screens/groups_screen.dart';
 import 'package:pikuru/screens/account_screen.dart';
 import 'package:pikuru/screens/courts_screen.dart';
+import 'package:pikuru/screens/event_history_screen.dart';
 
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
@@ -15,52 +16,61 @@ class MainNavigation extends StatefulWidget {
 
 class _MainNavigationState extends State<MainNavigation> {
   int _currentIndex = 0;
+  int _eventHistoryInitialTab = 0;
 
-  // ← Called by HomeScreen welcome card buttons to switch tabs
-  void _navigateToTab(int index) {
-    setState(() => _currentIndex = index);
-  }
+  // Index 5 is EventHistoryScreen — hidden from the bottom bar.
+  // Bottom nav only covers 0–4.
+  static const int _kEventHistory = 5;
+
+  void _navigateToTab(int index) =>
+      setState(() => _currentIndex = index);
+
+  void _openEventHistory({int initialTab = 0}) => setState(() {
+    _eventHistoryInitialTab = initialTab;
+    _currentIndex = _kEventHistory;
+  });
 
   @override
   Widget build(BuildContext context) {
-    // Build screens here so HomeScreen gets the callback
-    final screens = [
-      HomeScreen(onNavigateToTab: _navigateToTab), // ← passes callback
-      const CourtsScreen(),
-      const EventsScreen(),
-      const GroupsScreen(),
-      const AccountScreen(),
+    final screens = <Widget>[
+      HomeScreen(onNavigateToTab: _navigateToTab),         // 0 – Home
+      const CourtsScreen(),                                // 1 – Courts
+      const EventsScreen(),                               // 2 – Events
+      const GroupsScreen(),                               // 3 – Groups
+      AccountScreen(                                      // 4 – Account
+        onNavigateToTab: _navigateToTab,
+        onOpenEventHistory: _openEventHistory,
+      ),
+      EventHistoryScreen(                                 // 5 – hidden
+        key: ValueKey(_eventHistoryInitialTab),
+        initialTab: _eventHistoryInitialTab,
+        onBack: () => _navigateToTab(4),
+      ),
     ];
 
     return Scaffold(
-      body: screens[_currentIndex],
+      body: IndexedStack(
+        index: _currentIndex,
+        children: screens,
+      ),
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
+        // Clamp so the bar never shows index 5 as selected.
+        currentIndex: _currentIndex.clamp(0, 4),
         selectedItemColor: AppColors.primary,
         unselectedItemColor: Colors.grey,
         type: BottomNavigationBarType.fixed,
         onTap: (index) => setState(() => _currentIndex = index),
         items: const [
           BottomNavigationBarItem(
-            icon: Icon(Icons.home_outlined),
-            label: 'Home',
-          ),
+              icon: Icon(Icons.home_outlined), label: 'Home'),
           BottomNavigationBarItem(
-            icon: Icon(Icons.sports_tennis),
-            label: 'Courts',
-          ),
+              icon: Icon(Icons.sports_tennis), label: 'Courts'),
           BottomNavigationBarItem(
-            icon: Icon(Icons.event),
-            label: 'Events',
-          ),
+              icon: Icon(Icons.event), label: 'Events'),
           BottomNavigationBarItem(
-            icon: Icon(Icons.groups),
-            label: 'Groups',
-          ),
+              icon: Icon(Icons.groups), label: 'Groups'),
           BottomNavigationBarItem(
-            icon: Icon(Icons.person),
-            label: 'Account',
-          ),
+              icon: Icon(Icons.person), label: 'Account'),
         ],
       ),
     );

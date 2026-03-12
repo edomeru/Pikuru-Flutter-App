@@ -7,7 +7,19 @@ import 'package:pikuru/screens/event_detail_screen.dart';
 import 'package:intl/intl.dart';
 
 class EventHistoryScreen extends StatefulWidget {
-  const EventHistoryScreen({super.key});
+  /// Which tab to open on: 0 = My Events, 1 = Interested Events.
+  final int initialTab;
+
+  /// Called when the user taps the back button.
+  /// When embedded inside MainNavigation this switches back to the Account tab
+  /// (index 4) instead of popping the route — keeping the bottom bar visible.
+  final VoidCallback? onBack;
+
+  const EventHistoryScreen({
+    super.key,
+    this.initialTab = 0,
+    this.onBack,
+  });
 
   @override
   State<EventHistoryScreen> createState() => _EventHistoryScreenState();
@@ -20,13 +32,25 @@ class _EventHistoryScreenState extends State<EventHistoryScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: widget.initialTab.clamp(0, 1),
+    );
   }
 
   @override
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  void _handleBack() {
+    if (widget.onBack != null) {
+      widget.onBack!();
+    } else {
+      Navigator.pop(context);
+    }
   }
 
   @override
@@ -39,8 +63,9 @@ class _EventHistoryScreenState extends State<EventHistoryScreen>
             pinned: true,
             backgroundColor: AppColors.primary,
             elevation: 0,
+            automaticallyImplyLeading: false,
             leading: GestureDetector(
-              onTap: () => Navigator.pop(context),
+              onTap: _handleBack,
               child: Container(
                 margin: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
@@ -80,9 +105,7 @@ class _EventHistoryScreenState extends State<EventHistoryScreen>
                   labelColor: AppColors.primary,
                   unselectedLabelColor: Colors.white,
                   labelStyle: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
+                      fontSize: 13, fontWeight: FontWeight.w700),
                   tabs: const [
                     Tab(text: 'My Events'),
                     Tab(text: 'Interested Events'),
@@ -105,19 +128,16 @@ class _EventHistoryScreenState extends State<EventHistoryScreen>
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Event List — streams user_events filtered by status,
-// then fetches full event details from `events` collection
+// Event List
 // ═══════════════════════════════════════════════════════════════════
 class _EventList extends StatelessWidget {
-  final String status; // 'my_events' | 'interested'
+  final String status;
   const _EventList({required this.status});
 
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) {
-      return const Center(child: Text('Not signed in'));
-    }
+    if (uid == null) return const Center(child: Text('Not signed in'));
 
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
@@ -129,13 +149,9 @@ class _EventList extends StatelessWidget {
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(
-            child: CircularProgressIndicator(
-              color: AppColors.primary,
-              strokeWidth: 2,
-            ),
-          );
+              child: CircularProgressIndicator(
+                  color: AppColors.primary, strokeWidth: 2));
         }
-
         if (snap.hasError) {
           return _EmptyState(
             icon: Icons.error_outline_rounded,
@@ -143,9 +159,7 @@ class _EventList extends StatelessWidget {
             subtitle: snap.error.toString(),
           );
         }
-
         final docs = snap.data?.docs ?? [];
-
         if (docs.isEmpty) {
           return _EmptyState(
             icon: status == 'my_events'
@@ -159,7 +173,6 @@ class _EventList extends StatelessWidget {
                 : 'Events you want to keep an eye on will appear here',
           );
         }
-
         return ListView.builder(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
           itemCount: docs.length,
@@ -168,7 +181,8 @@ class _EventList extends StatelessWidget {
             return _EventCard(
               userEventDoc: docs[i],
               savedData: data,
-              otherStatus: status == 'my_events' ? 'interested' : 'my_events',
+              otherStatus:
+              status == 'my_events' ? 'interested' : 'my_events',
             );
           },
         );
@@ -178,7 +192,7 @@ class _EventList extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Event Card — fetches full event data then renders
+// Event Card
 // ═══════════════════════════════════════════════════════════════════
 class _EventCard extends StatelessWidget {
   final QueryDocumentSnapshot userEventDoc;
@@ -195,7 +209,6 @@ class _EventCard extends StatelessWidget {
     final eventId = (savedData['event_id'] ?? '').toString();
     if (eventId.isEmpty) return null;
     try {
-      // Try by doc ID first
       final doc = await FirebaseFirestore.instance
           .collection('events')
           .doc(eventId)
@@ -205,7 +218,6 @@ class _EventCard extends StatelessWidget {
         d['_doc_id'] = doc.id;
         return d;
       }
-      // Fallback: query by event_id field
       final q = await FirebaseFirestore.instance
           .collection('events')
           .where('event_id', isEqualTo: eventId)
@@ -241,20 +253,18 @@ class _EventCard extends StatelessWidget {
 
   Future<void> _switchStatus(BuildContext context) async {
     HapticFeedback.lightImpact();
-    final newStatus = otherStatus;
-    final label = newStatus == 'my_events' ? 'My Events' : 'Interested';
+    final label =
+    otherStatus == 'my_events' ? 'My Events' : 'Interested';
     try {
-      await userEventDoc.reference.update({'status': newStatus});
+      await userEventDoc.reference.update({'status': otherStatus});
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Moved to $label'),
-            behavior: SnackBarBehavior.floating,
-            backgroundColor: AppColors.primary,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12)),
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Moved to $label'),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: AppColors.primary,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
+        ));
       }
     } catch (_) {}
   }
@@ -264,8 +274,8 @@ class _EventCard extends StatelessWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        shape:
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20)),
         backgroundColor: Colors.white,
         title: const Text('Remove Event?',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
@@ -273,7 +283,8 @@ class _EventCard extends StatelessWidget {
         content: const Text(
           'This event will be removed from your saved list.',
           textAlign: TextAlign.center,
-          style: TextStyle(fontSize: 14, color: Colors.black54, height: 1.5),
+          style:
+          TextStyle(fontSize: 14, color: Colors.black54, height: 1.5),
         ),
         actionsAlignment: MainAxisAlignment.spaceEvenly,
         actionsPadding:
@@ -282,21 +293,23 @@ class _EventCard extends StatelessWidget {
           OutlinedButton(
             onPressed: () => Navigator.pop(context, false),
             style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 24, vertical: 10),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12)),
               side: BorderSide(color: Colors.grey.shade300),
             ),
             child: const Text('Cancel',
                 style: TextStyle(
-                    fontWeight: FontWeight.w600, color: Colors.black54)),
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black54)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red.shade400,
-              padding:
-              const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 24, vertical: 10),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12)),
               elevation: 0,
@@ -308,7 +321,6 @@ class _EventCard extends StatelessWidget {
         ],
       ),
     );
-
     if (confirmed == true) {
       try {
         await userEventDoc.reference.delete();
@@ -321,7 +333,6 @@ class _EventCard extends StatelessWidget {
     return FutureBuilder<Map<String, dynamic>?>(
       future: _fetchEvent(),
       builder: (context, snap) {
-        // Use cached data from user_events while loading full event
         final title = (snap.data?['event_title'] ??
             savedData['event_title'] ??
             'Loading...')
@@ -329,12 +340,10 @@ class _EventCard extends StatelessWidget {
         final imageUrl =
         (snap.data?['event_pic'] ?? savedData['event_pic'] ?? '')
             .toString();
-        final dateStr = snap.data != null
-            ? _formatDate(snap.data!['event_date'])
-            : '';
-        final timeStr = snap.data != null
-            ? _formatTime(snap.data!['event_time'])
-            : '';
+        final dateStr =
+        snap.data != null ? _formatDate(snap.data!['event_date']) : '';
+        final timeStr =
+        snap.data != null ? _formatTime(snap.data!['event_time']) : '';
         final locCity = snap.data != null
             ? (snap.data!['_loc_city'] ?? '').toString()
             : '';
@@ -376,110 +385,88 @@ class _EventCard extends StatelessWidget {
             ),
             child: Column(
               children: [
-                // ── Main row ──────────────────────────────────────
                 Padding(
                   padding: const EdgeInsets.all(14),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Thumbnail
                       ClipRRect(
                         borderRadius: BorderRadius.circular(12),
                         child: imageUrl.isNotEmpty
-                            ? Image.network(
-                          imageUrl,
-                          width: 76,
-                          height: 76,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              _placeholder(),
-                        )
+                            ? Image.network(imageUrl,
+                            width: 76,
+                            height: 76,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                _placeholder())
                             : _placeholder(),
                       ),
                       const SizedBox(width: 14),
-
-                      // Info
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              title,
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF0D0D0D),
-                                height: 1.3,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                            Text(title,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF0D0D0D),
+                                  height: 1.3,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis),
                             if (dateStr.isNotEmpty) ...[
                               const SizedBox(height: 6),
-                              Row(
-                                children: [
-                                  Icon(Icons.calendar_today_rounded,
-                                      size: 12,
-                                      color: AppColors.primary
-                                          .withOpacity(0.7)),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    timeStr.isNotEmpty
-                                        ? '$dateStr · $timeStr'
-                                        : dateStr,
-                                    style: TextStyle(
+                              Row(children: [
+                                Icon(Icons.calendar_today_rounded,
+                                    size: 12,
+                                    color: AppColors.primary
+                                        .withOpacity(0.7)),
+                                const SizedBox(width: 4),
+                                Text(
+                                  timeStr.isNotEmpty
+                                      ? '$dateStr · $timeStr'
+                                      : dateStr,
+                                  style: TextStyle(
                                       fontSize: 12,
                                       color:
                                       Colors.black.withOpacity(0.5),
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                                      fontWeight: FontWeight.w500),
+                                ),
+                              ]),
                             ],
                             if (locCity.isNotEmpty) ...[
                               const SizedBox(height: 3),
-                              Row(
-                                children: [
-                                  Icon(Icons.location_on_rounded,
-                                      size: 12,
-                                      color: AppColors.primary
-                                          .withOpacity(0.7)),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    locCity,
+                              Row(children: [
+                                Icon(Icons.location_on_rounded,
+                                    size: 12,
+                                    color: AppColors.primary
+                                        .withOpacity(0.7)),
+                                const SizedBox(width: 4),
+                                Text(locCity,
                                     style: TextStyle(
-                                      fontSize: 12,
-                                      color:
-                                      Colors.black.withOpacity(0.5),
-                                    ),
-                                  ),
-                                ],
-                              ),
+                                        fontSize: 12,
+                                        color: Colors.black
+                                            .withOpacity(0.5))),
+                              ]),
                             ],
                           ],
                         ),
                       ),
-
-                      // Chevron
                       Icon(Icons.chevron_right_rounded,
-                          color:
-                          AppColors.primary.withOpacity(0.3),
+                          color: AppColors.primary.withOpacity(0.3),
                           size: 20),
                     ],
                   ),
                 ),
-
-                // ── Action row ────────────────────────────────────
                 Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF7F9F7),
-                    borderRadius: const BorderRadius.vertical(
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF7F9F7),
+                    borderRadius: BorderRadius.vertical(
                         bottom: Radius.circular(16)),
                   ),
                   child: Row(
                     children: [
-                      // Switch status button
                       Expanded(
                         child: GestureDetector(
                           onTap: () => _switchStatus(context),
@@ -492,27 +479,20 @@ class _EventCard extends StatelessWidget {
                                 Icon(switchIcon,
                                     color: switchColor, size: 14),
                                 const SizedBox(width: 6),
-                                Text(
-                                  switchLabel,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: switchColor,
-                                  ),
-                                ),
+                                Text(switchLabel,
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: switchColor)),
                               ],
                             ),
                           ),
                         ),
                       ),
-
-                      // Divider
                       Container(
                           width: 1,
                           height: 20,
                           color: AppColors.primary.withOpacity(0.12)),
-
-                      // Delete button
                       GestureDetector(
                         onTap: () => _removeEvent(context),
                         child: Padding(
@@ -533,18 +513,16 @@ class _EventCard extends StatelessWidget {
     );
   }
 
-  Widget _placeholder() {
-    return Container(
-      width: 76,
-      height: 76,
-      decoration: BoxDecoration(
-        color: AppColors.primary.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Icon(Icons.event_rounded,
-          color: AppColors.primary.withOpacity(0.3), size: 32),
-    );
-  }
+  Widget _placeholder() => Container(
+    width: 76,
+    height: 76,
+    decoration: BoxDecoration(
+      color: AppColors.primary.withOpacity(0.08),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Icon(Icons.event_rounded,
+        color: AppColors.primary.withOpacity(0.3), size: 32),
+  );
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -570,35 +548,27 @@ class _EmptyState extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 80,
-              height: 80,
+              width: 80, height: 80,
               decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.08),
-                shape: BoxShape.circle,
-              ),
+                  color: AppColors.primary.withOpacity(0.08),
+                  shape: BoxShape.circle),
               child: Icon(icon,
                   color: AppColors.primary.withOpacity(0.4), size: 36),
             ),
             const SizedBox(height: 20),
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF0D0D0D),
-              ),
-              textAlign: TextAlign.center,
-            ),
+            Text(title,
+                style: const TextStyle(
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF0D0D0D)),
+                textAlign: TextAlign.center),
             const SizedBox(height: 8),
-            Text(
-              subtitle,
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.black.withOpacity(0.4),
-                height: 1.5,
-              ),
-              textAlign: TextAlign.center,
-            ),
+            Text(subtitle,
+                style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.black.withOpacity(0.4),
+                    height: 1.5),
+                textAlign: TextAlign.center),
           ],
         ),
       ),
