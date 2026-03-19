@@ -95,8 +95,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
     }
   }
 
-  // ── Shows the bottom sheet for saving ────────────────────────────────────
-
   void _showSaveSheet() {
     final eventLink = (widget.event['event_link'] ?? '').toString();
     showModalBottomSheet(
@@ -109,7 +107,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
         onSelect: (status) async {
           Navigator.pop(context);
           await _setSaveStatus(status);
-          // Always open event link after saving (My Events or Interested)
           if (eventLink.isNotEmpty) {
             await Future.delayed(const Duration(milliseconds: 200));
             _openEventLink(eventLink);
@@ -161,15 +158,11 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
   Future<void> _openEventLink(String link) async {
     if (link.isEmpty) return;
     try {
-      // Ensure URL has a scheme
       final raw = link.startsWith('http') ? link : 'https://$link';
       final url = Uri.parse(raw);
-      // Use externalApplication to open in the device browser directly.
-      // Skip canLaunchUrl — it silently fails on Android without intent queries.
       await launchUrl(url, mode: LaunchMode.externalApplication);
     } catch (_) {
       try {
-        // Fallback: platform default (in-app browser / system chooser)
         await launchUrl(Uri.parse(link), mode: LaunchMode.platformDefault);
       } catch (e) {
         if (mounted) {
@@ -276,12 +269,12 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final title    = (widget.event['event_title'] ?? 'Untitled Event').toString();
-    final dateStr  = _formatDate(widget.event['event_date']);
-    final timeStr  = _formatTime(widget.event['event_time']);
-    final feeStr   = _formatFee(widget.event['event_fee']);
-    final desc     = (widget.event['event_description'] ?? '').toString();
-    final imageUrl = (widget.event['event_pic'] ?? widget.event['event_pic_thumbnail'] ?? '').toString();
+    final title     = (widget.event['event_title'] ?? 'Untitled Event').toString();
+    final dateStr   = _formatDate(widget.event['event_date']);
+    final timeStr   = _formatTime(widget.event['event_time']);
+    final feeStr    = _formatFee(widget.event['event_fee']);
+    final desc      = (widget.event['event_description'] ?? '').toString();
+    final imageUrl  = (widget.event['event_pic'] ?? widget.event['event_pic_thumbnail'] ?? '').toString();
     final eventLink = (widget.event['event_link'] ?? '').toString();
 
     return Scaffold(
@@ -353,7 +346,8 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                     Positioned(
                       bottom: 16, left: 20,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
                           color: AppColors.primary,
                           borderRadius: BorderRadius.circular(20),
@@ -383,7 +377,8 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                       Text(title,
                         style: const TextStyle(
                           fontSize: 24, fontWeight: FontWeight.w800,
-                          color: Color(0xFF0D0D0D), height: 1.2, letterSpacing: -0.4,
+                          color: Color(0xFF0D0D0D), height: 1.2,
+                          letterSpacing: -0.4,
                         ),
                       ),
                       const SizedBox(height: 20),
@@ -439,7 +434,8 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                     final locAddress = (loc?['loc_address'] ?? '').toString();
                     final lat        = _parseCoordinate(loc?['loc_latitude']);
                     final lng        = _parseCoordinate(loc?['loc_longitude']);
-                    final isLoading  = snap.connectionState == ConnectionState.waiting;
+                    final isLoading  =
+                        snap.connectionState == ConnectionState.waiting;
 
                     return _card(
                       child: Column(
@@ -475,7 +471,8 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                                       const SizedBox(height: 4),
                                       Text(locAddress,
                                         style: const TextStyle(
-                                            fontSize: 14, color: Colors.black54),
+                                            fontSize: 14,
+                                            color: Colors.black54),
                                       ),
                                     ],
                                     if (locName.isEmpty && locAddress.isEmpty)
@@ -485,7 +482,8 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                                             ? 'No location found (ID: $locId)'
                                             : 'No location set',
                                         style: const TextStyle(
-                                            fontSize: 15, color: Colors.black45),
+                                            fontSize: 15,
+                                            color: Colors.black45),
                                       ),
                                   ],
                                 ),
@@ -586,9 +584,11 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(12),
                                 child: orgLogo.isNotEmpty
-                                    ? Image.network(orgLogo, width: 52, height: 52,
+                                    ? Image.network(orgLogo,
+                                    width: 52, height: 52,
                                     fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => _orgPlaceholder())
+                                    errorBuilder: (_, __, ___) =>
+                                        _orgPlaceholder())
                                     : _orgPlaceholder(),
                               ),
                               const SizedBox(width: 14),
@@ -612,7 +612,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Fee row
                       Row(
                         children: [
                           Column(
@@ -637,10 +636,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                           ),
                         ],
                       ),
-
                       const SizedBox(height: 20),
-
-                      // ── Save / Status Widget ─────────────────────────────
                       _saveLoading
                           ? const Center(
                         child: Padding(
@@ -653,6 +649,9 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                   ),
                 ),
 
+                // ── Disclaimer ─────────────────────────────────────────────
+                const _EventDisclaimer(),
+
                 const SizedBox(height: 40),
               ],
             ),
@@ -662,7 +661,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
     );
   }
 
-  // ── Save Widget — shows different UI based on current status ──────────────
   Widget _buildSaveWidget(String eventLink) {
     switch (_saveStatus) {
       case _SaveStatus.none:
@@ -670,7 +668,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
           hasLink: eventLink.isNotEmpty,
           onTap: _showSaveSheet,
         );
-
       case _SaveStatus.myEvents:
         return _SavedWidget(
           label: 'Saved to My Events',
@@ -678,7 +675,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
           color: AppColors.primary,
           onTap: _showSaveSheet,
         );
-
       case _SaveStatus.interested:
         return _SavedWidget(
           label: 'Marked as Interested',
@@ -688,8 +684,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
         );
     }
   }
-
-  // ── Helpers ───────────────────────────────────────────────────────────────
 
   Widget _card({required Widget child}) {
     return Container(
@@ -721,9 +715,9 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
 
   Widget _buildAllTags() {
     final tags = <String>[];
-    if (widget.event['event_skill_level_pro'] == true)      tags.add('PRO');
-    if (widget.event['event_skill_level_amateur'] == true)  tags.add('AMATEUR');
-    if (widget.event['event_skill_level_beginner'] == true) tags.add('BEGINNER');
+    if (widget.event['event_skill_level_pro'] == true)       tags.add('PRO');
+    if (widget.event['event_skill_level_amateur'] == true)   tags.add('AMATEUR');
+    if (widget.event['event_skill_level_beginner'] == true)  tags.add('BEGINNER');
     if (widget.event['event_category_menssingle'] == true)    tags.add("MEN'S SINGLES");
     if (widget.event['event_category_womenssingle'] == true)  tags.add("WOMEN'S SINGLES");
     if (widget.event['event_category_mixeddoubles'] == true)  tags.add('MIXED DOUBLES');
@@ -755,7 +749,47 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Save None Widget — shown when not yet saved
+// Disclaimer
+// ═════════════════════════════════════════════════════════════════════════════
+class _EventDisclaimer extends StatelessWidget {
+  const _EventDisclaimer();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      color: Colors.white,
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.info_outline_rounded,
+            size: 15,
+            color: Colors.grey.shade400,
+          ),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Text(
+              'Event details may change or be inaccurate. '
+                  'Please refer to the official event website for '
+                  'the most up-to-date information.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.black38,
+                height: 1.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Save None Widget
 // ═════════════════════════════════════════════════════════════════════════════
 class _SaveNoneWidget extends StatelessWidget {
   final bool hasLink;
@@ -795,7 +829,7 @@ class _SaveNoneWidget extends StatelessWidget {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Saved Widget — shown when already saved (either status)
+// Saved Widget
 // ═════════════════════════════════════════════════════════════════════════════
 class _SavedWidget extends StatelessWidget {
   final String label;
@@ -831,7 +865,8 @@ class _SavedWidget extends StatelessWidget {
                   color: color),
             ),
             const SizedBox(width: 8),
-            Icon(Icons.edit_rounded, color: color.withOpacity(0.55), size: 15),
+            Icon(Icons.edit_rounded,
+                color: color.withOpacity(0.55), size: 15),
           ],
         ),
       ),
@@ -870,7 +905,6 @@ class _SaveBottomSheet extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Drag handle
           Center(
             child: Container(
               width: 40, height: 4,
@@ -881,8 +915,6 @@ class _SaveBottomSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-
-          // Title
           Text(
             isAlreadySaved ? 'Update Event Status' : 'Save this Event',
             style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800,
@@ -893,11 +925,10 @@ class _SaveBottomSheet extends StatelessWidget {
             isAlreadySaved
                 ? 'Change how this event is saved, or remove it.'
                 : "Choose a category — you'll be taken to the event page right after.",
-            style: TextStyle(fontSize: 14, color: Colors.black.withOpacity(0.45)),
+            style: TextStyle(fontSize: 14,
+                color: Colors.black.withOpacity(0.45)),
           ),
           const SizedBox(height: 24),
-
-          // ── My Events option ────────────────────────────────────────────
           _OptionTile(
             icon: Icons.bookmark_rounded,
             iconColor: AppColors.primary,
@@ -907,8 +938,6 @@ class _SaveBottomSheet extends StatelessWidget {
             onTap: () => onSelect(_SaveStatus.myEvents),
           ),
           const SizedBox(height: 10),
-
-          // ── Interested option ────────────────────────────────────────────
           _OptionTile(
             icon: Icons.star_rounded,
             iconColor: const Color(0xFFE6A817),
@@ -917,10 +946,6 @@ class _SaveBottomSheet extends StatelessWidget {
             isSelected: currentStatus == _SaveStatus.interested,
             onTap: () => onSelect(_SaveStatus.interested),
           ),
-
-
-
-          // ── Remove ──────────────────────────────────────────────────────
           if (isAlreadySaved) ...[
             const SizedBox(height: 16),
             const Divider(height: 1),
@@ -940,8 +965,8 @@ class _SaveBottomSheet extends StatelessWidget {
                   ),
                   const SizedBox(width: 14),
                   const Text('Remove from saved events',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
-                        color: Colors.red),
+                    style: TextStyle(fontSize: 15,
+                        fontWeight: FontWeight.w600, color: Colors.red),
                   ),
                 ],
               ),
@@ -986,8 +1011,6 @@ class _OptionTile extends StatelessWidget {
         decoration: BoxDecoration(
           color: isSelected
               ? iconColor.withOpacity(0.07)
-              : muted
-              ? const Color(0xFFF7F7F9)
               : const Color(0xFFF7F7F9),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
