@@ -62,5 +62,9 @@
   		<string>http</string>
   		<string>https</string>
 	</array>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Choose a profile photo from your gallery</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Take a profile photo</string>
 </dict>
 </plist>

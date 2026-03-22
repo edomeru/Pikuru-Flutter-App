@@ -56,13 +56,11 @@ class _RegisterPageState extends State<RegisterPage>
     super.dispose();
   }
 
-  // ── Generate a 6-digit OTP ───────────────────────────────────────────
   String _generateOtp() {
     final rand = Random.secure();
     return (100000 + rand.nextInt(900000)).toString();
   }
 
-  // ── Send OTP via Firebase Cloud Function ─────────────────────────────
   Future<void> _sendOtpViaCloudFunction({
     required String toEmail,
     required String firstName,
@@ -76,7 +74,6 @@ class _RegisterPageState extends State<RegisterPage>
     });
   }
 
-  // ── Sign Up Handler ──────────────────────────────────────────────────
   Future<void> _onSignUp() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -90,11 +87,11 @@ class _RegisterPageState extends State<RegisterPage>
     setState(() => showSpinner = true);
 
     try {
-      final email = emailController.text.trim();
+      final email     = emailController.text.trim();
       final firstName = firstNameController.text.trim();
-      final lastName = lastNameController.text.trim();
-      final password = passwordController.text;
-      final otp = _generateOtp();
+      final lastName  = lastNameController.text.trim();
+      final password  = passwordController.text;
+      final otp       = _generateOtp();
 
       await _sendOtpViaCloudFunction(
         toEmail: email,
@@ -304,13 +301,14 @@ class _RegisterPageState extends State<RegisterPage>
         color: AppColors.primary,
         child: Stack(
           children: [
+            // ── Dog logo replaces the woman image ──────────────────────
             Positioned(
               right: 24,
               bottom: 40,
               child: SizedBox(
                 height: 160,
                 child: Image.asset(
-                  "assets/register_pickleball.png",
+                  'assets/pikuru_logo_dog.png',  // ← changed
                   fit: BoxFit.contain,
                 ),
               ),
