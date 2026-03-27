@@ -6,6 +6,7 @@ import 'package:pikuru/providers/providers.dart';
 import 'dart:async';
 import 'dart:io' show Platform;
 import 'package:url_launcher/url_launcher.dart';
+import 'package:pikuru/screens/add_court_screen.dart';
 
 // ── Filter State ──────────────────────────────────────────────────────────────
 class CourtFilter {
@@ -609,37 +610,47 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        Container(
-          height: 54,
-          padding: const EdgeInsets.symmetric(horizontal: 36),
-          decoration: BoxDecoration(
-            color: const Color(0xFF0D0D0D),
-            borderRadius: BorderRadius.circular(30),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.22),
-                blurRadius: 20,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.add_rounded, color: Colors.white, size: 20),
-              SizedBox(width: 8),
-              Text(
-                'Add a Court',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.2,
+        GestureDetector(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AddCourtScreen()),
+            );
+          },
+          child: Container(
+            height: 54,
+            padding: const EdgeInsets.symmetric(horizontal: 36),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0D0D0D),
+              borderRadius: BorderRadius.circular(30),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.22),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
                 ),
-              ),
-            ],
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Icon(Icons.add_rounded, color: Colors.white, size: 20),
+                SizedBox(width: 8),
+                Text(
+                  'Add a Court',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
+
+        // Close button
         Positioned(
           top: -8,
           right: -8,
@@ -653,7 +664,9 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
                 color: Colors.white,
                 shape: BoxShape.circle,
                 border: Border.all(
-                    color: const Color(0xFF0D0D0D), width: 1.5),
+                  color: const Color(0xFF0D0D0D),
+                  width: 1.5,
+                ),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withOpacity(0.12),
@@ -662,8 +675,11 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
                   ),
                 ],
               ),
-              child: const Icon(Icons.close_rounded,
-                  size: 16, color: Color(0xFF0D0D0D)),
+              child: const Icon(
+                Icons.close_rounded,
+                size: 16,
+                color: Color(0xFF0D0D0D),
+              ),
             ),
           ),
         ),
@@ -695,7 +711,11 @@ class _CourtDetailSheet extends StatelessWidget {
   String get _price      => (loc['loc_price']         ?? '').toString();
   String get _phone      => (loc['loc_contact_email'] ?? '').toString();
   String get _googleLink => (loc['loc_googlelink']    ?? '').toString();
+  String get _website    => (loc['loc_website']       ?? '').toString(); // ← NEW
   String get _image      => (loc['loc_image']         ?? '').toString();
+
+  // Prefer loc_website; fall back to loc_googlelink
+  String get _primaryLink => _website.isNotEmpty ? _website : _googleLink;
 
   int get _courtCount {
     final v = loc['loc_court_count'];
@@ -875,13 +895,14 @@ class _CourtDetailSheet extends StatelessWidget {
 
                   const SizedBox(height: 18),
 
-                  // More Information button
+                  // ── More Information button ─────────────────────────────
+                  // Uses loc_website first; falls back to loc_googlelink
                   SizedBox(
                     width: double.infinity,
                     height: 52,
                     child: ElevatedButton.icon(
-                      onPressed: _googleLink.isNotEmpty
-                          ? () => _openLink(context, _googleLink)
+                      onPressed: _primaryLink.isNotEmpty
+                          ? () => _openLink(context, _primaryLink)
                           : null,
                       icon: const Icon(Icons.open_in_browser_rounded,
                           size: 18, color: Colors.white),
@@ -892,7 +913,7 @@ class _CourtDetailSheet extends StatelessWidget {
                               color: Colors.white,
                               letterSpacing: 0.1)),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: _googleLink.isNotEmpty
+                        backgroundColor: _primaryLink.isNotEmpty
                             ? AppColors.primary
                             : Colors.grey.shade300,
                         elevation: 0,
