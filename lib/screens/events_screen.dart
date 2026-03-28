@@ -7,6 +7,7 @@ import 'package:pikuru/screens/calendar_events_screen.dart';
 import 'package:pikuru/screens/choose_date_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:pikuru/screens/add_event_screen.dart';
 
 class EventsScreen extends ConsumerStatefulWidget {
   const EventsScreen({super.key});
@@ -1024,33 +1025,46 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        Container(
-          height: 54,
-          padding: const EdgeInsets.symmetric(horizontal: 36),
-          decoration: BoxDecoration(
-            color: const Color(0xFF0D0D0D),
-            borderRadius: BorderRadius.circular(30),
-            boxShadow: [
-              BoxShadow(
-                  color: Colors.black.withOpacity(0.22),
-                  blurRadius: 20,
-                  offset: const Offset(0, 8)),
-            ],
+
+        // ── Pill → opens AddEventScreen ────────────────────────────────────
+        GestureDetector(
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AddEventScreen()),
           ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.add_rounded, color: Colors.white, size: 20),
-              SizedBox(width: 8),
-              Text('Add an Event',
+          child: Container(
+            height: 54,
+            padding: const EdgeInsets.symmetric(horizontal: 36),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0D0D0D),
+              borderRadius: BorderRadius.circular(30),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withOpacity(0.22),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8)),
+              ],
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.add_rounded, color: Colors.white, size: 20),
+                SizedBox(width: 8),
+                Text(
+                  'Add an Event',
                   style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.2)),
-            ],
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
+
+        // ── ✕ dismiss button (hides the pill without navigating) ───────────
         Positioned(
           top: -8, right: -8,
           child: GestureDetector(
@@ -1061,8 +1075,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 shape: BoxShape.circle,
-                border: Border.all(
-                    color: const Color(0xFF0D0D0D), width: 1.5),
+                border: Border.all(color: const Color(0xFF0D0D0D), width: 1.5),
                 boxShadow: [
                   BoxShadow(
                       color: Colors.black.withOpacity(0.12),
@@ -1078,6 +1091,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
       ],
     );
   }
+
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

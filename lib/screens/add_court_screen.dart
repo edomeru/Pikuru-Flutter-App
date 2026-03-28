@@ -154,6 +154,45 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
     super.dispose();
   }
 
+  // ── Generate next loc_id in format "L-XXXXXXXXX" ─────────────────────────
+  // Reads ALL existing loc_id values, extracts the numeric part,
+  // finds the maximum, and returns max + 1 zero-padded to 10 digits.
+  Future<String> _generateNextLocId() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('locations')
+          .get();
+
+      int maxNum = 0;
+
+      for (final doc in snapshot.docs) {
+        final data  = doc.data();
+        // loc_id can be stored as a field OR may not exist on older docs.
+        final locId = (data['loc_id'] ?? '').toString().trim();
+
+        // Expected format: "L-0000000001", "L-0000000053", etc.
+        if (locId.startsWith('L-')) {
+          final numStr = locId.substring(2); // strip the "L-" prefix
+          final num    = int.tryParse(numStr);
+          if (num != null && num > maxNum) {
+            maxNum = num;
+          }
+        }
+      }
+
+      // Increment and zero-pad to 10 digits → "L-0000000054"
+      final nextNum = maxNum + 1;
+      final padded  = nextNum.toString().padLeft(10, '0');
+      return 'L-$padded';
+
+    } catch (e) {
+      // If anything fails (e.g. offline), fall back to a timestamp-based ID
+      // so the submission never gets completely blocked.
+      final fallback = DateTime.now().millisecondsSinceEpoch.toString();
+      return 'L-$fallback';
+    }
+  }
+
   // ── Pick image from gallery ───────────────────────────────────────────────
   Future<void> _pickImage() async {
     final picker = ImagePicker();
@@ -285,65 +324,87 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
     }
     setState(() => _isLoading = true);
     try {
-      // Upload cover image if selected
+      // ── 1. Generate the next loc_id ──────────────────────────────────────
+      final newLocId = await _generateNextLocId();
+
+      // ── 2. Upload cover image (with 30-second timeout) ───────────────────
       String imageUrl = '';
       if (_pickedImage != null) {
         setState(() => _isUploadingImage = true);
-        final fileRef = FirebaseStorage.instance.ref(
-          'loc_images/${DateTime.now().millisecondsSinceEpoch}_${_pickedImage!.path.split('/').last}',
-        );
-        final snapshot = await fileRef.putFile(_pickedImage!);
-        imageUrl = await snapshot.ref.getDownloadURL();
-        if (mounted) setState(() => _isUploadingImage = false);
+        try {
+          final fileRef = FirebaseStorage.instance.ref(
+            'loc_images/${DateTime.now().millisecondsSinceEpoch}_${_pickedImage!.path.split('/').last}',
+          );
+          final uploadTask = fileRef.putFile(_pickedImage!);
+          final snapshot  = await uploadTask.timeout(
+            const Duration(seconds: 30),
+            onTimeout: () {
+              uploadTask.cancel();
+              throw Exception('Image upload timed out');
+            },
+          );
+          imageUrl = await snapshot.ref.getDownloadURL();
+        } catch (_) {
+          // Storage unreachable (emulator / App Check) — skip image silently
+          if (mounted) {
+            _showSnack('Could not upload image — saving court without it.', isError: false);
+          }
+          imageUrl = '';
+        } finally {
+          if (mounted) setState(() => _isUploadingImage = false);
+        }
       }
 
+      // ── 3. Write the document with the generated loc_id ──────────────────
       await FirebaseFirestore.instance.collection('locations').add({
-        'loc_active': true,
-        'loc_added': true,
-        'loc_addedby': true,
-        'loc_address_en': _addressEnController.text,
-        'loc_address_jp': _addressJpController.text,
-        'loc_amenities_dedicated': _isDedicated,
-        'loc_amenities_lessons': _hasLessons,
-        'loc_amenities_membership': _requiresMembership ? 'Required' : '',
-        'loc_amenities_openplay': _hasOpenPlay,
+        'loc_id':                      newLocId,          // ← "L-0000000054"
+        'loc_active':                  true,
+        'loc_added':                   true,
+        'loc_addedby':                 true,
+        'loc_address_en':              _addressEnController.text,
+        'loc_address_jp':              _addressJpController.text,
+        'loc_amenities_dedicated':     _isDedicated,
+        'loc_amenities_lessons':       _hasLessons,
+        'loc_amenities_membership':    _requiresMembership ? 'Required' : '',
+        'loc_amenities_openplay':      _hasOpenPlay,
         'loc_amenities_paddlerentals': _hasPaddleRentals,
-        'loc_amenities_reservation': _requiresReservations,
-        'loc_checked': false,
-        'loc_city_en': _cityEnController.text,
-        'loc_city_jp': _cityJpController.text,
-        'loc_contact_email': _contactEmailController.text,
-        'loc_country': _countryController.text,
-        'loc_court_count': int.tryParse(_courtCountController.text) ?? 0,
+        'loc_amenities_reservation':   _requiresReservations,
+        'loc_checked':                 false,
+        'loc_city_en':                 _cityEnController.text,
+        'loc_city_jp':                 _cityJpController.text,
+        'loc_contact_email':           _contactEmailController.text,
+        'loc_country':                 _countryController.text,
+        'loc_court_count':             int.tryParse(_courtCountController.text) ?? 0,
         'loc_court_type_indoor':
         _selectedCourtType == 'INDOOR COURTS' || _selectedCourtType == 'INDOOR/OUTDOOR COURTS',
         'loc_court_type_outdoor':
         _selectedCourtType == 'OUTDOOR COURTS' || _selectedCourtType == 'INDOOR/OUTDOOR COURTS',
-        'loc_created_at': DateTime.now().toIso8601String(),
-        'loc_googlelink': _googlelinkController.text,
-        'loc_hours_fri': _hoursFriController.text,
-        'loc_hours_mon': _hoursMonController.text,
-        'loc_hours_sat': _hoursSatController.text,
-        'loc_hours_sun': _hoursSunController.text,
-        'loc_hours_thurs': _hoursThursController.text,
-        'loc_hours_tues': _hoursTuesController.text,
-        'loc_hours_weds': _hoursWedsController.text,
-        'loc_image': imageUrl,
-        'loc_latitude': _latitudeController.text,
-        'loc_longitude': _longitudeController.text,
-        'loc_name': _nameEnController.text,
-        'loc_name_jp': _nameJpController.text,
-        'loc_notes': _notesController.text,
-        'loc_org_id': '',
-        'loc_prefecture_en': _prefectureEnController.text,
-        'loc_prefecture_jp': _prefectureJpController.text,
-        'loc_price': _priceController.text,
-        'loc_price_free': _isPriceFree,
-        'loc_public': _isPublic,
-        'loc_type': _typeController.text,
-        'loc_updated_at': DateTime.now().toIso8601String(),
-        'loc_website': _websiteController.text,
+        'loc_created_at':              DateTime.now().toIso8601String(),
+        'loc_googlelink':              _googlelinkController.text,
+        'loc_hours_fri':               _hoursFriController.text,
+        'loc_hours_mon':               _hoursMonController.text,
+        'loc_hours_sat':               _hoursSatController.text,
+        'loc_hours_sun':               _hoursSunController.text,
+        'loc_hours_thurs':             _hoursThursController.text,
+        'loc_hours_tues':              _hoursTuesController.text,
+        'loc_hours_weds':              _hoursWedsController.text,
+        'loc_image':                   imageUrl,
+        'loc_latitude':                _latitudeController.text,
+        'loc_longitude':               _longitudeController.text,
+        'loc_name':                    _nameEnController.text,
+        'loc_name_jp':                 _nameJpController.text,
+        'loc_notes':                   _notesController.text,
+        'loc_org_id':                  '',
+        'loc_prefecture_en':           _prefectureEnController.text,
+        'loc_prefecture_jp':           _prefectureJpController.text,
+        'loc_price':                   _priceController.text,
+        'loc_price_free':              _isPriceFree,
+        'loc_public':                  _isPublic,
+        'loc_type':                    _typeController.text,
+        'loc_updated_at':              DateTime.now().toIso8601String(),
+        'loc_website':                 _websiteController.text,
       });
+
       if (mounted) {
         _showSnack('Court added successfully!');
         Navigator.pop(context);
@@ -480,7 +541,6 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
             child: _pickedImage != null
                 ? Stack(fit: StackFit.expand, children: [
               Image.file(_pickedImage!, fit: BoxFit.cover),
-              // Overlay with "tap to change"
               Positioned(
                 bottom: 0, left: 0, right: 0,
                 child: Container(
@@ -537,8 +597,6 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
           ),
           clipBehavior: Clip.hardEdge,
           child: Stack(children: [
-
-            // Google Map
             GoogleMap(
               initialCameraPosition: CameraPosition(target: _defaultCenter, zoom: 12),
               onMapCreated: (c) => _mapController = c,
@@ -549,7 +607,7 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
               mapToolbarEnabled: false,
             ),
 
-            // ── Search bar overlay ─────────────────────────────────────────
+            // Search bar overlay
             Positioned(
               top: 12, left: 12, right: 12,
               child: Container(
@@ -592,7 +650,7 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
               ),
             ),
 
-            // ── "Use my location" button ───────────────────────────────────
+            // Use my location button
             Positioned(
               top: 72, right: 12,
               child: GestureDetector(
@@ -614,7 +672,7 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
               ),
             ),
 
-            // ── "Tap to pin" hint ──────────────────────────────────────────
+            // Tap to pin hint
             if (_pickedLocation == null && !_isSearchLoading)
               Positioned(
                 bottom: 12, left: 0, right: 0,
@@ -638,7 +696,7 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
                 ),
               ),
 
-            // ── Reverse geocoding spinner ──────────────────────────────────
+            // Reverse geocoding spinner
             if (_isReverseGeocoding)
               Positioned(
                 bottom: 12, right: 12,
@@ -660,7 +718,7 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
           ]),
         ),
 
-        // ── Info / success banner ──────────────────────────────────────────
+        // Info / success banner
         const SizedBox(height: 12),
         AnimatedContainer(
           duration: const Duration(milliseconds: 300),
@@ -684,24 +742,12 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
         ),
 
         const SizedBox(height: 20),
-
-        // ── Auto-populated + manual fields ─────────────────────────────────
-        _buildTextField(
-          label: 'Google Maps Link *',
-          controller: _googlelinkController,
-          hint: 'https://www.google.com/maps/...',
-        ),
+        _buildTextField(label: 'Google Maps Link *', controller: _googlelinkController, hint: 'https://www.google.com/maps/...'),
         const SizedBox(height: 14),
         Row(children: [
-          Expanded(child: _buildTextField(
-            label: 'Latitude', controller: _latitudeController, hint: '35.791',
-            keyboardType: TextInputType.number,
-          )),
+          Expanded(child: _buildTextField(label: 'Latitude', controller: _latitudeController, hint: '35.791', keyboardType: TextInputType.number)),
           const SizedBox(width: 12),
-          Expanded(child: _buildTextField(
-            label: 'Longitude', controller: _longitudeController, hint: '139.852',
-            keyboardType: TextInputType.number,
-          )),
+          Expanded(child: _buildTextField(label: 'Longitude', controller: _longitudeController, hint: '139.852', keyboardType: TextInputType.number)),
         ]),
         const SizedBox(height: 14),
         _buildTextField(label: 'Address (EN)', controller: _addressEnController, hint: '6 Chome-5-1 Nishimizumoto...'),
@@ -781,10 +827,10 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
           padding: const EdgeInsets.all(12),
           margin: const EdgeInsets.only(bottom: 20),
           decoration: BoxDecoration(color: _accentSoft, borderRadius: BorderRadius.circular(12)),
-          child: Row(children: [
-            const Icon(Icons.info_outline, size: 16, color: _primary),
-            const SizedBox(width: 8),
-            const Text('Format: HH:MM-HH:MM  (e.g. 09:00-22:00)',
+          child: const Row(children: [
+            Icon(Icons.info_outline, size: 16, color: _primary),
+            SizedBox(width: 8),
+            Text('Format: HH:MM-HH:MM  (e.g. 09:00-22:00)',
                 style: TextStyle(color: _primary, fontSize: 12, fontWeight: FontWeight.w500)),
           ]),
         ),
@@ -814,18 +860,13 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         _buildPageHeader('Review & Submit', 'Everything look good?', Icons.check_circle_outline),
 
-        // ── Cover image preview in summary ─────────────────────────────────
+        // Cover image preview in summary
         if (_pickedImage != null) ...[
           _buildLabel('Cover Picture'),
           const SizedBox(height: 8),
           ClipRRect(
             borderRadius: BorderRadius.circular(14),
-            child: Image.file(
-              _pickedImage!,
-              width: double.infinity,
-              height: 140,
-              fit: BoxFit.cover,
-            ),
+            child: Image.file(_pickedImage!, width: double.infinity, height: 140, fit: BoxFit.cover),
           ),
           const SizedBox(height: 16),
         ],
@@ -855,7 +896,7 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
         ],
         const SizedBox(height: 24),
 
-        // ── Upload progress indicator ──────────────────────────────────────
+        // Upload progress indicator
         if (_isUploadingImage) ...[
           Container(
             padding: const EdgeInsets.all(14),
@@ -873,10 +914,10 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(color: _accentSoft, borderRadius: BorderRadius.circular(16)),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Icon(Icons.info_outline, size: 18, color: _primary),
-            const SizedBox(width: 10),
-            const Expanded(
+          child: const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Icon(Icons.info_outline, size: 18, color: _primary),
+            SizedBox(width: 10),
+            Expanded(
               child: Text(
                 'By submitting, you agree that this information will be reviewed by our team before appearing on the app.',
                 style: TextStyle(color: _textMid, fontSize: 13, height: 1.5),
