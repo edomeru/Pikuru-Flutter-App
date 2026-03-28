@@ -4,6 +4,7 @@ import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/providers/providers.dart';
 import 'package:pikuru/widgets/group_card_list.dart';
 import 'package:pikuru/modal/group_filter_modal.dart';
+import 'package:pikuru/screens/add_group_screen.dart';
 
 class GroupsScreen extends ConsumerStatefulWidget {
   const GroupsScreen({super.key});
@@ -345,31 +346,39 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        Container(
-          height: 54,
-          padding: const EdgeInsets.symmetric(horizontal: 36),
-          decoration: BoxDecoration(
-            color: const Color(0xFF0D0D0D),
-            borderRadius: BorderRadius.circular(30),
-            boxShadow: [
-              BoxShadow(
-                  color: Colors.black.withOpacity(0.22),
-                  blurRadius: 20,
-                  offset: const Offset(0, 8)),
-            ],
-          ),
-          child: const Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.add_rounded, color: Colors.white, size: 20),
-              SizedBox(width: 8),
-              Text('Add a Group',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.2)),
-            ],
+        GestureDetector(
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AddGroupScreen()),
+            );
+          },
+          child: Container(
+            height: 54,
+            padding: const EdgeInsets.symmetric(horizontal: 36),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0D0D0D),
+              borderRadius: BorderRadius.circular(30),
+              boxShadow: [
+                BoxShadow(
+                    color: Colors.black.withOpacity(0.22),
+                    blurRadius: 20,
+                    offset: const Offset(0, 8)),
+              ],
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.add_rounded, color: Colors.white, size: 20),
+                SizedBox(width: 8),
+                Text('Add a Group',
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.2)),
+              ],
+            ),
           ),
         ),
         Positioned(
