@@ -1,10 +1,14 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'dart:async';
-import 'dart:io';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:geocoding/geocoding.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // pubspec.yaml dependencies:
@@ -12,7 +16,44 @@ import 'dart:io';
 //   firebase_storage: ^11.x.x
 //   image_picker: ^1.x.x
 //   flutter_riverpod: ^2.x.x
+//   google_maps_flutter: ^2.x.x
+//   geocoding: ^3.x.x
+//
+// AndroidManifest.xml — inside <application>:
+//   <meta-data android:name="com.google.android.geo.API_KEY"
+//              android:value="YOUR_API_KEY"/>
+//
+// iOS AppDelegate.swift — before GeneratedPluginRegistrant:
+//   GMSServices.provideAPIKey("YOUR_API_KEY")
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ── Detect Japanese characters ────────────────────────────────────────────────
+bool _isJapanese(String text) =>
+    RegExp(r'[\u3040-\u30FF\u4E00-\u9FFF\uFF65-\uFF9F]').hasMatch(text);
+
+// ── Google Translate (free public endpoint) ───────────────────────────────────
+Future<String> _translateText(String text, String targetLang) async {
+  if (text.trim().isEmpty) return text;
+  try {
+    final uri = Uri.parse(
+      'https://translate.googleapis.com/translate_a/single'
+          '?client=gtx&sl=auto&tl=$targetLang&dt=t'
+          '&q=${Uri.encodeComponent(text)}',
+    );
+    final client = HttpClient();
+    final request = await client.getUrl(uri);
+    final response = await request.close();
+    final raw = await response.transform(const Utf8Decoder()).join();
+    // Parse [[["translated","original"],...],...]
+    final decoded = jsonDecode(raw) as List;
+    final parts = (decoded[0] as List)
+        .map((item) => (item as List).first?.toString() ?? '')
+        .join();
+    return parts;
+  } catch (_) {
+    return text;
+  }
+}
 
 class AddEventScreen extends ConsumerStatefulWidget {
   const AddEventScreen({Key? key}) : super(key: key);
@@ -25,7 +66,7 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
   late PageController _pageController;
   int _currentPage = 0;
 
-  // ── Palette (matches AddCourtScreen) ─────────────────────────────────────
+  // ── Palette ───────────────────────────────────────────────────────────────
   static const Color _bg         = Color(0xFFF4FAF5);
   static const Color _surface    = Color(0xFFFFFFFF);
   static const Color _primary    = Color(0xFF2E7D4F);
@@ -37,222 +78,338 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
   static const Color _border     = Color(0xFFCDE5D1);
   static const Color _errorRed   = Color(0xFFE53935);
 
-  // ── Step config ───────────────────────────────────────────────────────────
-  final List<String>   _stepLabels = ['Details', 'Schedule', 'Divisions', 'Venue', 'Media'];
-  final List<IconData> _stepIcons  = [
-    Icons.info_outline,
-    Icons.calendar_today_outlined,
-    Icons.emoji_events_outlined,
-    Icons.place_outlined,
-    Icons.image_outlined,
-  ];
+  final List<String> _stepLabels = ['Details', 'Schedule', 'Divisions', 'Venue', 'Media'];
 
-  // ── Form Controllers ──────────────────────────────────────────────────────
-  late TextEditingController _titleEnController;
-  late TextEditingController _titleJpController;
+  // ── Controllers ───────────────────────────────────────────────────────────
+  late TextEditingController _titleController;
   late TextEditingController _linkController;
   late TextEditingController _feeController;
+  late TextEditingController _maxParticipantsController;
   late TextEditingController _contactController;
-  late TextEditingController _descEnController;
-  late TextEditingController _descJpController;
-  late TextEditingController _notesController;
+  late TextEditingController _descController;
   late TextEditingController _startTimeController;
+  late TextEditingController _venueNameController;
+  late TextEditingController _venueAddressController;
+  late TextEditingController _venueMapLinkController;
+  late TextEditingController _orgNameController;
+  late TextEditingController _mapSearchController;
 
-  // ── Form State ────────────────────────────────────────────────────────────
-  String   _eventType     = 'Tournament';
+  // ── Map state ─────────────────────────────────────────────────────────────
+  GoogleMapController? _mapController;
+  LatLng _mapCenter = const LatLng(35.6895, 139.6917);
+  LatLng? _markerPos;
+  bool   _searchLoading = false;
+  Timer? _searchDebounce;
+
+  // ── Form state ────────────────────────────────────────────────────────────
+  String    _eventType      = 'Open Play';
   DateTime? _eventDate;
-  DateTime? _eventStartDateTime;
-  String   _timeStr       = '9:00 AM - 12:00 PM';
-  bool     _isActive      = true;
-  bool     _isPublished   = true;
+  DateTime? _eventDateEnd;
+  bool _acceptStripe    = false;
+  bool _touristFriendly = false;
+  bool _skillBeginner   = false;
+  bool _skillAmateur    = false;
+  bool _skillPro        = false;
+  bool _catMensSingles   = false;
+  bool _catWomensSingles = false;
+  bool _catMensDoubles   = false;
+  bool _catWomensDoubles = false;
+  bool _catMixedDoubles  = false;
+  bool _catJuniors       = false;
+  bool _catCollegiate    = false;
+  bool _catSeniors       = false;
 
-  // Skill levels
-  bool _skillBeginner = false;
-  bool _skillAmateur  = false;
-  bool _skillPro      = false;
-
-  // Categories
-  bool _catMensSingles    = false;
-  bool _catWomensSingles  = false;
-  bool _catMensDoubles    = false;
-  bool _catWomensDoubles  = false;
-  bool _catMixedDoubles   = false;
-  bool _catJuniors        = false;
-  bool _catCollegiate     = false;
-  bool _catSeniors        = false;
-
-  // Venue / Org
-  String? _selectedLocId;
-  String? _selectedOrgId;
-  List<Map<String, dynamic>> _locations     = [];
-  List<Map<String, dynamic>> _organizations = [];
-
-  // Image
-  File?  _imageFile;
-  bool   _isLoading    = false;
-  bool   _isFetchingOptions = false;
+  File? _imageFile;
+  bool  _isLoading = false;
 
   static const List<String> _eventTypes = [
-    'Tournament', 'Japan Tour', 'Open Play', 'Clinic', 'Social', 'Other'
-  ];
-  static const List<String> _timeOptions = [
-    '9:00 AM - 12:00 PM',
-    '1:00 PM - 5:00 PM',
-    '6:00 PM - 9:00 PM',
-    '9:00 AM - 5:00 PM',
-    'TBD',
+    'Professional Tournament',
+    'Global Tournament',
+    'Japan Tournament',
+    'Open Play',
+    'Trial Session',
+    'Local Event',
+    'Lessons/Clinics',
+    'Weekly Play / Recurring Play',
   ];
 
   @override
   void initState() {
     super.initState();
-    _pageController      = PageController();
-    _titleEnController   = TextEditingController();
-    _titleJpController   = TextEditingController();
-    _linkController      = TextEditingController();
-    _feeController       = TextEditingController();
-    _contactController   = TextEditingController();
-    _descEnController    = TextEditingController();
-    _descJpController    = TextEditingController();
-    _notesController     = TextEditingController();
-    _startTimeController = TextEditingController();
-    _fetchOptions();
+    _pageController            = PageController();
+    _titleController           = TextEditingController();
+    _linkController            = TextEditingController();
+    _feeController             = TextEditingController();
+    _maxParticipantsController = TextEditingController();
+    _contactController         = TextEditingController();
+    _descController            = TextEditingController();
+    _startTimeController       = TextEditingController();
+    _venueNameController       = TextEditingController();
+    _venueAddressController    = TextEditingController();
+    _venueMapLinkController    = TextEditingController();
+    _orgNameController         = TextEditingController();
+    _mapSearchController       = TextEditingController();
   }
 
   @override
   void dispose() {
     _pageController.dispose();
+    _mapController?.dispose();
+    _searchDebounce?.cancel();
     for (final c in [
-      _titleEnController, _titleJpController, _linkController, _feeController,
-      _contactController, _descEnController, _descJpController, _notesController,
-      _startTimeController,
+      _titleController, _linkController, _feeController, _maxParticipantsController,
+      _contactController, _descController, _startTimeController,
+      _venueNameController, _venueAddressController, _venueMapLinkController,
+      _orgNameController, _mapSearchController,
     ]) { c.dispose(); }
     super.dispose();
   }
 
-  // ── Fetch locations + organizations ──────────────────────────────────────
-  Future<void> _fetchOptions() async {
-    setState(() => _isFetchingOptions = true);
+  // ── Map: tap → reverse geocode → fill fields ──────────────────────────────
+  Future<void> _onMapTap(LatLng pos) async {
+    setState(() => _markerPos = pos);
+    _mapController?.animateCamera(CameraUpdate.newLatLng(pos));
+    await _fillFromLatLng(pos);
+  }
+
+  Future<void> _fillFromLatLng(LatLng pos) async {
+    final mapsLink =
+        'https://www.google.com/maps/search/?api=1&query=${pos.latitude},${pos.longitude}';
+    setState(() => _venueMapLinkController.text = mapsLink);
     try {
-      final locSnap = await FirebaseFirestore.instance.collection('locations').get();
-      final orgSnap = await FirebaseFirestore.instance.collection('organizations').get();
-      setState(() {
-        _locations = locSnap.docs
-            .map((d) => {'id': d.id, ...d.data()})
-            .toList()
-          ..sort((a, b) => (a['loc_name'] ?? '').compareTo(b['loc_name'] ?? ''));
-        _organizations = orgSnap.docs
-            .map((d) => {'id': d.id, ...d.data()})
-            .toList()
-          ..sort((a, b) =>
-              (a['org_name'] ?? a['org_handle_name'] ?? '')
-                  .compareTo(b['org_name'] ?? b['org_handle_name'] ?? ''));
-      });
+      final placemarks =
+      await placemarkFromCoordinates(pos.latitude, pos.longitude);
+      if (placemarks.isNotEmpty) {
+        final p = placemarks.first;
+        final parts = [p.street, p.locality, p.administrativeArea, p.country]
+            .where((s) => s != null && s.isNotEmpty)
+            .toList();
+
+        // A valid place name must:
+        //  • be non-empty
+        //  • not be purely numeric (e.g. "13", "1-13")
+        //  • not equal the street value (geocoder sometimes copies it)
+        //  • not be a leading numeric prefix of the street (house number)
+        final rawName  = p.name?.trim() ?? '';
+        final street   = p.street?.trim() ?? '';
+        final isNumeric = RegExp(r'^[\d\-‐–—/\s]+$').hasMatch(rawName);
+        final isStreetPrefix = street.isNotEmpty &&
+            street.startsWith(rawName) &&
+            rawName.length <= street.length;
+        final isValidName = rawName.isNotEmpty &&
+            !isNumeric &&
+            rawName != street &&
+            !isStreetPrefix;
+
+        setState(() {
+          _venueAddressController.text = parts.join(', ');
+          // Only overwrite if field is empty AND we have a real place name
+          if (_venueNameController.text.isEmpty && isValidName) {
+            _venueNameController.text = rawName;
+          }
+        });
+      }
     } catch (_) {}
-    finally { if (mounted) setState(() => _isFetchingOptions = false); }
+  }
+
+  // ── Map: search bar ───────────────────────────────────────────────────────
+  void _onSearchChanged(String query) {
+    _searchDebounce?.cancel();
+    if (query.trim().isEmpty) return;
+    _searchDebounce = Timer(
+      const Duration(milliseconds: 600),
+          () => _searchPlace(query),
+    );
+  }
+
+  Future<void> _searchPlace(String query) async {
+    if (!mounted) return;
+    setState(() => _searchLoading = true);
+    try {
+      final locations = await locationFromAddress(query);
+      if (locations.isNotEmpty && mounted) {
+        final loc = locations.first;
+        final pos = LatLng(loc.latitude, loc.longitude);
+        setState(() {
+          _markerPos    = pos;
+          _mapCenter    = pos;
+          _searchLoading = false;
+        });
+        _mapController?.animateCamera(CameraUpdate.newLatLngZoom(pos, 15));
+        await _fillFromLatLng(pos);
+        _mapSearchController.clear();
+        FocusManager.instance.primaryFocus?.unfocus();
+      } else {
+        if (mounted) setState(() => _searchLoading = false);
+      }
+    } catch (_) {
+      if (mounted) setState(() => _searchLoading = false);
+    }
   }
 
   // ── Pick image ────────────────────────────────────────────────────────────
   Future<void> _pickImage() async {
     final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
-    if (picked != null && mounted) {
-      setState(() => _imageFile = File(picked.path));
-    }
+    final picked =
+    await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+    if (picked != null && mounted) setState(() => _imageFile = File(picked.path));
   }
 
   // ── Submit ────────────────────────────────────────────────────────────────
   Future<void> _submitForm() async {
-    if (_titleEnController.text.trim().isEmpty || _eventDate == null) {
-      _showSnack('Please fill in the Event Title and Date.', isError: true);
+    final title   = _titleController.text.trim();
+    final address = _venueAddressController.text.trim();
+    final contact = _contactController.text.trim();
+    final desc    = _descController.text.trim();
+
+    if (title.isEmpty || _eventDate == null || address.isEmpty || contact.isEmpty) {
+      _showSnack('Please fill in Title, Date, Address, and Contact Email.',
+          isError: true);
       return;
     }
     setState(() => _isLoading = true);
+
     try {
-      // Upload image if selected — with a 30 s timeout so we never hang forever
+      // ── Image upload ──────────────────────────────────────────────────────
       String imageUrl = '';
       if (_imageFile != null) {
         try {
-          final storageRef = FirebaseStorage.instance
-              .ref('event_images/${DateTime.now().millisecondsSinceEpoch}_${_imageFile!.path.split('/').last}');
-
+          final storageRef = FirebaseStorage.instance.ref(
+              'event_images/${DateTime.now().millisecondsSinceEpoch}_${_imageFile!.path.split('/').last}');
           final uploadTask = storageRef.putFile(_imageFile!);
-
-          // Timeout: if upload takes more than 30 s, cancel it and proceed
-          // without the image rather than blocking the whole submission.
           final snapshot = await uploadTask.timeout(
             const Duration(seconds: 30),
             onTimeout: () {
               uploadTask.cancel();
-              throw TimeoutException('Image upload timed out');
+              throw TimeoutException('timeout');
             },
           );
           imageUrl = await snapshot.ref.getDownloadURL();
-        } on TimeoutException {
-          // Network too slow / emulator restriction — save event without image
+        } catch (_) {
           if (mounted) {
-            _showSnack('Image upload timed out — saving event without image.', isError: false);
+            _showSnack('Could not upload image — saving without it.',
+                isError: false);
           }
-          imageUrl = '';
-        } catch (uploadErr) {
-          // Storage not reachable (e.g. emulator, App Check not configured)
-          // Don't block the whole submission — just skip the image.
-          if (mounted) {
-            _showSnack('Could not upload image — saving event without it.', isError: false);
-          }
-          imageUrl = '';
         }
       }
 
-      // Parse start time from controller (HH:MM)
-      DateTime? startDateTime;
-      if (_eventDate != null && _startTimeController.text.isNotEmpty) {
-        final parts = _startTimeController.text.split(':');
+      // ── Bilingual title ───────────────────────────────────────────────────
+      String titleEn;
+      String titleJp;
+      if (_isJapanese(title)) {
+        // Input is Japanese → keep as JP, translate to EN
+        titleJp = title;
+        titleEn = await _translateText(title, 'en');
+      } else {
+        // Input is English (or other) → keep as EN, translate to JP
+        titleEn = title;
+        titleJp = await _translateText(title, 'ja');
+      }
+
+      // ── Bilingual description ─────────────────────────────────────────────
+      String descEn;
+      String descJp;
+      if (_isJapanese(desc)) {
+        // Input is Japanese → keep as JP, translate to EN
+        descJp = desc;
+        descEn = await _translateText(desc, 'en');
+      } else {
+        // Input is English (or other) → keep as EN, translate to JP
+        descEn = desc;
+        descJp = await _translateText(desc, 'ja');
+      }
+
+      // ── Timestamps ────────────────────────────────────────────────────────
+      final eventDateTs    = Timestamp.fromDate(_eventDate!);
+      final eventDateEndTs =
+      _eventDateEnd != null ? Timestamp.fromDate(_eventDateEnd!) : null;
+
+      Timestamp? startTs;
+      final timeStr = _startTimeController.text.trim();
+      if (timeStr.isNotEmpty) {
+        final parts = timeStr.split(':');
         if (parts.length == 2) {
-          startDateTime = DateTime(
+          startTs = Timestamp.fromDate(DateTime(
             _eventDate!.year, _eventDate!.month, _eventDate!.day,
-            int.tryParse(parts[0]) ?? 0, int.tryParse(parts[1]) ?? 0,
-          );
+            int.tryParse(parts[0]) ?? 0,
+            int.tryParse(parts[1]) ?? 0,
+          ));
         }
       }
 
       await FirebaseFirestore.instance.collection('events').add({
-        'event_active':                   _isActive,
-        'event_category_collegiate':      _catCollegiate,
-        'event_category_juniors':         _catJuniors,
-        'event_category_mensdoubles':     _catMensDoubles,
-        'event_category_menssingle':      _catMensSingles,
-        'event_category_mixeddoubles':    _catMixedDoubles,
-        'event_category_seniors':         _catSeniors,
-        'event_category_womensdoubles':   _catWomensDoubles,
-        'event_category_womenssingle':    _catWomensSingles,
-        'event_contact':                  _contactController.text.trim(),
-        'event_created':                  FieldValue.serverTimestamp(),
-        'event_date':                     _eventDate != null ? Timestamp.fromDate(_eventDate!) : null,
-        'event_description':              _descEnController.text.trim(),
-        'event_description_jp':           _descJpController.text.trim(),
-        'event_fee':                      _feeController.text.trim(),
-        'event_link':                     _linkController.text.trim(),
-        'event_loc_id':                   _selectedLocId ?? '',
-        'event_notes':                    _notesController.text.trim(),
-        'event_org_id':                   _selectedOrgId ?? '',
-        'event_pic':                      imageUrl,
-        'event_pic_thumbnail':            imageUrl,
-        'event_skill_level_amateur':      _skillAmateur,
-        'event_skill_level_beginner':     _skillBeginner,
-        'event_skill_level_pro':          _skillPro,
-        'event_start_date':               startDateTime != null ? Timestamp.fromDate(startDateTime) : null,
-        'event_start_time':               startDateTime != null ? Timestamp.fromDate(startDateTime) : null,
-        'event_status':                   _isPublished,
-        'event_time':                     _timeStr,
-        'event_title':                    _titleEnController.text.trim(),
-        'event_title_jp':                 _titleJpController.text.trim(),
-        'event_type':                     _eventType,
-        'event_updated':                  FieldValue.serverTimestamp(),
+        // Review flags
+        'event_pending_review': true,
+        'event_checked':        false,
+        'event_active':         false,
+        'event_status':         false,
+
+        // Timestamps
+        'event_added':   FieldValue.serverTimestamp(),
+        'event_created': FieldValue.serverTimestamp(),
+        'event_updated': FieldValue.serverTimestamp(),
+
+        // Title (bilingual)
+        'event_title':    titleEn,
+        'event_title_en': titleEn,
+        'event_title_jp': titleJp,
+
+        // Basic
+        'event_type': _eventType,
+        'event_link': _linkController.text.trim(),
+
+        // Schedule
+        'event_date':       eventDateTs,
+        'event_date_end':   eventDateEndTs,
+        'event_time':       startTs,
+        'event_start_date': startTs,
+        'event_fee':        _feeController.text.trim(),
+        'event_limit':      _maxParticipantsController.text.trim().isNotEmpty
+            ? int.tryParse(_maxParticipantsController.text.trim())
+            : null,
+        'event_stripe_setup': _acceptStripe,
+
+        // Skill
+        'event_skill_level_beginner': _skillBeginner,
+        'event_skill_level_amateur':  _skillAmateur,
+        'event_skill_level_pro':      _skillPro,
+
+        // Categories
+        'event_category_menssingle':    _catMensSingles,
+        'event_category_womenssingle':  _catWomensSingles,
+        'event_category_mensdoubles':   _catMensDoubles,
+        'event_category_womensdoubles': _catWomensDoubles,
+        'event_category_mixeddoubles':  _catMixedDoubles,
+        'event_category_juniors':       _catJuniors,
+        'event_category_collegiate':    _catCollegiate,
+        'event_category_seniors':       _catSeniors,
+
+        'event_touristfriendly': _touristFriendly,
+
+        // Venue
+        'event_venue_name':    _venueNameController.text.trim(),
+        'event_venue_address': address,
+        'event_venue_link':    _venueMapLinkController.text.trim(),
+        'event_org_name':      _orgNameController.text.trim(),
+        'event_loc_id':        '',
+        'event_org_id':        '',
+
+        // Contact & description (bilingual)
+        'event_contact':         contact,
+        'event_description_en':  descEn,
+        'event_description_jp':  descJp,
+
+        // Media
+        'event_pic':           imageUrl,
+        'event_pic_thumbnail': imageUrl,
+
+        // Submitter — replace with FirebaseAuth.instance.currentUser?.uid ?? ''
+        'event_addedby': '',
+        'submittedBy':   '',
       });
 
       if (mounted) {
-        _showSnack('Event created successfully!');
+        _showSnack('Event submitted for review!');
         Navigator.pop(context);
       }
     } catch (e) {
@@ -288,7 +445,9 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
             decoration: BoxDecoration(
               color: _surface,
               borderRadius: BorderRadius.circular(12),
-              boxShadow: [BoxShadow(color: _primary.withOpacity(0.08), blurRadius: 8, offset: const Offset(0, 2))],
+              boxShadow: [BoxShadow(
+                  color: _primary.withOpacity(0.08),
+                  blurRadius: 8, offset: const Offset(0, 2))],
             ),
             child: const Icon(Icons.arrow_back_ios_new, size: 16, color: _textDark),
           ),
@@ -296,9 +455,12 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
         ),
         title: Column(children: [
           const Text('Add an Event',
-              style: TextStyle(color: _textDark, fontWeight: FontWeight.w800, fontSize: 18, letterSpacing: -0.5)),
+              style: TextStyle(
+                  color: _textDark, fontWeight: FontWeight.w800,
+                  fontSize: 18, letterSpacing: -0.5)),
           Text(_stepLabels[_currentPage],
-              style: const TextStyle(color: _accent, fontWeight: FontWeight.w500, fontSize: 12)),
+              style: const TextStyle(
+                  color: _accent, fontWeight: FontWeight.w500, fontSize: 12)),
         ]),
         centerTitle: true,
       ),
@@ -323,7 +485,6 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
     );
   }
 
-  // ── Step Indicator ────────────────────────────────────────────────────────
   Widget _buildStepIndicator() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -357,14 +518,23 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _buildPageHeader('Basic Details', 'Title, type & visibility', Icons.info_outline),
+        _buildPageHeader(
+            'Basic Details', 'Title, type & registration link', Icons.info_outline),
 
-        _buildTextField(label: 'Event Title (EN) *', controller: _titleEnController, hint: 'e.g. UTR Pickleball Japan Tour 2026'),
-        const SizedBox(height: 14),
-        _buildTextField(label: 'Event Title (JP)', controller: _titleJpController, hint: 'e.g. UTRピックルボールジャパンツアー2026'),
+        _buildTextField(
+          label: 'Event Name *',
+          controller: _titleController,
+          hint: 'e.g. UTR Pickleball Japan Tour 2026',
+        ),
+        const SizedBox(height: 6),
+        Row(children: [
+          Icon(Icons.translate_rounded, size: 13, color: _textLight),
+          const SizedBox(width: 5),
+          const Text('Auto-translated to both EN & JP on submit',
+              style: TextStyle(color: _textLight, fontSize: 11)),
+        ]),
         const SizedBox(height: 14),
 
-        // Event Type
         _buildLabel('Event Type *'),
         const SizedBox(height: 6),
         _buildDropdown(
@@ -375,17 +545,34 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
         ),
         const SizedBox(height: 14),
 
-        _buildTextField(label: 'Registration Link', controller: _linkController, hint: 'https://app.utrsports.net/events/...'),
+        _buildTextField(
+          label: 'Registration / Event Link',
+          controller: _linkController,
+          hint: 'https://',
+          keyboardType: TextInputType.url,
+        ),
         const SizedBox(height: 20),
 
-        // Active + Published toggles
-        Row(children: [
-          Expanded(child: _buildToggleTile('Active', 'Visible in app', _isActive, Icons.visibility_outlined,
-                  (v) => setState(() => _isActive = v))),
-          const SizedBox(width: 12),
-          Expanded(child: _buildToggleTile('Published', 'Open to public', _isPublished, Icons.public_outlined,
-                  (v) => setState(() => _isPublished = v))),
-        ]),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+              color: _accentSoft, borderRadius: BorderRadius.circular(12)),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Icon(Icons.info_outline, size: 16, color: _primary),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'Submitted events go through a review process and will be '
+                    'visible within 48 hours of approval.',
+                style: TextStyle(
+                    color: _primary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    height: 1.4),
+              ),
+            ),
+          ]),
+        ),
       ]),
     );
   }
@@ -397,79 +584,75 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _buildPageHeader('Schedule & Fees', 'Date, time and entry fee', Icons.calendar_today_outlined),
+        _buildPageHeader(
+            'Schedule & Fees', 'Date, time and entry fee', Icons.calendar_today_outlined),
 
-        // Date picker
-        _buildLabel('Event Date *'),
+        _buildLabel('Date of Event *'),
         const SizedBox(height: 6),
-        GestureDetector(
-          onTap: () async {
-            final picked = await showDatePicker(
-              context: context,
-              initialDate: _eventDate ?? DateTime.now().add(const Duration(days: 7)),
-              firstDate: DateTime.now(),
-              lastDate: DateTime.now().add(const Duration(days: 365 * 3)),
-              builder: (ctx, child) => Theme(
-                data: Theme.of(ctx).copyWith(
-                  colorScheme: const ColorScheme.light(primary: _primary, onSurface: _textDark),
-                ),
-                child: child!,
-              ),
-            );
-            if (picked != null) setState(() => _eventDate = picked);
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            decoration: BoxDecoration(
-              color: _surface,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _eventDate != null ? _accent : _border),
-            ),
-            child: Row(children: [
-              Icon(Icons.calendar_month_rounded, color: _eventDate != null ? _primary : _textLight, size: 18),
-              const SizedBox(width: 10),
-              Text(
-                _eventDate != null
-                    ? '${_eventDate!.year}/${_eventDate!.month.toString().padLeft(2,'0')}/${_eventDate!.day.toString().padLeft(2,'0')}'
-                    : 'Select event date',
-                style: TextStyle(
-                  color: _eventDate != null ? _textDark : _textLight,
-                  fontSize: 14, fontWeight: FontWeight.w500,
-                ),
-              ),
-            ]),
-          ),
+        _buildDatePicker(
+          value: _eventDate,
+          hint: 'Select event date',
+          onPicked: (d) => setState(() => _eventDate = d),
         ),
-
         const SizedBox(height: 14),
+
+        _buildLabel('End Date (Optional)'),
+        const SizedBox(height: 6),
+        _buildDatePicker(
+          value: _eventDateEnd,
+          hint: 'Select end date',
+          onPicked: (d) => setState(() => _eventDateEnd = d),
+        ),
+        const SizedBox(height: 14),
+
         _buildTextField(
-          label: 'Start Time (HH:MM)',
+          label: 'Start Time (e.g. 09:00)',
           controller: _startTimeController,
-          hint: 'e.g. 09:00',
+          hint: '09:00',
           keyboardType: TextInputType.datetime,
         ),
         const SizedBox(height: 14),
 
-        // Display time string
-        _buildLabel('Display Time String'),
-        const SizedBox(height: 6),
-        _buildDropdown(
-          value: _timeStr,
-          items: _timeOptions,
-          onChanged: (v) => setState(() => _timeStr = v!),
-          labelBuilder: (v) {
-            const map = {
-              '9:00 AM - 12:00 PM': 'Morning (9:00 AM - 12:00 PM)',
-              '1:00 PM - 5:00 PM':  'Afternoon (1:00 PM - 5:00 PM)',
-              '6:00 PM - 9:00 PM':  'Evening (6:00 PM - 9:00 PM)',
-              '9:00 AM - 5:00 PM':  'Full Day (9:00 AM - 5:00 PM)',
-              'TBD':                'To Be Determined (TBD)',
-            };
-            return map[v] ?? v;
-          },
-        ),
-        const SizedBox(height: 14),
-        _buildTextField(label: 'Entry Fee', controller: _feeController, hint: 'e.g. ¥2,000 or 6,600-7,040'),
+        Row(children: [
+          Expanded(child: _buildTextField(
+            label: 'Fee (e.g. Free, ¥2000)',
+            controller: _feeController,
+            hint: '¥2,000',
+          )),
+          const SizedBox(width: 12),
+          Expanded(child: _buildTextField(
+            label: 'Max Participants',
+            controller: _maxParticipantsController,
+            hint: 'e.g. 64',
+            keyboardType: TextInputType.number,
+          )),
+        ]),
+        const SizedBox(height: 20),
+
+        _buildSectionCard(children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Accept payment through Pikuru App?',
+                  style: TextStyle(
+                      color: _textDark, fontSize: 13, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 12),
+              Row(children: [
+                _buildRadioOption('Yes', true, _acceptStripe,
+                        (v) => setState(() => _acceptStripe = v)),
+                const SizedBox(width: 24),
+                _buildRadioOption('No', false, _acceptStripe,
+                        (v) => setState(() => _acceptStripe = v)),
+              ]),
+              const SizedBox(height: 8),
+              const Text(
+                '*Stripe fees plus a ¥100 fee per participant will apply.',
+                style: TextStyle(
+                    color: _textLight, fontSize: 11, fontStyle: FontStyle.italic),
+              ),
+            ]),
+          ),
+        ]),
       ]),
     );
   }
@@ -481,128 +664,262 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _buildPageHeader('Divisions & Levels', 'Who can participate?', Icons.emoji_events_outlined),
+        _buildPageHeader(
+            'Divisions & Levels', 'Who can participate?', Icons.emoji_events_outlined),
 
-        _buildLabel('Target Skill Levels'),
+        _buildLabel('Skill Level'),
         const SizedBox(height: 10),
         Row(children: [
-          Expanded(child: _buildSkillChip('Beginner', _skillBeginner, (v) => setState(() => _skillBeginner = v))),
+          Expanded(child: _buildSkillChip('Beginner', _skillBeginner,
+                  (v) => setState(() => _skillBeginner = v))),
           const SizedBox(width: 10),
-          Expanded(child: _buildSkillChip('Amateur', _skillAmateur, (v) => setState(() => _skillAmateur = v))),
+          Expanded(child: _buildSkillChip('Amateur', _skillAmateur,
+                  (v) => setState(() => _skillAmateur = v))),
           const SizedBox(width: 10),
-          Expanded(child: _buildSkillChip('Pro', _skillPro, (v) => setState(() => _skillPro = v))),
+          Expanded(child: _buildSkillChip('Pro', _skillPro,
+                  (v) => setState(() => _skillPro = v))),
         ]),
 
         const SizedBox(height: 24),
-        _buildLabel('Categories Included'),
+        _buildLabel('Event Category'),
         const SizedBox(height: 10),
-
         _buildSectionCard(children: [
-          _buildCategoryRow("Men's Singles",    _catMensSingles,   (v) => setState(() => _catMensSingles = v),   Icons.person_outline),
-          _buildCategoryRow("Women's Singles",  _catWomensSingles, (v) => setState(() => _catWomensSingles = v), Icons.person_outline),
-          _buildCategoryRow("Men's Doubles",    _catMensDoubles,   (v) => setState(() => _catMensDoubles = v),   Icons.people_outline),
-          _buildCategoryRow("Women's Doubles",  _catWomensDoubles, (v) => setState(() => _catWomensDoubles = v), Icons.people_outline),
-          _buildCategoryRow("Mixed Doubles",    _catMixedDoubles,  (v) => setState(() => _catMixedDoubles = v),  Icons.people_outline),
-          _buildCategoryRow("Juniors",          _catJuniors,       (v) => setState(() => _catJuniors = v),       Icons.child_care_outlined),
-          _buildCategoryRow("Collegiate",       _catCollegiate,    (v) => setState(() => _catCollegiate = v),    Icons.school_outlined),
-          _buildCategoryRow("Seniors",          _catSeniors,       (v) => setState(() => _catSeniors = v),       Icons.elderly_outlined),
+          _buildCategoryRow("Men's Singles",   _catMensSingles,   (v) => setState(() => _catMensSingles = v),   Icons.person_outline),
+          _buildCategoryRow("Women's Singles", _catWomensSingles, (v) => setState(() => _catWomensSingles = v), Icons.person_outline),
+          _buildCategoryRow("Men's Doubles",   _catMensDoubles,   (v) => setState(() => _catMensDoubles = v),   Icons.people_outline),
+          _buildCategoryRow("Women's Doubles", _catWomensDoubles, (v) => setState(() => _catWomensDoubles = v), Icons.people_outline),
+          _buildCategoryRow("Mixed Doubles",   _catMixedDoubles,  (v) => setState(() => _catMixedDoubles = v),  Icons.people_outline),
+          _buildCategoryRow("Juniors",         _catJuniors,       (v) => setState(() => _catJuniors = v),       Icons.child_care_outlined),
+          _buildCategoryRow("Collegiate",      _catCollegiate,    (v) => setState(() => _catCollegiate = v),    Icons.school_outlined),
+          _buildCategoryRow("Seniors",         _catSeniors,       (v) => setState(() => _catSeniors = v),       Icons.elderly_outlined),
+        ]),
+
+        const SizedBox(height: 24),
+        _buildSectionCard(children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Text('Tourist Friendly?',
+                  style: TextStyle(
+                      color: _textDark, fontSize: 13, fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              const Text(
+                'Welcoming to visitors and tourists, including non-Japanese speakers.',
+                style: TextStyle(color: _textLight, fontSize: 11, height: 1.4),
+              ),
+              const SizedBox(height: 12),
+              Row(children: [
+                _buildRadioOption('Yes', true, _touristFriendly,
+                        (v) => setState(() => _touristFriendly = v)),
+                const SizedBox(width: 24),
+                _buildRadioOption('No', false, _touristFriendly,
+                        (v) => setState(() => _touristFriendly = v)),
+              ]),
+            ]),
+          ),
         ]),
       ]),
     );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Page 4 – Venue & Organization
+  // Page 4 – Venue  (Google Map + search bar)
   // ─────────────────────────────────────────────────────────────────────────
   Widget _buildVenuePage() {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _buildPageHeader('Venue & Organization', 'Where and who is hosting?', Icons.place_outlined),
+        _buildPageHeader(
+            'Location & Org', 'Search or tap the map to set the venue',
+            Icons.place_outlined),
 
-        // Info banner
-        Container(
-          padding: const EdgeInsets.all(12),
-          margin: const EdgeInsets.only(bottom: 20),
-          decoration: BoxDecoration(color: _accentSoft, borderRadius: BorderRadius.circular(12)),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            const Icon(Icons.info_outline, size: 16, color: _primary),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                'Link this event to an existing Court/Location and its managing Organization so players can find hosting details.',
-                style: const TextStyle(color: _primary, fontSize: 12, fontWeight: FontWeight.w500, height: 1.4),
-              ),
+        // ── Embedded map with search overlay ──────────────────────────────
+        ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            height: 300,
+            decoration: BoxDecoration(
+              border: Border.all(color: _border),
+              borderRadius: BorderRadius.circular(16),
             ),
-          ]),
+            child: Stack(children: [
+
+              // Google Map
+              GoogleMap(
+                initialCameraPosition:
+                CameraPosition(target: _mapCenter, zoom: 13),
+                onMapCreated: (c) => _mapController = c,
+                onTap: _onMapTap,
+                markers: _markerPos != null
+                    ? {
+                  Marker(
+                    markerId: const MarkerId('venue'),
+                    position: _markerPos!,
+                    infoWindow: const InfoWindow(title: 'Event Venue'),
+                  ),
+                }
+                    : {},
+                myLocationButtonEnabled: false,
+                zoomControlsEnabled: true,
+              ),
+
+              // Search bar
+              Positioned(
+                top: 12, left: 12, right: 12,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: _surface,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.14),
+                        blurRadius: 10,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: TextField(
+                    controller: _mapSearchController,
+                    onChanged: _onSearchChanged,
+                    onSubmitted: _searchPlace,
+                    textInputAction: TextInputAction.search,
+                    style: const TextStyle(color: _textDark, fontSize: 14),
+                    decoration: InputDecoration(
+                      hintText: 'Search venue or address…',
+                      hintStyle:
+                      const TextStyle(color: _textLight, fontSize: 13),
+                      prefixIcon: _searchLoading
+                          ? const Padding(
+                        padding: EdgeInsets.all(13),
+                        child: SizedBox(
+                          width: 16, height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor:
+                            AlwaysStoppedAnimation(_accent),
+                          ),
+                        ),
+                      )
+                          : const Icon(Icons.search_rounded,
+                          color: _textLight, size: 20),
+                      suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                        valueListenable: _mapSearchController,
+                        builder: (_, v, __) => v.text.isNotEmpty
+                            ? IconButton(
+                          icon: const Icon(Icons.clear,
+                              color: _textLight, size: 18),
+                          onPressed: () => _mapSearchController.clear(),
+                        )
+                            : const SizedBox.shrink(),
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 4, vertical: 14),
+                    ),
+                  ),
+                ),
+              ),
+
+              // "Tap to drop pin" hint
+              if (_markerPos == null)
+                Positioned(
+                  bottom: 12, left: 0, right: 0,
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: _textDark.withOpacity(0.72),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Text(
+                        'Tap map to drop a pin',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                ),
+            ]),
+          ),
         ),
 
-        _buildLabel('Target Location *'),
-        const SizedBox(height: 6),
-        _isFetchingOptions
-            ? _buildLoadingSkeleton()
-            : _buildSearchableDropdown(
-          hint: 'Select an existing court...',
-          value: _selectedLocId,
-          items: _locations,
-          labelKey: 'loc_name',
-          valueKey: 'loc_id',       // ← stores loc_id, NOT the Firestore doc id
-          secondaryKey: 'loc_city_en',
-          onChanged: (v) => setState(() => _selectedLocId = v),
-        ),
+        const SizedBox(height: 16),
 
-        const SizedBox(height: 14),
-        _buildLabel('Managing Organization'),
-        const SizedBox(height: 6),
-        _isFetchingOptions
-            ? _buildLoadingSkeleton()
-            : _buildSearchableDropdown(
-          hint: 'None / Independent',
-          value: _selectedOrgId,
-          items: _organizations,
-          labelKey: 'org_name',
-          valueKey: 'org_id',       // ← stores org_id, NOT the Firestore doc id
-          secondaryKey: 'org_handle_name',
-          onChanged: (v) => setState(() => _selectedOrgId = v),
-          nullable: true,
-        ),
-
-        const SizedBox(height: 14),
+        // ── Auto-filled fields (editable) ──────────────────────────────────
         _buildTextField(
-          label: 'Contact Email / Phone',
+          label: 'Event Address *',
+          controller: _venueAddressController,
+          hint: 'Auto-filled from map or type manually',
+        ),
+        const SizedBox(height: 14),
+
+        _buildTextField(
+          label: 'Google Maps Link',
+          controller: _venueMapLinkController,
+          hint: 'Auto-filled from map or paste link',
+          keyboardType: TextInputType.url,
+        ),
+        const SizedBox(height: 14),
+
+        Row(children: [
+          Expanded(child: _buildTextField(
+            label: 'Venue Name / Hosted By',
+            controller: _venueNameController,
+            hint: 'e.g. Shibuya Sports Center',
+          )),
+          const SizedBox(width: 12),
+          Expanded(child: _buildTextField(
+            label: 'Organization Name',
+            controller: _orgNameController,
+            hint: 'e.g. Tokyo Pickleball Assoc.',
+          )),
+        ]),
+        const SizedBox(height: 14),
+
+        _buildTextField(
+          label: 'Contact Email *',
           controller: _contactController,
-          hint: 'e.g. info@event.com',
+          hint: 'email@example.com',
+          keyboardType: TextInputType.emailAddress,
         ),
       ]),
     );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Page 5 – Media & Notes
+  // Page 5 – Description & Media
   // ─────────────────────────────────────────────────────────────────────────
   Widget _buildMediaPage() {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _buildPageHeader('Description & Media', 'Tell players about this event', Icons.image_outlined),
+        _buildPageHeader(
+            'Description & Media', 'Tell players about this event',
+            Icons.image_outlined),
 
         _buildTextField(
-          label: 'Event Description (EN)',
-          controller: _descEnController,
-          hint: 'Talk about the event, rules, schedule...',
-          maxLines: 5,
+          label: 'Event Description *',
+          controller: _descController,
+          hint: 'Talk about the event, rules, schedule, etc.',
+          maxLines: 6,
         ),
-        const SizedBox(height: 14),
-        _buildTextField(
-          label: 'Event Description (JP)',
-          controller: _descJpController,
-          hint: 'イベントの詳細、ルール、スケジュールなど...',
-          maxLines: 5,
-        ),
+        const SizedBox(height: 6),
+        // ── Translation hint, consistent with title field ──────────────────
+        Row(children: [
+          Icon(Icons.translate_rounded, size: 13, color: _textLight),
+          const SizedBox(width: 5),
+          const Text('Auto-translated to both EN & JP on submit',
+              style: TextStyle(color: _textLight, fontSize: 11)),
+        ]),
         const SizedBox(height: 20),
 
-        // Cover image picker
-        _buildLabel('Cover Picture'),
+        _buildLabel('Event Flyer / Cover Image'),
+        const SizedBox(height: 4),
+        const Text("We'll use this as the event thumbnail.",
+            style: TextStyle(color: _textLight, fontSize: 11)),
         const SizedBox(height: 8),
         GestureDetector(
           onTap: _pickImage,
@@ -615,7 +932,6 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
               border: Border.all(
                 color: _imageFile != null ? _accent : _border,
                 width: _imageFile != null ? 1.5 : 1,
-                style: _imageFile != null ? BorderStyle.solid : BorderStyle.solid,
               ),
             ),
             clipBehavior: Clip.hardEdge,
@@ -625,7 +941,8 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
               Positioned(
                 bottom: 8, right: 8,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: _textDark.withOpacity(0.75),
                     borderRadius: BorderRadius.circular(20),
@@ -633,7 +950,11 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
                   child: const Row(mainAxisSize: MainAxisSize.min, children: [
                     Icon(Icons.edit_rounded, size: 13, color: Colors.white),
                     SizedBox(width: 5),
-                    Text('Change', style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                    Text('Change',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600)),
                   ]),
                 ),
               ),
@@ -641,30 +962,30 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
                 : Column(mainAxisAlignment: MainAxisAlignment.center, children: [
               Container(
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: _accentSoft, borderRadius: BorderRadius.circular(12)),
-                child: const Icon(Icons.add_photo_alternate_outlined, color: _primary, size: 24),
+                decoration: BoxDecoration(
+                    color: _accentSoft,
+                    borderRadius: BorderRadius.circular(12)),
+                child: const Icon(Icons.add_photo_alternate_outlined,
+                    color: _primary, size: 24),
               ),
               const SizedBox(height: 8),
-              const Text('Select Event Image', style: TextStyle(color: _textMid, fontSize: 13, fontWeight: FontWeight.w600)),
+              const Text('Select Event Image',
+                  style: TextStyle(
+                      color: _textMid,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600)),
               const SizedBox(height: 2),
-              const Text('Used as thumbnail automatically', style: TextStyle(color: _textLight, fontSize: 11)),
+              const Text('Used as thumbnail automatically',
+                  style: TextStyle(color: _textLight, fontSize: 11)),
             ]),
           ),
-        ),
-
-        const SizedBox(height: 20),
-        _buildTextField(
-          label: 'Internal Notes (Hidden from public)',
-          controller: _notesController,
-          hint: 'Staff-only notes...',
-          maxLines: 3,
         ),
       ]),
     );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Bottom navigation
+  // Bottom Nav
   // ─────────────────────────────────────────────────────────────────────────
   Widget _buildBottomNav() {
     final isLast = _currentPage == _stepLabels.length - 1;
@@ -679,13 +1000,19 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
           Expanded(
             child: OutlinedButton(
               onPressed: () => _pageController.previousPage(
-                  duration: const Duration(milliseconds: 300), curve: Curves.easeInOut),
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut),
               style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: _border, width: 1.5),
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
               ),
-              child: const Text('Back', style: TextStyle(color: _textMid, fontWeight: FontWeight.w600, fontSize: 15)),
+              child: const Text('Back',
+                  style: TextStyle(
+                      color: _textMid,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15)),
             ),
           ),
           const SizedBox(width: 12),
@@ -693,12 +1020,15 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
         Expanded(
           flex: 2,
           child: ElevatedButton(
-            onPressed: _isLoading ? null : () {
+            onPressed: _isLoading
+                ? null
+                : () {
               if (isLast) {
                 _submitForm();
               } else {
                 _pageController.nextPage(
-                    duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut);
               }
             },
             style: ElevatedButton.styleFrom(
@@ -706,14 +1036,21 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
               disabledBackgroundColor: _accent.withOpacity(0.4),
               padding: const EdgeInsets.symmetric(vertical: 16),
               elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14)),
             ),
             child: _isLoading
-                ? const SizedBox(height: 20, width: 20,
-                child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(Colors.white)))
+                ? const SizedBox(
+                height: 20, width: 20,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation(Colors.white)))
                 : Text(
               isLast ? 'Create Event' : 'Continue',
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15),
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15),
             ),
           ),
         ),
@@ -722,7 +1059,7 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Shared Widgets
+  // Shared widget helpers
   // ─────────────────────────────────────────────────────────────────────────
 
   Widget _buildPageHeader(String title, String subtitle, IconData icon) {
@@ -731,14 +1068,21 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
       child: Row(children: [
         Container(
           padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: _accentSoft, borderRadius: BorderRadius.circular(14)),
+          decoration: BoxDecoration(
+              color: _accentSoft, borderRadius: BorderRadius.circular(14)),
           child: Icon(icon, color: _primary, size: 22),
         ),
         const SizedBox(width: 14),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(title, style: const TextStyle(color: _textDark, fontWeight: FontWeight.w800, fontSize: 18, letterSpacing: -0.3)),
+          Text(title,
+              style: const TextStyle(
+                  color: _textDark,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 18,
+                  letterSpacing: -0.3)),
           const SizedBox(height: 2),
-          Text(subtitle, style: const TextStyle(color: _textLight, fontSize: 12)),
+          Text(subtitle,
+              style: const TextStyle(color: _textLight, fontSize: 12)),
         ])),
       ]),
     );
@@ -746,7 +1090,11 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
 
   Widget _buildLabel(String text) => Text(
     text,
-    style: const TextStyle(color: _textMid, fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 0.2),
+    style: const TextStyle(
+        color: _textMid,
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.2),
   );
 
   Widget _buildTextField({
@@ -763,18 +1111,112 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
         controller: controller,
         keyboardType: keyboardType,
         maxLines: maxLines,
-        style: const TextStyle(color: _textDark, fontSize: 14, fontWeight: FontWeight.w500),
+        style: const TextStyle(
+            color: _textDark, fontSize: 14, fontWeight: FontWeight.w500),
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: const TextStyle(color: _textLight, fontSize: 14),
-          filled: true, fillColor: _surface,
-          border:        OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _border, width: 1)),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _border, width: 1)),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _accent, width: 1.5)),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+          filled: true,
+          fillColor: _surface,
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: _border, width: 1)),
+          enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: _border, width: 1)),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: _accent, width: 1.5)),
+          contentPadding:
+          const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
         ),
       ),
     ]);
+  }
+
+  Widget _buildDatePicker({
+    required DateTime? value,
+    required String hint,
+    required ValueChanged<DateTime> onPicked,
+  }) {
+    return GestureDetector(
+      onTap: () async {
+        final picked = await showDatePicker(
+          context: context,
+          initialDate: value ?? DateTime.now().add(const Duration(days: 7)),
+          firstDate: DateTime.now(),
+          lastDate: DateTime.now().add(const Duration(days: 365 * 3)),
+          builder: (ctx, child) => Theme(
+            data: Theme.of(ctx).copyWith(
+              colorScheme: const ColorScheme.light(
+                  primary: _primary, onSurface: _textDark),
+            ),
+            child: child!,
+          ),
+        );
+        if (picked != null) onPicked(picked);
+      },
+      child: Container(
+        padding:
+        const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: _surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: value != null ? _accent : _border),
+        ),
+        child: Row(children: [
+          Icon(Icons.calendar_month_rounded,
+              color: value != null ? _primary : _textLight, size: 18),
+          const SizedBox(width: 10),
+          Text(
+            value != null
+                ? '${value.year}/${value.month.toString().padLeft(2, '0')}/${value.day.toString().padLeft(2, '0')}'
+                : hint,
+            style: TextStyle(
+              color: value != null ? _textDark : _textLight,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _buildRadioOption<T>(
+      String label, T optionValue, T groupValue, ValueChanged<T> onChanged) {
+    final selected = optionValue == groupValue;
+    return GestureDetector(
+      onTap: () => onChanged(optionValue),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          width: 20, height: 20,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(
+                color: selected ? _primary : _border, width: 2),
+          ),
+          child: selected
+              ? Center(
+            child: Container(
+              width: 10, height: 10,
+              decoration: const BoxDecoration(
+                  color: _primary, shape: BoxShape.circle),
+            ),
+          )
+              : null,
+        ),
+        const SizedBox(width: 8),
+        Text(label,
+            style: TextStyle(
+              color: selected ? _textDark : _textMid,
+              fontSize: 14,
+              fontWeight:
+              selected ? FontWeight.w600 : FontWeight.w500,
+            )),
+      ]),
+    );
   }
 
   Widget _buildDropdown({
@@ -785,7 +1227,8 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: _surface, borderRadius: BorderRadius.circular(12),
+        color: _surface,
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: _border),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -793,191 +1236,29 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
         child: DropdownButton<String>(
           value: value,
           isExpanded: true,
-          icon: const Icon(Icons.keyboard_arrow_down_rounded, color: _textLight, size: 20),
+          icon: const Icon(Icons.keyboard_arrow_down_rounded,
+              color: _textLight, size: 20),
           dropdownColor: _surface,
-          style: const TextStyle(color: _textDark, fontSize: 14, fontWeight: FontWeight.w500),
-          items: items.map((item) => DropdownMenuItem(
+          style: const TextStyle(
+              color: _textDark,
+              fontSize: 14,
+              fontWeight: FontWeight.w500),
+          items: items
+              .map((item) => DropdownMenuItem(
             value: item,
-            child: Text(labelBuilder(item), style: const TextStyle(color: _textDark, fontSize: 14)),
-          )).toList(),
+            child: Text(labelBuilder(item),
+                style: const TextStyle(
+                    color: _textDark, fontSize: 14)),
+          ))
+              .toList(),
           onChanged: onChanged,
         ),
       ),
     );
   }
 
-  Widget _buildSearchableDropdown({
-    required String hint,
-    required String? value,
-    required List<Map<String, dynamic>> items,
-    required String labelKey,
-    String? valueKey,        // ← the field used as the stored value (e.g. 'loc_id')
-    String? secondaryKey,
-    required ValueChanged<String?> onChanged,
-    bool nullable = false,
-  }) {
-    // Resolve display label from the currently selected value
-    String displayLabel = hint;
-    if (value != null) {
-      final match = items.firstWhere(
-            (i) => (i[valueKey ?? 'id'] ?? i['id'] ?? i[labelKey]).toString() == value,
-        orElse: () => {},
-      );
-      if (match.isNotEmpty) displayLabel = (match[labelKey] ?? hint).toString();
-    }
-
-    return GestureDetector(
-      onTap: () => _showPickerSheet(
-        hint: hint, value: value, items: items,
-        labelKey: labelKey, valueKey: valueKey,
-        secondaryKey: secondaryKey,
-        onChanged: onChanged, nullable: nullable,
-      ),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: _surface, borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: value != null ? _accent : _border),
-        ),
-        child: Row(children: [
-          Expanded(
-            child: Text(
-              displayLabel,
-              style: TextStyle(
-                color: value != null ? _textDark : _textLight,
-                fontSize: 14, fontWeight: FontWeight.w500,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          const Icon(Icons.keyboard_arrow_down_rounded, color: _textLight, size: 20),
-        ]),
-      ),
-    );
-  }
-
-  void _showPickerSheet({
-    required String hint,
-    required String? value,
-    required List<Map<String, dynamic>> items,
-    required String labelKey,
-    String? valueKey,        // ← the field used as the stored value (e.g. 'loc_id')
-    String? secondaryKey,
-    required ValueChanged<String?> onChanged,
-    required bool nullable,
-  }) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => Container(
-        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.6),
-        decoration: const BoxDecoration(
-          color: _surface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(children: [
-          Container(margin: const EdgeInsets.only(top: 12, bottom: 8),
-              width: 36, height: 4,
-              decoration: BoxDecoration(color: _border, borderRadius: BorderRadius.circular(2))),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-            child: Text(hint, style: const TextStyle(color: _textMid, fontSize: 13, fontWeight: FontWeight.w600)),
-          ),
-          const Divider(height: 1, color: _border),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              children: [
-                if (nullable)
-                  _sheetItem('None / Independent', null, value, onChanged),
-                ...items.map((item) {
-                  // Use valueKey field (e.g. 'loc_id') if provided,
-                  // otherwise fall back to the Firestore document 'id'.
-                  final itemValue = (item[valueKey ?? 'id'] ?? item['id'] ?? item[labelKey]).toString();
-                  final label     = (item[labelKey] ?? itemValue).toString();
-                  final sub       = secondaryKey != null ? (item[secondaryKey] ?? '').toString() : '';
-                  return _sheetItem(label, itemValue, value, onChanged, subtitle: sub.isNotEmpty ? sub : null);
-                }),
-              ],
-            ),
-          ),
-        ]),
-      ),
-    );
-  }
-
-  Widget _sheetItem(String label, String? id, String? current, ValueChanged<String?> onChanged, {String? subtitle}) {
-    final isSelected = current == id;
-    return InkWell(
-      onTap: () { Navigator.pop(context); onChanged(id); },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
-        color: isSelected ? _accentSoft : Colors.transparent,
-        child: Row(children: [
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(label, style: TextStyle(
-              color: isSelected ? _primary : _textDark,
-              fontSize: 14, fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-            )),
-            if (subtitle != null)
-              Text(subtitle, style: const TextStyle(color: _textLight, fontSize: 12)),
-          ])),
-          if (isSelected) const Icon(Icons.check_rounded, color: _primary, size: 18),
-        ]),
-      ),
-    );
-  }
-
-  Widget _buildToggleTile(String title, String subtitle, bool value, IconData icon, ValueChanged<bool> onChanged) {
-    return GestureDetector(
-      onTap: () => onChanged(!value),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: value ? _accentSoft : _surface,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: value ? _accent : _border, width: value ? 1.5 : 1),
-          boxShadow: [BoxShadow(color: _primary.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
-        ),
-        child: Row(children: [
-          Container(
-            padding: const EdgeInsets.all(7),
-            decoration: BoxDecoration(
-              color: value ? _primary : _border.withOpacity(0.5),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, size: 15, color: value ? Colors.white : _textLight),
-          ),
-          const SizedBox(width: 10),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(title, style: TextStyle(color: value ? _textDark : _textMid, fontSize: 13, fontWeight: FontWeight.w700)),
-            Text(subtitle, style: const TextStyle(color: _textLight, fontSize: 11)),
-          ])),
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            width: 36, height: 20,
-            decoration: BoxDecoration(
-              color: value ? _primary : _border,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: AnimatedAlign(
-              duration: const Duration(milliseconds: 200),
-              alignment: value ? Alignment.centerRight : Alignment.centerLeft,
-              child: Container(
-                margin: const EdgeInsets.all(2),
-                width: 16, height: 16,
-                decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-              ),
-            ),
-          ),
-        ]),
-      ),
-    );
-  }
-
-  Widget _buildSkillChip(String label, bool selected, ValueChanged<bool> onChanged) {
+  Widget _buildSkillChip(
+      String label, bool selected, ValueChanged<bool> onChanged) {
     return GestureDetector(
       onTap: () => onChanged(!selected),
       child: AnimatedContainer(
@@ -986,17 +1267,26 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
         decoration: BoxDecoration(
           color: selected ? _primary : _surface,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: selected ? _primary : _border, width: selected ? 1.5 : 1),
+          border: Border.all(
+              color: selected ? _primary : _border,
+              width: selected ? 1.5 : 1),
           boxShadow: selected
-              ? [BoxShadow(color: _primary.withOpacity(0.25), blurRadius: 8, offset: const Offset(0, 3))]
-              : [BoxShadow(color: _primary.withOpacity(0.04), blurRadius: 4, offset: const Offset(0, 1))],
+              ? [BoxShadow(
+              color: _primary.withOpacity(0.25),
+              blurRadius: 8,
+              offset: const Offset(0, 3))]
+              : [BoxShadow(
+              color: _primary.withOpacity(0.04),
+              blurRadius: 4,
+              offset: const Offset(0, 1))],
         ),
         child: Text(
           label,
           textAlign: TextAlign.center,
           style: TextStyle(
             color: selected ? Colors.white : _textMid,
-            fontSize: 13, fontWeight: FontWeight.w700,
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ),
@@ -1006,59 +1296,62 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
   Widget _buildSectionCard({required List<Widget> children}) {
     return Container(
       decoration: BoxDecoration(
-        color: _surface, borderRadius: BorderRadius.circular(16),
+        color: _surface,
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _border),
-        boxShadow: [BoxShadow(color: _primary.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
+        boxShadow: [BoxShadow(
+            color: _primary.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2))],
       ),
-      child: Column(children: children.asMap().entries.map((e) {
-        final isLast = e.key == children.length - 1;
-        return Column(mainAxisSize: MainAxisSize.min, children: [
-          e.value,
-          if (!isLast) const Divider(height: 1, color: _border, indent: 16, endIndent: 16),
-        ]);
-      }).toList()),
+      child: Column(
+        children: children.asMap().entries.map((e) {
+          final isLast = e.key == children.length - 1;
+          return Column(mainAxisSize: MainAxisSize.min, children: [
+            e.value,
+            if (!isLast)
+              const Divider(
+                  height: 1, color: _border, indent: 16, endIndent: 16),
+          ]);
+        }).toList(),
+      ),
     );
   }
 
-  Widget _buildCategoryRow(String label, bool value, ValueChanged<bool> onChanged, IconData icon) {
+  Widget _buildCategoryRow(
+      String label, bool value, ValueChanged<bool> onChanged, IconData icon) {
     return InkWell(
       onTap: () => onChanged(!value),
       borderRadius: BorderRadius.circular(16),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        padding:
+        const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
         child: Row(children: [
-          Icon(icon, size: 18, color: value ? _primary : _textLight),
+          Icon(icon,
+              size: 18, color: value ? _primary : _textLight),
           const SizedBox(width: 12),
-          Expanded(child: Text(label, style: TextStyle(
-            color: value ? _textDark : _textMid,
-            fontSize: 14, fontWeight: value ? FontWeight.w600 : FontWeight.w500,
-          ))),
+          Expanded(
+              child: Text(label,
+                  style: TextStyle(
+                    color: value ? _textDark : _textMid,
+                    fontSize: 14,
+                    fontWeight:
+                    value ? FontWeight.w600 : FontWeight.w500,
+                  ))),
           AnimatedContainer(
             duration: const Duration(milliseconds: 200),
             width: 22, height: 22,
             decoration: BoxDecoration(
               color: value ? _primary : Colors.transparent,
-              border: Border.all(color: value ? _primary : _border, width: 1.5),
+              border: Border.all(
+                  color: value ? _primary : _border, width: 1.5),
               borderRadius: BorderRadius.circular(6),
             ),
-            child: value ? const Icon(Icons.check, size: 14, color: Colors.white) : null,
+            child: value
+                ? const Icon(Icons.check, size: 14, color: Colors.white)
+                : null,
           ),
         ]),
-      ),
-    );
-  }
-
-  Widget _buildLoadingSkeleton() {
-    return Container(
-      height: 48,
-      decoration: BoxDecoration(
-        color: _accentSoft.withOpacity(0.5),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _border),
-      ),
-      child: const Center(
-        child: SizedBox(height: 16, width: 16,
-            child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(_accent))),
       ),
     );
   }
