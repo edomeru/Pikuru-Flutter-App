@@ -8,17 +8,31 @@ final showAddGroupButtonProvider = StateProvider<bool>((ref) => true);
 final showAddCourtButtonProvider = StateProvider<bool>((ref) => true);
 
 // ── Events Provider ───────────────────────────────────────────────────────────
+// Mirrors the web app's EventsContent load() defaults exactly:
+//   • event_active         == true
+//   • event_status         == true
+//   • event_pending_review == false   ← only show approved events
+//   • event_date           >= today (midnight)
+//   • event_date           <= today + 30 days
+//   • orderBy event_date ASC
+//   • limit 50
+//
+// Required Firestore composite index:
+//   Collection : events
+//   Fields     : event_active ASC, event_status ASC,
+//                event_pending_review ASC, event_date ASC
 final eventsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
-  final now = DateTime.now();
-  final today = DateTime(now.year, now.month, now.day);
+  final now             = DateTime.now();
+  final today           = DateTime(now.year, now.month, now.day);
   final thirtyDaysLater = today.add(const Duration(days: 30));
 
   return FirebaseFirestore.instance
       .collection('events')
-      .where('event_active', isEqualTo: true)
+      .where('event_active',         isEqualTo: true)
+      .where('event_status',         isEqualTo: true)   // ← added
+      .where('event_pending_review', isEqualTo: false)  // ← added
       .where('event_date', isGreaterThanOrEqualTo: Timestamp.fromDate(today))
-      .where('event_date',
-      isLessThanOrEqualTo: Timestamp.fromDate(thirtyDaysLater))
+      .where('event_date', isLessThanOrEqualTo:    Timestamp.fromDate(thirtyDaysLater))
       .orderBy('event_date')
       .limit(50)
       .snapshots()
@@ -30,14 +44,17 @@ final eventsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
 });
 
 // ── Calendar Events Provider ──────────────────────────────────────────────────
+// Also filters out pending/inactive events so the calendar view stays clean.
 final calendarEventsProvider =
 StreamProvider<List<Map<String, dynamic>>>((ref) {
-  final now = DateTime.now();
+  final now   = DateTime.now();
   final today = DateTime(now.year, now.month, now.day);
 
   return FirebaseFirestore.instance
       .collection('events')
-      .where('event_active', isEqualTo: true)
+      .where('event_active',         isEqualTo: true)
+      .where('event_status',         isEqualTo: true)   // ← added
+      .where('event_pending_review', isEqualTo: false)  // ← added
       .where('event_date', isGreaterThanOrEqualTo: Timestamp.fromDate(today))
       .orderBy('event_date')
       .snapshots()
@@ -107,7 +124,7 @@ final locationResolverProvider =
 FutureProvider.family<String, String>((ref, locId) async {
   if (locId.isEmpty) return '';
 
-  String _display(Map<String, dynamic> d) {
+  String display(Map<String, dynamic> d) {
     // City: prefer the dedicated English field
     final city = ((d['loc_city_en'] ?? '').toString().trim().isNotEmpty
         ? d['loc_city_en']
@@ -143,7 +160,7 @@ FutureProvider.family<String, String>((ref, locId) async {
         .limit(1)
         .get();
     if (q1.docs.isNotEmpty) {
-      final label = _display(q1.docs.first.data());
+      final label = display(q1.docs.first.data());
       if (label.isNotEmpty) return label;
     }
 
@@ -153,7 +170,7 @@ FutureProvider.family<String, String>((ref, locId) async {
         .doc(locId)
         .get();
     if (doc.exists) {
-      final label = _display(doc.data()!);
+      final label = display(doc.data()!);
       if (label.isNotEmpty) return label;
     }
 
@@ -163,7 +180,7 @@ FutureProvider.family<String, String>((ref, locId) async {
     for (final d in all.docs) {
       final data = d.data();
       if (d.id == locId || data['loc_id']?.toString() == locId) {
-        final label = _display(data);
+        final label = display(data);
         if (label.isNotEmpty) return label;
       }
     }
@@ -179,7 +196,7 @@ final organizerResolverProvider =
 FutureProvider.family<String, String>((ref, orgId) async {
   if (orgId.isEmpty) return '';
 
-  String _display(Map<String, dynamic> d) =>
+  String display(Map<String, dynamic> d) =>
       (d['org_name'] ?? '').toString().trim();
 
   try {
@@ -188,13 +205,13 @@ FutureProvider.family<String, String>((ref, orgId) async {
         .where('org_id', isEqualTo: orgId)
         .limit(1)
         .get();
-    if (q1.docs.isNotEmpty) return _display(q1.docs.first.data());
+    if (q1.docs.isNotEmpty) return display(q1.docs.first.data());
 
     final doc = await FirebaseFirestore.instance
         .collection('organizations')
         .doc(orgId)
         .get();
-    if (doc.exists) return _display(doc.data()!);
+    if (doc.exists) return display(doc.data()!);
 
     final all = await FirebaseFirestore.instance
         .collection('organizations')
@@ -202,7 +219,7 @@ FutureProvider.family<String, String>((ref, orgId) async {
     for (final d in all.docs) {
       final data = d.data();
       if (d.id == orgId || data['org_id']?.toString() == orgId) {
-        return _display(data);
+        return display(data);
       }
     }
   } catch (_) {}
