@@ -7,17 +7,68 @@ import 'package:pikuru/providers/providers.dart';
 import 'package:intl/intl.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CalendarEventsScreen
-//
-// Location filtering mirrors the web app's logic:
-//   • Resolves each event's prefecture via event_loc_id → locations collection
-//     (same field priority as locationResolverProvider / web's resolveLocation)
-//   • Falls back to event_venue_address / _prefecture when loc_id is empty
-//   • Default filter: country = "Japan", prefecture = "Tokyo"
-//   • User can change country / prefecture via the filter button (same picker
-//     widgets reused from EventsScreen)
+// Filter state (mirrors _AdvFilter in events_screen.dart)
 // ─────────────────────────────────────────────────────────────────────────────
+class _CalFilter {
+  String country;
+  String prefecture;
+  String city;
+  String type;
+  bool skillPro;
+  bool skillAmateur;
+  bool skillBeginner;
+  bool catMx, catMd, catMs, catWs, catWd, catSe, catJu, catCo;
+  bool tourist;
 
+  _CalFilter({
+    this.country       = '',
+    this.prefecture    = '',
+    this.city          = '',
+    this.type          = '',
+    this.skillPro      = false,
+    this.skillAmateur  = false,
+    this.skillBeginner = false,
+    this.catMx = false, this.catMd = false, this.catMs = false,
+    this.catWs = false, this.catWd = false, this.catSe = false,
+    this.catJu = false, this.catCo = false,
+    this.tourist = false,
+  });
+
+  _CalFilter copyWith({
+    String? country, String? prefecture, String? city, String? type,
+    bool? skillPro, bool? skillAmateur, bool? skillBeginner,
+    bool? catMx, bool? catMd, bool? catMs, bool? catWs,
+    bool? catWd, bool? catSe, bool? catJu, bool? catCo,
+    bool? tourist,
+  }) => _CalFilter(
+    country:       country       ?? this.country,
+    prefecture:    prefecture    ?? this.prefecture,
+    city:          city          ?? this.city,
+    type:          type          ?? this.type,
+    skillPro:      skillPro      ?? this.skillPro,
+    skillAmateur:  skillAmateur  ?? this.skillAmateur,
+    skillBeginner: skillBeginner ?? this.skillBeginner,
+    catMx: catMx ?? this.catMx, catMd: catMd ?? this.catMd,
+    catMs: catMs ?? this.catMs, catWs: catWs ?? this.catWs,
+    catWd: catWd ?? this.catWd, catSe: catSe ?? this.catSe,
+    catJu: catJu ?? this.catJu, catCo: catCo ?? this.catCo,
+    tourist: tourist ?? this.tourist,
+  );
+
+  bool get hasNonLocationFilters =>
+      type.isNotEmpty ||
+          skillPro || skillAmateur || skillBeginner ||
+          catMx || catMd || catMs || catWs || catWd || catSe || catJu || catCo ||
+          tourist;
+
+  bool get isActive =>
+      hasNonLocationFilters ||
+          country.isNotEmpty || prefecture.isNotEmpty || city.isNotEmpty;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CalendarEventsScreen
+// ─────────────────────────────────────────────────────────────────────────────
 class CalendarEventsScreen extends ConsumerStatefulWidget {
   const CalendarEventsScreen({super.key});
 
@@ -29,18 +80,24 @@ class CalendarEventsScreen extends ConsumerStatefulWidget {
 class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     with TickerProviderStateMixin {
 
-  // ── Palette (light mode) ─────────────────────────────────────────────────
+  // ── Palette ───────────────────────────────────────────────────────────────
   static const Color _bg       = Color(0xFFF7F8FA);
   static const Color _surface  = Colors.white;
-  static const Color _cardBg   = Color(0xFFF2F3F5);
   static const Color _border   = Color(0xFFEEEFF1);
   static const Color _textDark = Color(0xFF0D0D0D);
+  static const Color _cardBg   = Color(0xFFF2F3F5);
+  static const Color _borderMd = Color(0xFFDDDEE1);
   static const Color _textMid  = Color(0xFF555760);
-  static const Color _textSub  = Color(0xFF888A90);
+  static const Color _textLight= Color(0xFF888A90);
 
-  // ── Location filter state (matches EventsScreen defaults) ─────────────────
-  String? _selectedCountry    = 'Japan';
-  String? _selectedPrefecture = 'Tokyo';
+  // ── Filter state (single source of truth) ─────────────────────────────────
+  _CalFilter _filter = _CalFilter(country: 'Japan', prefecture: 'Tokyo');
+
+  static const List<String> _eventTypes = [
+    'Professional Tournament', 'Global Tournament', 'Japan Tournament',
+    'Open Play', 'Trial Session', 'Local Event',
+    'Lessons/Clinics', 'Weekly Play / Recurring Play',
+  ];
 
   late DateTime _focusedMonth;
   late DateTime _selectedDate;
@@ -86,65 +143,93 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
 
   // ── Location label shown in the header ────────────────────────────────────
   String get _locationLabel {
-    if (_selectedPrefecture != null) return _selectedPrefecture!;
-    if (_selectedCountry != null)    return _selectedCountry!;
+    if (_filter.prefecture.isNotEmpty) return _filter.prefecture;
+    if (_filter.country.isNotEmpty)    return _filter.country;
     return 'All Countries';
   }
 
-  // ── Location matching (mirrors EventsScreen._matchesLocation) ─────────────
-  //
-  // Priority chain for prefecture:
-  //   1. loc_prefecture_en  (dedicated English field)
-  //   2. loc_prefecture     (legacy / Japanese)
-  //   3. loc_prefecture_jp
-  //   4. event_prefecture / prefecture (inline event fields)
-  //   5. event_venue_address as last resort (same as web app's _prefecture fallback)
-  //
-  // The event map is pre-enriched: each event already has a '_resolvedPrefecture'
-  // key set by _enrichEvents() below.
+  // ── Full location matching ────────────────────────────────────────────────
   bool _matchesLocation(Map<String, dynamic> event) {
-    // No filter active → show everything
-    if (_selectedCountry == null) return true;
+    if (_filter.country.isEmpty) return true;
 
-    final targetCountry    = _selectedCountry!.toLowerCase();
-    final targetPrefecture = _selectedPrefecture?.toLowerCase();
+    final targetCountry = _filter.country.toLowerCase();
+    final targetPref    = _filter.prefecture.isNotEmpty
+        ? _filter.prefecture.toLowerCase() : null;
+    final targetCity    = _filter.city.isNotEmpty
+        ? _filter.city.toLowerCase() : null;
 
-    // Country check via resolved field
     final country =
     (event['_resolvedCountry'] ?? '').toString().trim().toLowerCase();
-    if (country.isNotEmpty &&
-        !country.contains(targetCountry) &&
-        !targetCountry.contains(country)) {
-      return false;
+    if (country.isEmpty) return false;
+    if (!country.contains(targetCountry) &&
+        !targetCountry.contains(country)) return false;
+
+    if (targetPref != null && targetPref.isNotEmpty) {
+      final pref =
+      (event['_resolvedPrefecture'] ?? '').toString().trim().toLowerCase();
+      if (pref.isEmpty) return false;
+      if (!pref.contains(targetPref) && !targetPref.contains(pref)) {
+        return false;
+      }
     }
 
-    if (targetPrefecture == null || targetPrefecture.isEmpty) return true;
+    if (targetCity != null && targetCity.isNotEmpty) {
+      final city =
+      (event['_resolvedCity'] ?? '').toString().trim().toLowerCase();
+      if (city.isEmpty) return false;
+      if (!city.contains(targetCity) && !targetCity.contains(city)) {
+        return false;
+      }
+    }
 
-    final pref =
-    (event['_resolvedPrefecture'] ?? '').toString().trim().toLowerCase();
-    if (pref.isEmpty) return false;
-    return pref.contains(targetPrefecture) ||
-        targetPrefecture.contains(pref);
+    return true;
+  }
+
+  // ── All filters ───────────────────────────────────────────────────────────
+  bool _matchesAllFilters(Map<String, dynamic> e) {
+    if (!_matchesLocation(e)) return false;
+
+    if (_filter.type.isNotEmpty &&
+        (e['event_type'] ?? '').toString() != _filter.type) return false;
+
+    if (_filter.skillPro || _filter.skillAmateur || _filter.skillBeginner) {
+      final match =
+          (_filter.skillPro      && e['event_skill_level_pro']      == true) ||
+              (_filter.skillAmateur  && e['event_skill_level_amateur']   == true) ||
+              (_filter.skillBeginner && e['event_skill_level_beginner']  == true);
+      if (!match) return false;
+    }
+
+    if (_filter.catMx || _filter.catMd || _filter.catMs || _filter.catWs ||
+        _filter.catWd || _filter.catSe || _filter.catJu || _filter.catCo) {
+      final match =
+          (_filter.catMx && e['event_category_mixeddoubles']  == true) ||
+              (_filter.catMd && e['event_category_mensdoubles']   == true) ||
+              (_filter.catMs && e['event_category_menssingle']    == true) ||
+              (_filter.catWs && e['event_category_womenssingle']  == true) ||
+              (_filter.catWd && e['event_category_womensdoubles'] == true) ||
+              (_filter.catSe && e['event_category_seniors']       == true) ||
+              (_filter.catJu && e['event_category_juniors']       == true) ||
+              (_filter.catCo && e['event_category_collegiate']    == true);
+      if (!match) return false;
+    }
+
+    if (_filter.tourist && e['event_touristfriendly'] != true) return false;
+
+    return true;
   }
 
   // ── Enrich events with resolved location data ─────────────────────────────
-  //
-  // Matches the web app's resolveLocation() + the Flutter locationResolverProvider
-  // field-priority chain.  We do a single batch Firestore fetch for all unique
-  // loc_ids so we don't hammer the DB with per-event queries.
   Future<List<Map<String, dynamic>>> _enrichEvents(
       List<Map<String, dynamic>> raw) async {
-    // Collect unique non-empty loc_ids
     final locIds = raw
         .map((e) => (e['event_loc_id'] ?? '').toString().trim())
         .where((id) => id.isNotEmpty)
         .toSet();
 
-    // Batch-fetch all referenced location docs
     final locCache = <String, Map<String, dynamic>>{};
     for (final locId in locIds) {
       try {
-        // 1. Query by loc_id field
         final q1 = await FirebaseFirestore.instance
             .collection('locations')
             .where('loc_id', isEqualTo: locId)
@@ -154,72 +239,84 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
           locCache[locId] = q1.docs.first.data();
           continue;
         }
-        // 2. Try document ID
         final doc = await FirebaseFirestore.instance
             .collection('locations')
             .doc(locId)
             .get();
-        if (doc.exists) {
-          locCache[locId] = doc.data()!;
-        }
+        if (doc.exists) locCache[locId] = doc.data()!;
       } catch (_) {}
     }
 
     return raw.map((e) {
       final locId = (e['event_loc_id'] ?? '').toString().trim();
-      final loc   = locId.isNotEmpty ? (locCache[locId] ?? {}) : <String, dynamic>{};
+      final loc   = locId.isNotEmpty
+          ? (locCache[locId] ?? <String, dynamic>{})
+          : <String, dynamic>{};
 
       String get(String key) =>
           ((loc.isNotEmpty ? loc[key] : null) ?? e[key] ?? '')
-              .toString()
-              .trim();
+              .toString().trim();
 
-      // Prefecture — same priority as web app's resolveLocation + locationResolverProvider
       final pref = [
-        get('loc_prefecture_en'),
-        get('loc_prefecture'),
-        get('loc_prefecture_jp'),
-        get('event_prefecture'),
-        get('prefecture'),
-        // Last resort: event_venue_address (matches web app's `_prefecture` fallback)
-        get('event_venue_address'),
+        get('loc_prefecture_en'), get('loc_prefecture'),
+        get('loc_prefecture_jp'), get('event_prefecture'),
+        get('prefecture'), get('event_venue_address'),
       ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
 
-      // Country
       final resolvedCountry = get('loc_country');
 
-      // Display label (city, prefecture)
-      final city = [get('loc_city_en'), get('loc_city')]
-          .firstWhere((v) => v.isNotEmpty, orElse: () => '');
+      final cityEn  = get('loc_city_en');
+      final cityFb  = get('loc_city');
+      final city    = cityEn.isNotEmpty ? cityEn : cityFb;
+
       final label = city.isNotEmpty && pref.isNotEmpty
           ? '$city, $pref'
-          : city.isNotEmpty
-          ? city
-          : pref.isNotEmpty
-          ? pref
+          : city.isNotEmpty ? city
+          : pref.isNotEmpty ? pref
           : resolvedCountry;
 
-      // Google Maps link
       final googleLink = [
-        get('loc_googlelink'),
-        get('event_googlelink'),
+        get('loc_googlelink'), get('event_googlelink'),
         get('event_venue_link'),
       ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
 
-      // Org name (from event directly; separate provider handles org lookup)
       final orgName = [get('org_name'), get('event_org_name')]
           .firstWhere((v) => v.isNotEmpty, orElse: () => '');
 
       return {
         ...e,
-        'location':              label.isNotEmpty ? label : get('event_venue_name'),
-        'event_address':         get('loc_address').isNotEmpty ? get('loc_address') : get('event_venue_address'),
-        'event_googlelink':      googleLink,
-        'org_name':              orgName,
-        '_resolvedPrefecture':   pref,
-        '_resolvedCountry':      resolvedCountry,
+        'location':            label.isNotEmpty ? label : get('event_venue_name'),
+        'event_address':       get('loc_address').isNotEmpty
+            ? get('loc_address') : get('event_venue_address'),
+        'event_googlelink':    googleLink,
+        'org_name':            orgName,
+        '_resolvedPrefecture': pref,
+        '_resolvedCountry':    resolvedCountry,
+        '_resolvedCity':       city,
       };
     }).toList();
+  }
+
+  // ── Build location map from enriched events ───────────────────────────────
+  Map<String, List<Map<String, String>>> _buildLocationMapFromEvents(
+      List<Map<String, dynamic>> enrichedEvents) {
+    final map = <String, List<Map<String, String>>>{};
+    for (final e in enrichedEvents) {
+      final country = (e['_resolvedCountry'] ?? '').toString().trim();
+      if (country.isEmpty) continue;
+      final pref = (e['_resolvedPrefecture'] ?? '').toString().trim();
+      if (pref.isEmpty) continue;
+      map.putIfAbsent(country, () => []);
+      if (!map[country]!.any((p) => p['en'] == pref)) {
+        map[country]!.add({'en': pref, 'jp': ''});
+      }
+    }
+    final sorted = Map.fromEntries(
+        map.entries.toList()..sort((a, b) => a.key.compareTo(b.key)));
+    for (final prefs in sorted.values) {
+      prefs.sort((a, b) => a['en']!.compareTo(b['en']!));
+    }
+    return sorted;
   }
 
   // ── Build event map with multi-day spanning ───────────────────────────────
@@ -227,11 +324,11 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
       List<Map<String, dynamic>> events) {
     final map = <DateTime, List<Map<String, dynamic>>>{};
     for (final e in events) {
-      if (!_matchesLocation(e)) continue; // ← location filter applied here
+      if (!_matchesAllFilters(e)) continue;
 
       final tsStart = e['event_date'] ?? e['event_start_date'];
       if (tsStart == null) continue;
-      final dtStart = (tsStart as Timestamp).toDate();
+      final dtStart  = (tsStart as Timestamp).toDate();
       final keyStart = DateTime(dtStart.year, dtStart.month, dtStart.day);
 
       final tsEnd = e['event_date_end'];
@@ -281,37 +378,19 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
   String _formatSelectedDate(DateTime d) =>
       '${_monthNames[d.month - 1]} ${d.day}, ${d.year}';
 
-  // ── Location picker modal (reuses the same style as EventsScreen) ─────────
-  Map<String, List<Map<String, String>>> _buildLocationMap(
-      List<Map<String, dynamic>> locs) {
-    final map = <String, List<Map<String, String>>>{};
-    for (final loc in locs) {
-      final country = (loc['loc_country'] ?? '').toString().trim();
-      if (country.isEmpty) continue;
-      final prefEn =
-      ((loc['loc_prefecture_en'] ?? '').toString().trim().isNotEmpty
-          ? loc['loc_prefecture_en']
-          : loc['loc_prefecture'] ?? '')
-          .toString()
-          .trim();
-      final prefJp = (loc['loc_prefecture_jp'] ?? '').toString().trim();
-      if (prefEn.isEmpty) continue;
-      map.putIfAbsent(country, () => []);
-      if (!map[country]!.any((p) => p['en'] == prefEn)) {
-        map[country]!.add({'en': prefEn, 'jp': prefJp});
-      }
-    }
-    final sorted = Map.fromEntries(
-        map.entries.toList()..sort((a, b) => a.key.compareTo(b.key)));
-    for (final prefs in sorted.values) {
-      prefs.sort((a, b) => a['en']!.compareTo(b['en']!));
-    }
-    return sorted;
-  }
+  // ── Full filter modal ─────────────────────────────────────────────────────
+  void _showFilterModal(List<Map<String, dynamic>> enrichedEvents) {
+    _CalFilter temp = _filter;
 
-  void _showLocationModal() {
-    String?   tempCountry    = _selectedCountry;
-    String?   tempPrefecture = _selectedPrefecture;
+    final locationMap = _buildLocationMapFromEvents(enrichedEvents);
+
+    // Build city list from enriched events
+    final cities = <String>{};
+    for (final e in enrichedEvents) {
+      final c = (e['_resolvedCity'] ?? '').toString().trim();
+      if (c.isNotEmpty) cities.add(c);
+    }
+    final sortedCities = cities.toList()..sort();
 
     showModalBottomSheet(
       context: context,
@@ -319,162 +398,346 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
       backgroundColor: Colors.transparent,
       builder: (ctx) {
         return StatefulBuilder(builder: (ctx, setS) {
-          final allLocs     = ref.read(locationsProvider).asData?.value ?? [];
-          final locationMap = _buildLocationMap(allLocs);
-          final availablePrefs = tempCountry != null
-              ? (locationMap[tempCountry] ?? [])
-              : <Map<String, String>>[];
 
-          return Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-            ),
-            padding: EdgeInsets.fromLTRB(
-                24, 0, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+          // ── Section label ───────────────────────────────────────────────
+          Widget sectionLabel(String text) => Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(children: [
+              Container(
+                width: 3, height: 14,
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              Text(text,
+                  style: const TextStyle(
+                      fontSize: 12, fontWeight: FontWeight.w800,
+                      color: _textMid, letterSpacing: 0.8)),
+            ]),
+          );
+
+          Widget divider() => const Padding(
+            padding: EdgeInsets.symmetric(vertical: 20),
+            child: Divider(height: 1, color: _borderMd),
+          );
+
+          // ── Checkbox pill ───────────────────────────────────────────────
+          Widget checkPill(String label, bool value, VoidCallback onTap) {
+            return GestureDetector(
+              onTap: onTap,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 9),
+                decoration: BoxDecoration(
+                  color: value
+                      ? AppColors.primary.withOpacity(0.08) : _cardBg,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: value
+                        ? AppColors.primary.withOpacity(0.5) : _borderMd,
+                    width: 1.5,
+                  ),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 150),
+                    width: 15, height: 15,
+                    decoration: BoxDecoration(
+                      color: value ? AppColors.primary : Colors.transparent,
+                      borderRadius: BorderRadius.circular(4),
+                      border: Border.all(
+                          color: value ? AppColors.primary : _borderMd,
+                          width: 1.5),
+                    ),
+                    child: value
+                        ? const Icon(Icons.check, size: 10, color: Colors.white)
+                        : null,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(label,
+                      style: TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w600,
+                          color: value ? AppColors.primary : _textMid)),
+                ]),
+              ),
+            );
+          }
+
+          // ── Dropdown field ──────────────────────────────────────────────
+          Widget dropdownField(
+              String label, String value,
+              List<String> options, String allLabel,
+              ValueChanged<String> onChange) {
+            final hasVal = value.isNotEmpty;
+            return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Center(
-                    child: Container(
-                      margin: const EdgeInsets.only(top: 12, bottom: 20),
-                      width: 40, height: 4,
-                      decoration: BoxDecoration(
-                          color: const Color(0xFFE0E0E0),
-                          borderRadius: BorderRadius.circular(2)),
+                  Text(label,
+                      style: const TextStyle(fontSize: 12,
+                          fontWeight: FontWeight.w700, color: _textLight)),
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: hasVal
+                          ? AppColors.primary.withOpacity(0.06) : _cardBg,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: hasVal
+                            ? AppColors.primary.withOpacity(0.4) : _borderMd,
+                      ),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: value.isEmpty ? '' : value,
+                        isExpanded: true,
+                        dropdownColor: _surface,
+                        icon: Icon(Icons.keyboard_arrow_down_rounded,
+                            color: hasVal ? AppColors.primary : _textLight,
+                            size: 20),
+                        style: TextStyle(
+                            color: hasVal ? AppColors.primary : _textDark,
+                            fontSize: 14, fontWeight: FontWeight.w500),
+                        items: [
+                          DropdownMenuItem(
+                              value: '',
+                              child: Text(allLabel,
+                                  style: const TextStyle(color: _textLight))),
+                          ...options.map((o) =>
+                              DropdownMenuItem(value: o, child: Text(o))),
+                        ],
+                        onChanged: (v) => onChange(v ?? ''),
+                      ),
                     ),
                   ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Location Filter',
-                          style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF0D0D0D),
-                              letterSpacing: -0.4)),
-                      GestureDetector(
-                        onTap: () => Navigator.pop(ctx),
-                        child: Container(
-                          width: 34, height: 34,
-                          decoration: BoxDecoration(
-                              color: AppColors.primary.withOpacity(0.08),
-                              shape: BoxShape.circle),
-                          child: Icon(Icons.close_rounded,
-                              color: AppColors.primary, size: 18),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  Row(children: [
-                    Expanded(child: _LocationDropdown(
-                      icon: Icons.public_rounded,
-                      label: tempCountry ?? 'Country',
-                      hasValue: tempCountry != null,
-                      onTap: () {
-                        showDialog(
-                          context: context,
-                          barrierColor: Colors.black.withOpacity(0.25),
-                          builder: (_) => _CountryPickerDialog(
-                            countries: locationMap.keys.toList(),
-                            currentCountry: tempCountry,
-                            onSelected: (c) => setS(() {
-                              tempCountry = c;
-                              if (c == null) {
-                                tempPrefecture = null;
-                              } else if (!(locationMap[c] ?? [])
-                                  .any((p) => p['en'] == tempPrefecture)) {
-                                tempPrefecture = null;
-                              }
-                            }),
-                          ),
-                        );
-                      },
-                    )),
-                    const SizedBox(width: 12),
-                    Expanded(child: _LocationDropdown(
-                      icon: Icons.location_on_rounded,
-                      label: tempPrefecture ?? 'Area',
-                      hasValue: tempPrefecture != null,
-                      enabled: tempCountry != null,
-                      onTap: tempCountry == null ? null : () {
-                        showDialog(
-                          context: context,
-                          barrierColor: Colors.black.withOpacity(0.25),
-                          builder: (_) => _PrefecturePickerDialog(
-                            country: tempCountry!,
-                            prefectures: availablePrefs,
-                            currentPrefecture: tempPrefecture,
-                            onSelected: (p) =>
-                                setS(() => tempPrefecture = p),
-                          ),
-                        );
-                      },
-                    )),
-                  ]),
-                  const SizedBox(height: 32),
-                  Row(children: [
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () => setS(() {
-                          tempCountry    = 'Japan';
-                          tempPrefecture = 'Tokyo';
-                        }),
-                        child: Container(
-                          height: 52,
-                          decoration: BoxDecoration(
-                              border: Border.all(
-                                  color: AppColors.primary, width: 1.5),
-                              borderRadius: BorderRadius.circular(14)),
-                          child: const Center(
-                              child: Text('Reset',
-                                  style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.primary))),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      flex: 2,
-                      child: GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            _selectedCountry    = tempCountry;
-                            _selectedPrefecture = tempPrefecture;
-                          });
-                          Navigator.pop(ctx);
-                        },
-                        child: Container(
-                          height: 52,
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(14),
-                            boxShadow: [
-                              BoxShadow(
-                                  color: AppColors.primary.withOpacity(0.3),
-                                  blurRadius: 12,
-                                  offset: const Offset(0, 4))
-                            ],
-                          ),
-                          child: const Center(
-                              child: Text('APPLY',
-                                  style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w800,
-                                      color: Colors.white,
-                                      letterSpacing: 0.8))),
-                        ),
-                      ),
-                    ),
-                  ]),
-                ],
-              ),
+                ]);
+          }
+
+          final availablePrefs = temp.country.isNotEmpty
+              ? (locationMap[temp.country] ?? [])
+              : <Map<String, String>>[];
+          final sortedPrefs =
+          availablePrefs.map((p) => p['en']!).toList()..sort();
+
+          // ── Modal shell ─────────────────────────────────────────────────
+          return Container(
+            constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(ctx).size.height * 0.92),
+            decoration: const BoxDecoration(
+              color: _surface,
+              borderRadius:
+              BorderRadius.vertical(top: Radius.circular(28)),
             ),
+            child: Column(children: [
+              // Drag handle
+              Container(
+                margin: const EdgeInsets.only(top: 12, bottom: 4),
+                width: 36, height: 4,
+                decoration: BoxDecoration(
+                    color: _borderMd,
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+
+              // Header
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 12, 12),
+                child: Row(children: [
+                  const Text('Filters',
+                      style: TextStyle(
+                          fontSize: 22, fontWeight: FontWeight.w800,
+                          color: _textDark, letterSpacing: -0.4)),
+                  const Spacer(),
+                  if (_filter.isActive) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Text('Active',
+                          style: TextStyle(
+                              fontSize: 11, fontWeight: FontWeight.w700,
+                              color: AppColors.primary)),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  GestureDetector(
+                    onTap: () => Navigator.pop(ctx),
+                    child: Container(
+                      width: 34, height: 34,
+                      decoration: BoxDecoration(
+                        color: _cardBg,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: _borderMd),
+                      ),
+                      child: const Icon(Icons.close_rounded,
+                          color: _textMid, size: 18),
+                    ),
+                  ),
+                ]),
+              ),
+              const Divider(height: 1, color: _borderMd),
+
+              // Scrollable body
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+
+                        // ── LOCATION ─────────────────────────────────────────
+                        sectionLabel('LOCATION'),
+                        Row(children: [
+                          Expanded(child: dropdownField(
+                              'Country', temp.country,
+                              locationMap.keys.toList(), 'All countries',
+                                  (v) => setS(() => temp = temp.copyWith(
+                                  country: v, prefecture: '', city: '')))),
+                          const SizedBox(width: 12),
+                          Expanded(child: dropdownField(
+                              'Prefecture', temp.prefecture,
+                              sortedPrefs, 'All',
+                                  (v) => setS(() =>
+                              temp = temp.copyWith(prefecture: v)))),
+                        ]),
+                        const SizedBox(height: 12),
+                        Row(children: [
+                          Expanded(child: dropdownField(
+                              'City', temp.city,
+                              sortedCities, 'All',
+                                  (v) => setS(() =>
+                              temp = temp.copyWith(city: v)))),
+                          const SizedBox(width: 12),
+                          Expanded(child: dropdownField(
+                              'Event Type', temp.type,
+                              _eventTypes, 'All types',
+                                  (v) => setS(() =>
+                              temp = temp.copyWith(type: v)))),
+                        ]),
+
+                        divider(),
+
+                        // ── SKILL LEVELS ──────────────────────────────────────
+                        sectionLabel('SKILL LEVELS'),
+                        Wrap(spacing: 8, runSpacing: 8, children: [
+                          checkPill('Pro', temp.skillPro, () => setS(() =>
+                          temp = temp.copyWith(skillPro: !temp.skillPro))),
+                          checkPill('Amateur', temp.skillAmateur, () => setS(() =>
+                          temp = temp.copyWith(
+                              skillAmateur: !temp.skillAmateur))),
+                          checkPill('Beginner', temp.skillBeginner, () => setS(() =>
+                          temp = temp.copyWith(
+                              skillBeginner: !temp.skillBeginner))),
+                        ]),
+
+                        divider(),
+
+                        // ── CATEGORIES ────────────────────────────────────────
+                        sectionLabel('CATEGORIES'),
+                        Wrap(spacing: 8, runSpacing: 8, children: [
+                          checkPill('Mixed Doubles', temp.catMx,
+                                  () => setS(() =>
+                              temp = temp.copyWith(catMx: !temp.catMx))),
+                          checkPill("Men's Doubles", temp.catMd,
+                                  () => setS(() =>
+                              temp = temp.copyWith(catMd: !temp.catMd))),
+                          checkPill("Women's Doubles", temp.catWd,
+                                  () => setS(() =>
+                              temp = temp.copyWith(catWd: !temp.catWd))),
+                          checkPill("Men's Singles", temp.catMs,
+                                  () => setS(() =>
+                              temp = temp.copyWith(catMs: !temp.catMs))),
+                          checkPill("Women's Singles", temp.catWs,
+                                  () => setS(() =>
+                              temp = temp.copyWith(catWs: !temp.catWs))),
+                          checkPill('Seniors', temp.catSe,
+                                  () => setS(() =>
+                              temp = temp.copyWith(catSe: !temp.catSe))),
+                          checkPill('Juniors', temp.catJu,
+                                  () => setS(() =>
+                              temp = temp.copyWith(catJu: !temp.catJu))),
+                          checkPill('Collegiate', temp.catCo,
+                                  () => setS(() =>
+                              temp = temp.copyWith(catCo: !temp.catCo))),
+                        ]),
+
+                        divider(),
+
+                        // ── OTHER ─────────────────────────────────────────────
+                        sectionLabel('OTHER'),
+                        checkPill('Tourist Friendly', temp.tourist,
+                                () => setS(() =>
+                            temp = temp.copyWith(tourist: !temp.tourist))),
+
+                        const SizedBox(height: 28),
+
+                        // ── Action buttons ────────────────────────────────────
+                        Row(children: [
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => setS(() =>
+                              temp = _CalFilter()),
+                              child: Container(
+                                height: 52,
+                                decoration: BoxDecoration(
+                                  color: _cardBg,
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                      color: _borderMd, width: 1.5),
+                                ),
+                                child: const Center(
+                                  child: Text('Clear All',
+                                      style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w700,
+                                          color: _textMid)),
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            flex: 2,
+                            child: GestureDetector(
+                              onTap: () {
+                                setState(() => _filter = temp);
+                                Navigator.pop(ctx);
+                              },
+                              child: Container(
+                                height: 52,
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary,
+                                  borderRadius: BorderRadius.circular(14),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: AppColors.primary
+                                          .withOpacity(0.30),
+                                      blurRadius: 14,
+                                      offset: const Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                child: const Center(
+                                  child: Text('APPLY FILTERS',
+                                      style: TextStyle(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w800,
+                                          color: Colors.white,
+                                          letterSpacing: 0.6)),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ]),
+                      ]),
+                ),
+              ),
+            ]),
           );
         });
       },
@@ -494,8 +757,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
         error: (e, _) => Center(child: Text('Error: $e')),
         data: (rawEvents) {
           return FutureBuilder<List<Map<String, dynamic>>>(
-            // Re-run enrichment whenever raw events or location filter changes.
-            // Using a ValueKey on the FutureBuilder to force rebuild on filter change.
             future: _enrichEvents(rawEvents),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting &&
@@ -510,7 +771,7 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
 
               return CustomScrollView(
                 slivers: [
-                  // ── App Bar ─────────────────────────────────────────────
+                  // ── App Bar ───────────────────────────────────────────
                   SliverAppBar(
                     pinned: true,
                     backgroundColor: _surface,
@@ -529,31 +790,64 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                             fontSize: 18,
                             letterSpacing: -0.3)),
                     actions: [
-                      // Location filter button
                       Padding(
                         padding: const EdgeInsets.only(right: 12),
                         child: GestureDetector(
-                          onTap: _showLocationModal,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: AppColors.primary.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Row(mainAxisSize: MainAxisSize.min, children: [
-                              const Icon(Icons.location_on_rounded,
-                                  size: 13, color: AppColors.primary),
-                              const SizedBox(width: 4),
-                              Text(_locationLabel,
-                                  style: const TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.primary)),
-                              const SizedBox(width: 2),
-                              const Icon(Icons.keyboard_arrow_down_rounded,
-                                  size: 14, color: AppColors.primary),
-                            ]),
+                          onTap: () => _showFilterModal(events),
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: _filter.isActive
+                                      ? AppColors.primary
+                                      : AppColors.primary.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.location_on_rounded,
+                                          size: 13,
+                                          color: _filter.isActive
+                                              ? Colors.white
+                                              : AppColors.primary),
+                                      const SizedBox(width: 4),
+                                      Text(_locationLabel,
+                                          style: TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w700,
+                                              color: _filter.isActive
+                                                  ? Colors.white
+                                                  : AppColors.primary)),
+                                      const SizedBox(width: 2),
+                                      Icon(Icons.keyboard_arrow_down_rounded,
+                                          size: 14,
+                                          color: _filter.isActive
+                                              ? Colors.white
+                                              : AppColors.primary),
+                                    ]),
+                              ),
+                              // Orange dot when non-location filters active
+                              if (_filter.hasNonLocationFilters)
+                                Positioned(
+                                  top: -3, right: -3,
+                                  child: Container(
+                                    width: 10, height: 10,
+                                    decoration: const BoxDecoration(
+                                        color: Colors.white,
+                                        shape: BoxShape.circle),
+                                    child: Center(
+                                        child: Container(
+                                            width: 7, height: 7,
+                                            decoration: const BoxDecoration(
+                                                color: Colors.orange,
+                                                shape: BoxShape.circle))),
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                       ),
@@ -564,7 +858,7 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                     ),
                   ),
 
-                  // ── Body ────────────────────────────────────────────────
+                  // ── Body ─────────────────────────────────────────────
                   SliverToBoxAdapter(
                     child: FadeTransition(
                       opacity: _fadeAnim,
@@ -572,9 +866,10 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                         position: _slideAnim,
                         child: Column(children: [
 
-                          // ── Calendar Card ──────────────────────────────
+                          // ── Calendar Card ─────────────────────────────
                           Container(
-                            margin: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+                            margin:
+                            const EdgeInsets.fromLTRB(16, 20, 16, 0),
                             decoration: BoxDecoration(
                               color: _surface,
                               borderRadius: BorderRadius.circular(20),
@@ -591,7 +886,8 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
 
                               // Month navigation
                               Padding(
-                                padding: const EdgeInsets.fromLTRB(8, 18, 8, 10),
+                                padding: const EdgeInsets.fromLTRB(
+                                    8, 18, 8, 10),
                                 child: Row(
                                   mainAxisAlignment:
                                   MainAxisAlignment.spaceBetween,
@@ -628,8 +924,8 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
 
                               // Weekday headers
                               Padding(
-                                padding:
-                                const EdgeInsets.symmetric(horizontal: 12),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12),
                                 child: Row(
                                   children: _weekdays
                                       .map((d) => Expanded(
@@ -637,8 +933,10 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                                       child: Text(d,
                                           style: TextStyle(
                                               fontSize: 11,
-                                              fontWeight: FontWeight.w700,
-                                              color: Colors.grey.shade400,
+                                              fontWeight:
+                                              FontWeight.w700,
+                                              color: Colors
+                                                  .grey.shade400,
                                               letterSpacing: 0.5)),
                                     ),
                                   ))
@@ -650,8 +948,8 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
 
                               // Grid
                               Padding(
-                                padding:
-                                const EdgeInsets.fromLTRB(12, 0, 12, 16),
+                                padding: const EdgeInsets.fromLTRB(
+                                    12, 0, 12, 16),
                                 child: _buildGrid(eventMap),
                               ),
                             ]),
@@ -659,10 +957,10 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
 
                           const SizedBox(height: 20),
 
-                          // ── Selected date header ───────────────────────
+                          // ── Selected date header ──────────────────────
                           Padding(
-                            padding:
-                            const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                            padding: const EdgeInsets.fromLTRB(
+                                16, 0, 16, 12),
                             child: Row(children: [
                               Container(
                                 width: 4, height: 18,
@@ -685,8 +983,10 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 10, vertical: 4),
                                   decoration: BoxDecoration(
-                                    color: AppColors.primary.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(20),
+                                    color: AppColors.primary
+                                        .withOpacity(0.1),
+                                    borderRadius:
+                                    BorderRadius.circular(20),
                                   ),
                                   child: Text(
                                     '${selectedEvts.length} event${selectedEvts.length == 1 ? '' : 's'}',
@@ -699,7 +999,7 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                             ]),
                           ),
 
-                          // ── Events or empty state ──────────────────────
+                          // ── Events or empty state ─────────────────────
                           if (selectedEvts.isEmpty)
                             _buildEmptyState()
                           else
@@ -723,45 +1023,37 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
   }
 
   // ── Calendar grid ─────────────────────────────────────────────────────────
-  Widget _buildGrid(Map<DateTime, List<Map<String, dynamic>>> eventMap) {
-    final firstDay     = DateTime(_focusedMonth.year, _focusedMonth.month, 1);
-    final daysInMonth  =
+  Widget _buildGrid(
+      Map<DateTime, List<Map<String, dynamic>>> eventMap) {
+    final firstDay    = DateTime(_focusedMonth.year, _focusedMonth.month, 1);
+    final daysInMonth =
         DateTime(_focusedMonth.year, _focusedMonth.month + 1, 0).day;
-    final startWeekday = firstDay.weekday % 7; // 0 = Sunday
+    final startWeekday = firstDay.weekday % 7;
     final todayNorm    = DateTime.now();
-    final todayKey     =
+    final todayKey =
     DateTime(todayNorm.year, todayNorm.month, todayNorm.day);
 
     final cells = <Widget>[];
-
-    for (int i = 0; i < startWeekday; i++) {
-      cells.add(const SizedBox());
-    }
+    for (int i = 0; i < startWeekday; i++) cells.add(const SizedBox());
 
     for (int day = 1; day <= daysInMonth; day++) {
-      final date       = DateTime(_focusedMonth.year, _focusedMonth.month, day);
-      final dayEvents  = _eventsForDate(eventMap, date);
-      final hasEvents  = dayEvents.isNotEmpty;
-      final isToday    = date == todayKey;
+      final date      = DateTime(_focusedMonth.year, _focusedMonth.month, day);
+      final dayEvents = _eventsForDate(eventMap, date);
+      final hasEvents = dayEvents.isNotEmpty;
+      final isToday   = date == todayKey;
       final isSelected = date ==
           DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
-      final isPast     = date.isBefore(todayKey);
+      final isPast = date.isBefore(todayKey);
 
       cells.add(GestureDetector(
         onTap: () => setState(() => _selectedDate = date),
         child: hasEvents
             ? _EventThumbCell(
-          day: day,
-          events: dayEvents,
-          isSelected: isSelected,
-          isToday: isToday,
-        )
+            day: day, events: dayEvents,
+            isSelected: isSelected, isToday: isToday)
             : _EmptyDayCell(
-          day: day,
-          isSelected: isSelected,
-          isToday: isToday,
-          isPast: isPast,
-        ),
+            day: day, isSelected: isSelected,
+            isToday: isToday, isPast: isPast),
       ));
     }
 
@@ -807,10 +1099,8 @@ class _EventThumbCell extends StatelessWidget {
   final bool isToday;
 
   const _EventThumbCell({
-    required this.day,
-    required this.events,
-    required this.isSelected,
-    required this.isToday,
+    required this.day, required this.events,
+    required this.isSelected, required this.isToday,
   });
 
   @override
@@ -818,8 +1108,7 @@ class _EventThumbCell extends StatelessWidget {
     final count    = events.length;
     final imageUrl = (events.first['event_pic'] ??
         events.first['event_pic_thumbnail'] ??
-        events.first['event_image'] ??
-        '')
+        events.first['event_image'] ?? '')
         .toString();
 
     return Container(
@@ -827,11 +1116,8 @@ class _EventThumbCell extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(10),
         child: Stack(fit: StackFit.expand, children: [
-
-          // Background image
           imageUrl.isNotEmpty
-              ? Image.network(imageUrl,
-              fit: BoxFit.cover,
+              ? Image.network(imageUrl, fit: BoxFit.cover,
               errorBuilder: (_, __, ___) => Container(
                 color: AppColors.primary.withOpacity(0.12),
                 child: const Icon(Icons.event,
@@ -842,8 +1128,6 @@ class _EventThumbCell extends StatelessWidget {
             child: const Icon(Icons.event,
                 size: 16, color: AppColors.primary),
           ),
-
-          // Gradient overlay
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -856,53 +1140,37 @@ class _EventThumbCell extends StatelessWidget {
               ),
             ),
           ),
-
-          // Selected tint
           if (isSelected)
             Container(color: AppColors.primary.withOpacity(0.52)),
-
-          // Day number — bottom left
           Positioned(
-            left: 5,
-            bottom: 4,
+            left: 5, bottom: 4,
             child: Text('$day',
                 style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
+                    fontSize: 12, fontWeight: FontWeight.w800,
                     color: Colors.white,
                     shadows: [
-                      Shadow(
-                          color: Colors.black54,
-                          blurRadius: 4,
-                          offset: Offset(0, 1))
+                      Shadow(color: Colors.black54,
+                          blurRadius: 4, offset: Offset(0, 1))
                     ])),
           ),
-
-          // Event count badge — top right
           Positioned(
-            top: 4,
-            right: 4,
+            top: 4, right: 4,
             child: Container(
-              width: 16,
-              height: 16,
+              width: 16, height: 16,
               decoration: BoxDecoration(
                 color: isSelected ? Colors.white : AppColors.primary,
                 shape: BoxShape.circle,
                 boxShadow: [
-                  BoxShadow(
-                      color: Colors.black.withOpacity(0.2),
-                      blurRadius: 4,
-                      offset: const Offset(0, 1)),
+                  BoxShadow(color: Colors.black.withOpacity(0.2),
+                      blurRadius: 4, offset: const Offset(0, 1)),
                 ],
               ),
               child: Center(
                 child: Text('$count',
                     style: TextStyle(
-                        fontSize: 8,
-                        fontWeight: FontWeight.w900,
+                        fontSize: 8, fontWeight: FontWeight.w900,
                         color: isSelected
-                            ? AppColors.primary
-                            : Colors.white)),
+                            ? AppColors.primary : Colors.white)),
               ),
             ),
           ),
@@ -922,10 +1190,8 @@ class _EmptyDayCell extends StatelessWidget {
   final bool isPast;
 
   const _EmptyDayCell({
-    required this.day,
-    required this.isSelected,
-    required this.isToday,
-    required this.isPast,
+    required this.day, required this.isSelected,
+    required this.isToday, required this.isPast,
   });
 
   @override
@@ -945,19 +1211,17 @@ class _EmptyDayCell extends StatelessWidget {
             : null,
       ),
       child: Center(
-        child: Text(
-          '$day',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight:
-            isSelected || isToday ? FontWeight.w800 : FontWeight.w500,
-            color: isSelected
-                ? Colors.white
-                : isPast
-                ? Colors.grey.shade300
-                : const Color(0xFF1A1A1A),
-          ),
-        ),
+        child: Text('$day',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: isSelected || isToday
+                  ? FontWeight.w800 : FontWeight.w500,
+              color: isSelected
+                  ? Colors.white
+                  : isPast
+                  ? Colors.grey.shade300
+                  : const Color(0xFF1A1A1A),
+            )),
       ),
     );
   }
@@ -975,42 +1239,30 @@ class _EventCard extends StatelessWidget {
   String get _title =>
       (event['event_title_en'] ?? event['event_title'] ?? 'Untitled Event')
           .toString();
-
   String get _imageUrl =>
-      (event['event_pic'] ??
-          event['event_pic_thumbnail'] ??
-          event['event_image'] ??
-          '')
-          .toString();
-
+      (event['event_pic'] ?? event['event_pic_thumbnail'] ??
+          event['event_image'] ?? '').toString();
   String get _url =>
       (event['event_link'] ?? event['event_url'] ?? '').toString();
-
   String get _fee {
     final f = event['event_fee'];
-    if (f == null ||
-        f.toString().isEmpty ||
-        f.toString() == '0' ||
-        f.toString() == '0.0') return 'Free';
+    if (f == null || f.toString().isEmpty ||
+        f.toString() == '0' || f.toString() == '0.0') return 'Free';
     return '¥${f.toString()}';
   }
-
   String get _time {
     final raw = event['event_time'] ?? event['event_start_time'];
     if (raw == null) return '';
     if (raw is Timestamp) return DateFormat('h:mm a').format(raw.toDate());
     return raw.toString();
   }
-
   String get _location =>
       (event['location'] ?? event['event_venue_name'] ?? '').toString();
-
   String get _address =>
-      (event['event_address'] ?? event['event_venue_address'] ?? '').toString();
-
+      (event['event_address'] ?? event['event_venue_address'] ?? '')
+          .toString();
   String get _googleLink =>
       (event['event_googlelink'] ?? event['event_venue_link'] ?? '').toString();
-
   String get _orgName =>
       (event['org_name'] ?? event['event_org_name'] ?? '').toString();
 
@@ -1036,169 +1288,136 @@ class _EventCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: _border),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 14,
-            offset: const Offset(0, 3),
-          ),
+          BoxShadow(color: Colors.black.withOpacity(0.04),
+              blurRadius: 14, offset: const Offset(0, 3)),
         ],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-
-        // Cover image
         if (hasImage)
           ClipRRect(
             borderRadius:
             const BorderRadius.vertical(top: Radius.circular(20)),
             child: AspectRatio(
               aspectRatio: 16 / 7,
-              child: Image.network(
-                _imageUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  color: AppColors.primary.withOpacity(0.08),
-                  child: const Icon(Icons.event,
-                      size: 40, color: AppColors.primary),
-                ),
-              ),
+              child: Image.network(_imageUrl, fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    color: AppColors.primary.withOpacity(0.08),
+                    child: const Icon(Icons.event,
+                        size: 40, color: AppColors.primary),
+                  )),
             ),
           ),
-
         Padding(
           padding: const EdgeInsets.all(16),
-          child:
-          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-
-            // Title + fee badge
-            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Expanded(
-                child: Text(_title,
-                    style: const TextStyle(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800,
-                        color: _textDark,
-                        letterSpacing: -0.2)),
-              ),
-              const SizedBox(width: 10),
-              Container(
-                padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: isFree
-                      ? Colors.green.shade50
-                      : AppColors.primary.withOpacity(0.09),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  _fee,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: isFree
-                        ? Colors.green.shade600
-                        : AppColors.primary,
+          child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Expanded(
+                    child: Text(_title,
+                        style: const TextStyle(
+                            fontSize: 17, fontWeight: FontWeight.w800,
+                            color: _textDark, letterSpacing: -0.2)),
                   ),
-                ),
-              ),
-            ]),
-
-            // Time
-            if (hasTime) ...[
-              const SizedBox(height: 8),
-              Row(children: [
-                Icon(Icons.access_time_rounded,
-                    size: 14, color: Colors.grey.shade400),
-                const SizedBox(width: 5),
-                Text(_time,
-                    style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey.shade500,
-                        fontWeight: FontWeight.w500)),
-              ]),
-            ],
-
-            // Location
-            if (hasLoc) ...[
-              const SizedBox(height: 8),
-              GestureDetector(
-                onTap: hasGMap ? () => onOpenLink(_googleLink) : null,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Icon(Icons.location_on_rounded,
-                        size: 14,
-                        color:
-                        hasGMap ? AppColors.primary : Colors.grey.shade400),
+                  const SizedBox(width: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isFree
+                          ? Colors.green.shade50
+                          : AppColors.primary.withOpacity(0.09),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(_fee,
+                        style: TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w700,
+                            color: isFree
+                                ? Colors.green.shade600
+                                : AppColors.primary)),
+                  ),
+                ]),
+                if (hasTime) ...[
+                  const SizedBox(height: 8),
+                  Row(children: [
+                    Icon(Icons.access_time_rounded,
+                        size: 14, color: Colors.grey.shade400),
+                    const SizedBox(width: 5),
+                    Text(_time,
+                        style: TextStyle(
+                            fontSize: 13, color: Colors.grey.shade500,
+                            fontWeight: FontWeight.w500)),
+                  ]),
+                ],
+                if (hasLoc) ...[
+                  const SizedBox(height: 8),
+                  GestureDetector(
+                    onTap: hasGMap ? () => onOpenLink(_googleLink) : null,
+                    child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.location_on_rounded,
+                              size: 14,
+                              color: hasGMap
+                                  ? AppColors.primary : Colors.grey.shade400),
+                          const SizedBox(width: 5),
+                          Expanded(
+                            child: Text(locDisplay,
+                                style: TextStyle(
+                                  fontSize: 13, fontWeight: FontWeight.w500,
+                                  color: hasGMap
+                                      ? AppColors.primary : Colors.grey.shade500,
+                                  decoration: hasGMap
+                                      ? TextDecoration.underline
+                                      : TextDecoration.none,
+                                  decorationColor: AppColors.primary,
+                                )),
+                          ),
+                          if (hasGMap) ...[
+                            const SizedBox(width: 4),
+                            Icon(Icons.open_in_new_rounded,
+                                size: 12, color: AppColors.primary),
+                          ],
+                        ]),
+                  ),
+                ],
+                if (hasOrg) ...[
+                  const SizedBox(height: 6),
+                  Row(children: [
+                    Icon(Icons.person_outline_rounded,
+                        size: 14, color: Colors.grey.shade400),
                     const SizedBox(width: 5),
                     Expanded(
-                      child: Text(
-                        locDisplay,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: hasGMap
-                              ? AppColors.primary
-                              : Colors.grey.shade500,
-                          decoration: hasGMap
-                              ? TextDecoration.underline
-                              : TextDecoration.none,
-                          decorationColor: AppColors.primary,
-                        ),
-                      ),
+                      child: Text(_orgName,
+                          style: TextStyle(
+                              fontSize: 13, color: Colors.grey.shade500,
+                              fontWeight: FontWeight.w500)),
                     ),
-                    if (hasGMap) ...[
-                      const SizedBox(width: 4),
-                      Icon(Icons.open_in_new_rounded,
-                          size: 12, color: AppColors.primary),
-                    ],
-                  ],
-                ),
-              ),
-            ],
-
-            // Organization
-            if (hasOrg) ...[
-              const SizedBox(height: 6),
-              Row(children: [
-                Icon(Icons.person_outline_rounded,
-                    size: 14, color: Colors.grey.shade400),
-                const SizedBox(width: 5),
-                Expanded(
-                  child: Text(_orgName,
-                      style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey.shade500,
-                          fontWeight: FontWeight.w500)),
+                  ]),
+                ],
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: hasLink ? () => onOpenLink(_url) : null,
+                    icon: const Icon(Icons.open_in_new_rounded,
+                        size: 16, color: Colors.white),
+                    label: const Text('More Information',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white, fontSize: 14)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      disabledBackgroundColor: Colors.grey.shade200,
+                      disabledForegroundColor: Colors.grey.shade400,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
                 ),
               ]),
-            ],
-
-            const SizedBox(height: 14),
-
-            // More Information button
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: hasLink ? () => onOpenLink(_url) : null,
-                icon: const Icon(Icons.open_in_new_rounded,
-                    size: 16, color: Colors.white),
-                label: const Text('More Information',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                        fontSize: 14)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  disabledBackgroundColor: Colors.grey.shade200,
-                  disabledForegroundColor: Colors.grey.shade400,
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(vertical: 13),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-            ),
-          ]),
         ),
       ]),
     );
@@ -1206,9 +1425,8 @@ class _EventCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Shared location picker sub-widgets (identical to EventsScreen)
+// Shared location picker sub-widgets
 // ─────────────────────────────────────────────────────────────────────────────
-
 class _LocationDropdown extends StatelessWidget {
   final IconData      icon;
   final String        label;
@@ -1217,11 +1435,8 @@ class _LocationDropdown extends StatelessWidget {
   final VoidCallback? onTap;
 
   const _LocationDropdown({
-    required this.icon,
-    required this.label,
-    required this.hasValue,
-    this.enabled = true,
-    this.onTap,
+    required this.icon, required this.label, required this.hasValue,
+    this.enabled = true, this.onTap,
   });
 
   @override
@@ -1245,31 +1460,22 @@ class _LocationDropdown extends StatelessWidget {
               width: 1.5),
         ),
         child: Row(children: [
-          Icon(icon,
-              size: 16,
-              color: active
-                  ? AppColors.primary
-                  : enabled
-                  ? const Color(0xFF555760)
+          Icon(icon, size: 16,
+              color: active ? AppColors.primary
+                  : enabled ? const Color(0xFF555760)
                   : const Color(0xFFBBBCC0)),
           const SizedBox(width: 8),
           Expanded(
               child: Text(label,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: active
-                          ? AppColors.primary
-                          : enabled
-                          ? const Color(0xFF333438)
+                      fontSize: 14, fontWeight: FontWeight.w600,
+                      color: active ? AppColors.primary
+                          : enabled ? const Color(0xFF333438)
                           : const Color(0xFFBBBCC0)))),
-          Icon(Icons.keyboard_arrow_down_rounded,
-              size: 18,
-              color: active
-                  ? AppColors.primary
-                  : enabled
-                  ? const Color(0xFF888A90)
+          Icon(Icons.keyboard_arrow_down_rounded, size: 18,
+              color: active ? AppColors.primary
+                  : enabled ? const Color(0xFF888A90)
                   : const Color(0xFFBBBCC0)),
         ]),
       ),
@@ -1277,171 +1483,16 @@ class _LocationDropdown extends StatelessWidget {
   }
 }
 
-class _CountryPickerDialog extends StatelessWidget {
-  final List<String>           countries;
-  final String?                currentCountry;
-  final void Function(String?) onSelected;
-
-  const _CountryPickerDialog({
-    required this.countries,
-    required this.currentCountry,
-    required this.onSelected,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(children: [
-      GestureDetector(
-          onTap: () => Navigator.pop(context),
-          behavior: HitTestBehavior.opaque,
-          child: const SizedBox.expand()),
-      Positioned(
-        left: 24, right: 24,
-        top: MediaQuery.of(context).size.height * 0.26,
-        child: Material(
-          color: Colors.transparent,
-          child: Container(
-            constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.52),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF5F5EF),
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                    color: Colors.black.withOpacity(0.15),
-                    blurRadius: 28,
-                    offset: const Offset(0, 10))
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: SingleChildScrollView(
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  _PickerRow(
-                      label: 'All Countries',
-                      isHeader: true,
-                      isSelected: currentCountry == null,
-                      onTap: () {
-                        Navigator.pop(context);
-                        onSelected(null);
-                      }),
-                  const _PickerDivider(),
-                  ...countries.asMap().entries.map((e) => Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _PickerRow(
-                          label: e.value,
-                          isHeader: false,
-                          isSelected: currentCountry == e.value,
-                          onTap: () {
-                            Navigator.pop(context);
-                            onSelected(e.value);
-                          }),
-                      if (e.key < countries.length - 1)
-                        const _PickerDivider(),
-                    ],
-                  )),
-                ]),
-              ),
-            ),
-          ),
-        ),
-      ),
-    ]);
-  }
-}
-
-class _PrefecturePickerDialog extends StatelessWidget {
-  final String                    country;
-  final List<Map<String, String>> prefectures;
-  final String?                   currentPrefecture;
-  final void Function(String?)    onSelected;
-
-  const _PrefecturePickerDialog({
-    required this.country,
-    required this.prefectures,
-    required this.currentPrefecture,
-    required this.onSelected,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(children: [
-      GestureDetector(
-          onTap: () => Navigator.pop(context),
-          behavior: HitTestBehavior.opaque,
-          child: const SizedBox.expand()),
-      Positioned(
-        left: 24, right: 24,
-        top: MediaQuery.of(context).size.height * 0.26,
-        child: Material(
-          color: Colors.transparent,
-          child: Container(
-            constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.52),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF5F5EF),
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                    color: Colors.black.withOpacity(0.15),
-                    blurRadius: 28,
-                    offset: const Offset(0, 10))
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: SingleChildScrollView(
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  _PickerRow(
-                      label: 'All $country',
-                      isHeader: true,
-                      isSelected: currentPrefecture == null,
-                      onTap: () {
-                        Navigator.pop(context);
-                        onSelected(null);
-                      }),
-                  const _PickerDivider(),
-                  ...prefectures.asMap().entries.map((e) {
-                    final en = e.value['en']!;
-                    final jp = e.value['jp'] ?? '';
-                    return Column(mainAxisSize: MainAxisSize.min, children: [
-                      _PickerRow(
-                          label: en,
-                          sublabel: jp.isNotEmpty ? jp : null,
-                          isHeader: false,
-                          isSelected: currentPrefecture == en,
-                          onTap: () {
-                            Navigator.pop(context);
-                            onSelected(en);
-                          }),
-                      if (e.key < prefectures.length - 1)
-                        const _PickerDivider(),
-                    ]);
-                  }),
-                ]),
-              ),
-            ),
-          ),
-        ),
-      ),
-    ]);
-  }
-}
-
 class _PickerRow extends StatelessWidget {
-  final String       label;
-  final String?      sublabel;
-  final bool         isHeader;
-  final bool         isSelected;
+  final String label;
+  final String? sublabel;
+  final bool isHeader;
+  final bool isSelected;
   final VoidCallback onTap;
 
   const _PickerRow({
-    required this.label,
-    this.sublabel,
-    required this.isHeader,
-    required this.isSelected,
-    required this.onTap,
+    required this.label, this.sublabel,
+    required this.isHeader, required this.isSelected, required this.onTap,
   });
 
   @override
@@ -1452,8 +1503,7 @@ class _PickerRow extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 100),
         color: isSelected ? const Color(0xFFE8E8E2) : Colors.transparent,
-        padding:
-        const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
         child: Row(children: [
           Expanded(
             child: sublabel != null
@@ -1465,24 +1515,21 @@ class _PickerRow extends StatelessWidget {
                       style: TextStyle(
                           fontSize: isHeader ? 14 : 16,
                           fontWeight: isHeader
-                              ? FontWeight.w500
-                              : FontWeight.w600,
+                              ? FontWeight.w500 : FontWeight.w600,
                           color: isHeader
                               ? const Color(0xFF888880)
                               : const Color(0xFF1A1A1A),
                           letterSpacing: -0.2)),
                   Text(sublabel!,
                       style: const TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF888880),
+                          fontSize: 12, color: Color(0xFF888880),
                           fontWeight: FontWeight.w400)),
                 ])
                 : Text(label,
                 style: TextStyle(
                     fontSize: isHeader ? 14 : 16,
                     fontWeight: isHeader
-                        ? FontWeight.w500
-                        : FontWeight.w600,
+                        ? FontWeight.w500 : FontWeight.w600,
                     color: isHeader
                         ? const Color(0xFF888880)
                         : const Color(0xFF1A1A1A),
@@ -1498,7 +1545,6 @@ class _PickerRow extends StatelessWidget {
 
 class _PickerDivider extends StatelessWidget {
   const _PickerDivider();
-
   @override
   Widget build(BuildContext context) =>
       const Divider(height: 1, thickness: 1, color: Color(0xFFDDDDD5));

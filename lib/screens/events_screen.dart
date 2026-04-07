@@ -74,12 +74,18 @@ class _AdvFilter {
     tourist: tourist ?? this.tourist,
   );
 
-  bool get isActive =>
-      datePreset.isNotEmpty || country.isNotEmpty || prefecture.isNotEmpty ||
-          city.isNotEmpty || type.isNotEmpty ||
+  /// True when ANY non-location filter is active (used for the "Filters active" badge)
+  bool get hasNonLocationFilters =>
+      datePreset.isNotEmpty ||
+          type.isNotEmpty ||
           skillPro || skillAmateur || skillBeginner ||
           catMx || catMd || catMs || catWs || catWd || catSe || catJu || catCo ||
           tourist;
+
+  /// True when ANY filter at all is active
+  bool get isActive =>
+      hasNonLocationFilters ||
+          country.isNotEmpty || prefecture.isNotEmpty || city.isNotEmpty;
 
   _AdvFilter get cleared => _AdvFilter();
 }
@@ -96,18 +102,15 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController      _scrollController = ScrollController();
 
-  String    _selectedFilter    = 'Upcoming';
+  String    _selectedFilter = 'Upcoming';
   DateTime? _customStart;
   DateTime? _customEnd;
-  String?   _selectedCountry    = 'Japan';
-  String?   _selectedPrefecture = 'Tokyo';
-  _AdvFilter _adv = _AdvFilter();
 
-  bool get _hasCustomRange  => _customStart != null;
-  bool get _isDefaultState  =>
-      _selectedFilter == 'Upcoming' && !_hasCustomRange &&
-          _selectedCountry == 'Japan'   && _selectedPrefecture == 'Tokyo' &&
-          !_adv.isActive;
+  // ── SINGLE SOURCE OF TRUTH for location + all other filters ──────────────
+  // Default to Japan / Tokyo on first load (mirrors the original behaviour).
+  _AdvFilter _adv = _AdvFilter(country: 'Japan', prefecture: 'Tokyo');
+
+  bool get _hasCustomRange => _customStart != null;
 
   static const int _defaultDays = 30;
   static const _filterOptions = [
@@ -132,6 +135,13 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
   static const Color _textDark  = Color(0xFF0D0D0D);
   static const Color _textMid   = Color(0xFF555760);
   static const Color _textLight = Color(0xFF888A90);
+
+  // ── Location label shown in the badge ─────────────────────────────────────
+  String get _locationLabel {
+    if (_adv.prefecture.isNotEmpty) return _adv.prefecture;
+    if (_adv.country.isNotEmpty)    return _adv.country;
+    return 'All Countries';
+  }
 
   // ─────────────────────────────────────────────────────────────────────────
   Map<String, List<Map<String, String>>> _buildLocationMap(
@@ -160,12 +170,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     return sorted;
   }
 
-  String get _locationLabel {
-    if (_selectedPrefecture != null) return _selectedPrefecture!;
-    if (_selectedCountry != null) return _selectedCountry!;
-    return 'All Countries';
-  }
-
   @override
   void dispose() {
     _searchController.dispose();
@@ -174,18 +178,20 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Location matching
+  // Location matching — reads ONLY from _adv (single source of truth)
   // ─────────────────────────────────────────────────────────────────────────
   bool _matchesLocation(
       Map<String, dynamic> event, List<Map<String, dynamic>> allLocs) {
-    if (_selectedCountry == null && _adv.country.isEmpty) return true;
-    final targetCountry =
-    (_adv.country.isNotEmpty ? _adv.country : _selectedCountry ?? '')
-        .toLowerCase();
-    final targetPref = (_adv.prefecture.isNotEmpty
-        ? _adv.prefecture
-        : _selectedPrefecture)
-        ?.toLowerCase();
+    // No country filter → show everything
+    if (_adv.country.isEmpty) return true;
+
+    final targetCountry = _adv.country.toLowerCase();
+    final targetPref    = _adv.prefecture.isNotEmpty
+        ? _adv.prefecture.toLowerCase()
+        : null;
+    final targetCity    = _adv.city.isNotEmpty
+        ? _adv.city.toLowerCase()
+        : null;
 
     final locId =
     (event['loc_id'] ?? event['event_loc_id'] ?? '').toString().trim();
@@ -202,22 +208,46 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
             .trim()
             .toLowerCase();
 
+    // ── Country check ──────────────────────────────────────────────────────
     final country = get('loc_country');
     if (country.isEmpty ||
         (!country.contains(targetCountry) &&
             !targetCountry.contains(country))) return false;
-    if (targetPref == null || targetPref.isEmpty) return true;
 
-    for (final key in [
-      'loc_prefecture_en', 'loc_prefecture_jp', 'loc_prefecture',
-      'event_prefecture', 'prefecture',
-    ]) {
-      final v = get(key);
-      if (v.isNotEmpty && (v.contains(targetPref) || targetPref.contains(v))) {
-        return true;
+    // ── Prefecture check ───────────────────────────────────────────────────
+    if (targetPref != null && targetPref.isNotEmpty) {
+      bool prefMatch = false;
+      for (final key in [
+        'loc_prefecture_en', 'loc_prefecture_jp', 'loc_prefecture',
+        'event_prefecture', 'prefecture',
+      ]) {
+        final v = get(key);
+        if (v.isNotEmpty &&
+            (v.contains(targetPref) || targetPref.contains(v))) {
+          prefMatch = true;
+          break;
+        }
       }
+      if (!prefMatch) return false;
     }
-    return false;
+
+    // ── City check ─────────────────────────────────────────────────────────
+    if (targetCity != null && targetCity.isNotEmpty) {
+      bool cityMatch = false;
+      for (final key in [
+        'loc_city_en', 'loc_city', 'event_city', 'city',
+      ]) {
+        final v = get(key);
+        if (v.isNotEmpty &&
+            (v.contains(targetCity) || targetCity.contains(v))) {
+          cityMatch = true;
+          break;
+        }
+      }
+      if (!cityMatch) return false;
+    }
+
+    return true;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -225,24 +255,28 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
   // ─────────────────────────────────────────────────────────────────────────
   List<Map<String, dynamic>> _applyFilter(
       List<Map<String, dynamic>> events, List<Map<String, dynamic>> allLocs) {
-    final now       = DateTime.now();
-    final today     = DateTime(now.year, now.month, now.day);
-    final tomorrow  = today.add(const Duration(days: 1));
+    final now        = DateTime.now();
+    final today      = DateTime(now.year, now.month, now.day);
+    final tomorrow   = today.add(const Duration(days: 1));
     final defaultEnd = today.add(const Duration(days: _defaultDays));
     final daysUntilSat = (DateTime.saturday - now.weekday + 7) % 7;
-    final saturday  = today.add(Duration(days: daysUntilSat == 0 ? 7 : daysUntilSat));
-    final sunday    = saturday.add(const Duration(days: 1));
-    final endOfWeek = today.add(Duration(days: 7 - now.weekday));
+    final saturday   = today.add(Duration(days: daysUntilSat == 0 ? 7 : daysUntilSat));
+    final sunday     = saturday.add(const Duration(days: 1));
+    final endOfWeek  = today.add(Duration(days: 7 - now.weekday));
     final q = _searchController.text.toLowerCase().trim();
 
     return events.where((e) {
+      // ── Text search ──────────────────────────────────────────────────────
       if (q.isNotEmpty) {
         final title = (e['event_title'] ?? '').toString().toLowerCase();
         final type  = (e['event_type']  ?? '').toString().toLowerCase();
         if (!title.contains(q) && !type.contains(q)) return false;
       }
+
+      // ── Location ─────────────────────────────────────────────────────────
       if (!_matchesLocation(e, allLocs)) return false;
 
+      // ── Date ─────────────────────────────────────────────────────────────
       final raw = e['event_date'];
       DateTime? d;
       if (raw is Timestamp) d = raw.toDate();
@@ -262,10 +296,16 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
           case 'this_week':
             if (day.isBefore(today) || day.isAfter(endOfWeek)) return false;
           case 'weekend':
-            if (!_isSameDay(day, saturday) && !_isSameDay(day, sunday)) return false;
+            if (!_isSameDay(day, saturday) && !_isSameDay(day, sunday)) {
+              return false;
+            }
           case 'custom':
-            if (_adv.dateStart != null && day.isBefore(_adv.dateStart!)) return false;
-            if (_adv.dateEnd   != null && day.isAfter(_adv.dateEnd!))    return false;
+            if (_adv.dateStart != null && day.isBefore(_adv.dateStart!)) {
+              return false;
+            }
+            if (_adv.dateEnd != null && day.isAfter(_adv.dateEnd!)) {
+              return false;
+            }
         }
       } else if (_hasCustomRange) {
         final end = _customEnd ?? _customStart!;
@@ -277,15 +317,19 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
           case 'This Week':
             if (day.isBefore(today) || day.isAfter(endOfWeek)) return false;
           case 'Weekend':
-            if (!_isSameDay(day, saturday) && !_isSameDay(day, sunday)) return false;
+            if (!_isSameDay(day, saturday) && !_isSameDay(day, sunday)) {
+              return false;
+            }
           default:
             if (day.isBefore(today) || day.isAfter(defaultEnd)) return false;
         }
       }
 
+      // ── Event type ───────────────────────────────────────────────────────
       if (_adv.type.isNotEmpty &&
           (e['event_type'] ?? '').toString() != _adv.type) return false;
 
+      // ── Skill levels ─────────────────────────────────────────────────────
       if (_adv.skillPro || _adv.skillAmateur || _adv.skillBeginner) {
         final match =
             (_adv.skillPro      && e['event_skill_level_pro']      == true) ||
@@ -294,6 +338,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
         if (!match) return false;
       }
 
+      // ── Categories ───────────────────────────────────────────────────────
       if (_adv.catMx || _adv.catMd || _adv.catMs || _adv.catWs ||
           _adv.catWd || _adv.catSe || _adv.catJu || _adv.catCo) {
         final match =
@@ -308,7 +353,9 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
         if (!match) return false;
       }
 
+      // ── Tourist friendly ─────────────────────────────────────────────────
       if (_adv.tourist && e['event_touristfriendly'] != true) return false;
+
       return true;
     }).toList();
   }
@@ -317,23 +364,49 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
       a.year == b.year && a.month == b.month && a.day == b.day;
 
   // ─────────────────────────────────────────────────────────────────────────
-  // ADVANCED FILTER MODAL — light mode, consistent with app design
+  // ADVANCED FILTER MODAL  (handles ALL filters including location)
   // ─────────────────────────────────────────────────────────────────────────
   void _showFilterModal() {
-    _AdvFilter temp = _adv.copyWith();
+    _AdvFilter temp = _adv; // start from the current unified state
 
-    final allLocs     = ref.read(locationsProvider).asData?.value ?? [];
+    final allLocs   = ref.read(locationsProvider).asData?.value ?? [];
+    final allEvents = ref.read(eventsProvider).asData?.value   ?? [];
+
+    // Build location options only from countries/prefectures/cities that
+    // actually appear in the current event list (cross-referenced with locs).
     final countries   = <String>{};
     final prefectures = <String>{};
     final cities      = <String>{};
-    for (final loc in allLocs) {
-      final c  = (loc['loc_country']      ?? '').toString().trim();
-      final p  = (loc['loc_prefecture_en'] ?? loc['loc_prefecture'] ?? '').toString().trim();
-      final ci = (loc['loc_city_en']       ?? loc['loc_city'] ?? '').toString().trim();
+
+    for (final event in allEvents) {
+      // Resolve the location document for this event (if any).
+      final locId =
+      (event['loc_id'] ?? event['event_loc_id'] ?? '').toString().trim();
+      final loc = locId.isNotEmpty
+          ? allLocs.firstWhere(
+              (l) => (l['loc_id'] ?? l['id'] ?? '').toString() == locId,
+          orElse: () => <String, dynamic>{})
+          : <String, dynamic>{};
+
+      // Helper: prefer loc field, fall back to event field.
+      String field(String key) =>
+          ((loc.isNotEmpty ? loc[key] : null) ?? event[key] ?? '')
+              .toString()
+              .trim();
+
+      final c = field('loc_country');
+      final p = (field('loc_prefecture_en').isNotEmpty
+          ? field('loc_prefecture_en')
+          : field('loc_prefecture'));
+      final ci = (field('loc_city_en').isNotEmpty
+          ? field('loc_city_en')
+          : field('loc_city'));
+
       if (c.isNotEmpty)  countries.add(c);
       if (p.isNotEmpty)  prefectures.add(p);
       if (ci.isNotEmpty) cities.add(ci);
     }
+
     final sortedCountries   = countries.toList()  ..sort();
     final sortedPrefectures = prefectures.toList()..sort();
     final sortedCities      = cities.toList()     ..sort();
@@ -380,7 +453,8 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
                 margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 12),
                 decoration: BoxDecoration(
                   color: sel
                       ? AppColors.primary.withOpacity(0.07)
@@ -410,17 +484,20 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                     child: Text(label,
                         style: TextStyle(
                             fontSize: 14,
-                            fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
-                            color: sel ? AppColors.primary : _textDark)),
+                            fontWeight:
+                            sel ? FontWeight.w700 : FontWeight.w500,
+                            color:
+                            sel ? AppColors.primary : _textDark)),
                   ),
-                  // Radio dot
                   AnimatedContainer(
                     duration: const Duration(milliseconds: 150),
                     width: 20, height: 20,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
-                          color: sel ? AppColors.primary : _border, width: 2),
+                          color:
+                          sel ? AppColors.primary : _border,
+                          width: 2),
                     ),
                     child: sel
                         ? Center(
@@ -444,8 +521,8 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
               onTap: onTap,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
-                padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 9),
                 decoration: BoxDecoration(
                   color: value
                       ? AppColors.primary.withOpacity(0.08)
@@ -463,14 +540,17 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                     duration: const Duration(milliseconds: 150),
                     width: 15, height: 15,
                     decoration: BoxDecoration(
-                      color: value ? AppColors.primary : Colors.transparent,
+                      color: value
+                          ? AppColors.primary
+                          : Colors.transparent,
                       borderRadius: BorderRadius.circular(4),
                       border: Border.all(
                           color: value ? AppColors.primary : _border,
                           width: 1.5),
                     ),
                     child: value
-                        ? const Icon(Icons.check, size: 10, color: Colors.white)
+                        ? const Icon(Icons.check,
+                        size: 10, color: Colors.white)
                         : null,
                   ),
                   const SizedBox(width: 8),
@@ -502,7 +582,8 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                           color: _textLight)),
                   const SizedBox(height: 6),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    padding:
+                    const EdgeInsets.symmetric(horizontal: 12),
                     decoration: BoxDecoration(
                       color: hasVal
                           ? AppColors.primary.withOpacity(0.06)
@@ -519,20 +600,26 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                         value: value.isEmpty ? '' : value,
                         isExpanded: true,
                         dropdownColor: _surface,
-                        icon: Icon(Icons.keyboard_arrow_down_rounded,
-                            color: hasVal ? AppColors.primary : _textLight,
+                        icon: Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            color: hasVal
+                                ? AppColors.primary
+                                : _textLight,
                             size: 20),
                         style: TextStyle(
-                            color: hasVal ? AppColors.primary : _textDark,
+                            color: hasVal
+                                ? AppColors.primary
+                                : _textDark,
                             fontSize: 14,
                             fontWeight: FontWeight.w500),
                         items: [
                           DropdownMenuItem(
                               value: '',
                               child: Text(allLabel,
-                                  style: const TextStyle(color: _textLight))),
-                          ...options.map((o) =>
-                              DropdownMenuItem(value: o, child: Text(o))),
+                                  style: const TextStyle(
+                                      color: _textLight))),
+                          ...options.map((o) => DropdownMenuItem(
+                              value: o, child: Text(o))),
                         ],
                         onChanged: (v) => onChange(v ?? ''),
                       ),
@@ -543,11 +630,13 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
           // ── Modal shell ───────────────────────────────────────────────────
           return Container(
-            constraints:
-            BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.92),
+            constraints: BoxConstraints(
+                maxHeight:
+                MediaQuery.of(ctx).size.height * 0.92),
             decoration: const BoxDecoration(
               color: _surface,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+              borderRadius:
+              BorderRadius.vertical(top: Radius.circular(28)),
             ),
             child: Column(children: [
               // Drag handle
@@ -555,12 +644,14 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                 margin: const EdgeInsets.only(top: 12, bottom: 4),
                 width: 36, height: 4,
                 decoration: BoxDecoration(
-                    color: _border, borderRadius: BorderRadius.circular(2)),
+                    color: _border,
+                    borderRadius: BorderRadius.circular(2)),
               ),
 
               // Header
               Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 12, 12),
+                padding:
+                const EdgeInsets.fromLTRB(20, 12, 12, 12),
                 child: Row(children: [
                   const Text('Filters',
                       style: TextStyle(
@@ -569,17 +660,17 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                           color: _textDark,
                           letterSpacing: -0.4)),
                   const Spacer(),
-                  // Active filter count badge
                   if (_adv.isActive) ...[
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 4),
                       decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.1),
+                        color:
+                        AppColors.primary.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      child: Text('Active',
-                          style: const TextStyle(
+                      child: const Text('Active',
+                          style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
                               color: AppColors.primary)),
@@ -606,19 +697,21 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
               // Scrollable body
               Expanded(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+                  padding: const EdgeInsets.fromLTRB(
+                      20, 24, 20, 24),
                   child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment:
+                      CrossAxisAlignment.start,
                       children: [
 
-                        // ── DATE ─────────────────────────────────────────────────
+                        // ── DATE ───────────────────────────────────────────────
                         sectionLabel('DATE'),
-                        dateRow('',          'Any time',           Icons.access_time_rounded),
-                        dateRow('today',     'Today',              Icons.wb_sunny_rounded),
-                        dateRow('tomorrow',  'Tomorrow',           Icons.arrow_forward_rounded),
-                        dateRow('this_week', 'This Week',          Icons.date_range_rounded),
-                        dateRow('weekend',   'Weekend',            Icons.weekend_rounded),
-                        dateRow('custom',    'Custom Date Range',  Icons.calendar_month_rounded),
+                        dateRow('',          'Any time',          Icons.access_time_rounded),
+                        dateRow('today',     'Today',             Icons.wb_sunny_rounded),
+                        dateRow('tomorrow',  'Tomorrow',          Icons.arrow_forward_rounded),
+                        dateRow('this_week', 'This Week',         Icons.date_range_rounded),
+                        dateRow('weekend',   'Weekend',           Icons.weekend_rounded),
+                        dateRow('custom',    'Custom Date Range', Icons.calendar_month_rounded),
 
                         if (temp.datePreset == 'custom') ...[
                           const SizedBox(height: 12),
@@ -626,82 +719,90 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                             Expanded(child: _LightDatePickerField(
                               label: 'Start Date',
                               value: temp.dateStart,
-                              onPicked: (d) =>
-                                  setS(() => temp = temp.copyWith(dateStart: d)),
+                              onPicked: (d) => setS(
+                                      () => temp = temp.copyWith(dateStart: d)),
                             )),
                             const SizedBox(width: 12),
                             Expanded(child: _LightDatePickerField(
                               label: 'End Date',
                               value: temp.dateEnd,
-                              onPicked: (d) =>
-                                  setS(() => temp = temp.copyWith(dateEnd: d)),
+                              onPicked: (d) => setS(
+                                      () => temp = temp.copyWith(dateEnd: d)),
                             )),
                           ]),
                         ],
 
                         divider(),
 
-                        // ── LOCATION ──────────────────────────────────────────────
+                        // ── LOCATION ───────────────────────────────────────────
                         sectionLabel('LOCATION'),
                         Row(children: [
                           Expanded(child: dropdownField(
-                              'Country', temp.country, sortedCountries, 'All countries',
-                                  (v) => setS(() => temp = temp.copyWith(country: v)))),
+                              'Country', temp.country,
+                              sortedCountries, 'All countries',
+                                  (v) => setS(() => temp =
+                                  temp.copyWith(country: v)))),
                           const SizedBox(width: 12),
                           Expanded(child: dropdownField(
-                              'Prefecture', temp.prefecture, sortedPrefectures, 'All',
-                                  (v) => setS(() => temp = temp.copyWith(prefecture: v)))),
+                              'Prefecture', temp.prefecture,
+                              sortedPrefectures, 'All',
+                                  (v) => setS(() => temp =
+                                  temp.copyWith(prefecture: v)))),
                         ]),
                         const SizedBox(height: 12),
                         Row(children: [
                           Expanded(child: dropdownField(
-                              'City', temp.city, sortedCities, 'All',
-                                  (v) => setS(() => temp = temp.copyWith(city: v)))),
+                              'City', temp.city,
+                              sortedCities, 'All',
+                                  (v) => setS(
+                                      () => temp = temp.copyWith(city: v)))),
                           const SizedBox(width: 12),
                           Expanded(child: dropdownField(
-                              'Event Type', temp.type, _eventTypes, 'All types',
-                                  (v) => setS(() => temp = temp.copyWith(type: v)))),
+                              'Event Type', temp.type,
+                              _eventTypes, 'All types',
+                                  (v) => setS(
+                                      () => temp = temp.copyWith(type: v)))),
                         ]),
 
                         divider(),
 
-                        // ── SKILL LEVELS ──────────────────────────────────────────
+                        // ── SKILL LEVELS ───────────────────────────────────────
                         sectionLabel('SKILL LEVELS'),
                         Wrap(spacing: 8, runSpacing: 8, children: [
-                          checkPill('Pro',      temp.skillPro,
-                                  () => setS(() => temp = temp.copyWith(skillPro:      !temp.skillPro))),
-                          checkPill('Amateur',  temp.skillAmateur,
-                                  () => setS(() => temp = temp.copyWith(skillAmateur:  !temp.skillAmateur))),
-                          checkPill('Beginner', temp.skillBeginner,
-                                  () => setS(() => temp = temp.copyWith(skillBeginner: !temp.skillBeginner))),
+                          checkPill('Pro', temp.skillPro, () => setS(() =>
+                          temp = temp.copyWith(skillPro: !temp.skillPro))),
+                          checkPill('Amateur', temp.skillAmateur, () => setS(() =>
+                          temp = temp.copyWith(skillAmateur: !temp.skillAmateur))),
+                          checkPill('Beginner', temp.skillBeginner, () => setS(() =>
+                          temp = temp.copyWith(skillBeginner: !temp.skillBeginner))),
                         ]),
 
                         divider(),
 
-                        // ── CATEGORIES ────────────────────────────────────────────
+                        // ── CATEGORIES ─────────────────────────────────────────
                         sectionLabel('CATEGORIES'),
                         Wrap(spacing: 8, runSpacing: 8, children: [
-                          checkPill('Mixed Doubles',   temp.catMx,
+                          checkPill('Mixed Doubles', temp.catMx,
                                   () => setS(() => temp = temp.copyWith(catMx: !temp.catMx))),
-                          checkPill("Men's Doubles",   temp.catMd,
+                          checkPill("Men's Doubles", temp.catMd,
                                   () => setS(() => temp = temp.copyWith(catMd: !temp.catMd))),
                           checkPill("Women's Doubles", temp.catWd,
                                   () => setS(() => temp = temp.copyWith(catWd: !temp.catWd))),
-                          checkPill("Men's Singles",   temp.catMs,
+                          checkPill("Men's Singles", temp.catMs,
                                   () => setS(() => temp = temp.copyWith(catMs: !temp.catMs))),
                           checkPill("Women's Singles", temp.catWs,
                                   () => setS(() => temp = temp.copyWith(catWs: !temp.catWs))),
-                          checkPill('Seniors',         temp.catSe,
+                          checkPill('Seniors', temp.catSe,
                                   () => setS(() => temp = temp.copyWith(catSe: !temp.catSe))),
-                          checkPill('Juniors',         temp.catJu,
+                          checkPill('Juniors', temp.catJu,
                                   () => setS(() => temp = temp.copyWith(catJu: !temp.catJu))),
-                          checkPill('Collegiate',      temp.catCo,
+                          checkPill('Collegiate', temp.catCo,
                                   () => setS(() => temp = temp.copyWith(catCo: !temp.catCo))),
                         ]),
 
                         divider(),
 
-                        // ── OTHER ─────────────────────────────────────────────────
+                        // ── OTHER ──────────────────────────────────────────────
                         sectionLabel('OTHER'),
                         checkPill('Tourist Friendly', temp.tourist,
                                 () => setS(() =>
@@ -709,17 +810,20 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
                         const SizedBox(height: 28),
 
-                        // ── Action buttons ────────────────────────────────────────
+                        // ── Action buttons ─────────────────────────────────────
                         Row(children: [
                           Expanded(
                             child: GestureDetector(
-                              onTap: () => setS(() => temp = _AdvFilter()),
+                              onTap: () => setS(() =>
+                              temp = _AdvFilter()),
                               child: Container(
                                 height: 52,
                                 decoration: BoxDecoration(
                                   color: _cardBg,
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(color: _border, width: 1.5),
+                                  borderRadius:
+                                  BorderRadius.circular(14),
+                                  border: Border.all(
+                                      color: _border, width: 1.5),
                                 ),
                                 child: const Center(
                                   child: Text('Clear All',
@@ -736,6 +840,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                             flex: 2,
                             child: GestureDetector(
                               onTap: () {
+                                // Write temp back to the single source of truth
                                 setState(() => _adv = temp);
                                 Navigator.pop(ctx);
                               },
@@ -743,10 +848,12 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                                 height: 52,
                                 decoration: BoxDecoration(
                                   color: AppColors.primary,
-                                  borderRadius: BorderRadius.circular(14),
+                                  borderRadius:
+                                  BorderRadius.circular(14),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: AppColors.primary.withOpacity(0.30),
+                                      color: AppColors.primary
+                                          .withOpacity(0.30),
                                       blurRadius: 14,
                                       offset: const Offset(0, 4),
                                     ),
@@ -768,406 +875,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                 ),
               ),
             ]),
-          );
-        });
-      },
-    );
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Legacy location-picker modal (kept unchanged)
-  // ─────────────────────────────────────────────────────────────────────────
-  void _showLegacyFilterModal() {
-    String    tempFilter     = _selectedFilter;
-    DateTime? tempStart      = _customStart;
-    DateTime? tempEnd        = _customEnd;
-    String?   tempCountry    = _selectedCountry;
-    String?   tempPrefecture = _selectedPrefecture;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return StatefulBuilder(builder: (ctx, setModalState) {
-          final hasRange    = tempStart != null;
-          final fmt         = DateFormat('MM/dd/yyyy');
-          final allLocs     = ref.watch(locationsProvider).asData?.value ?? [];
-          final locationMap = _buildLocationMap(allLocs);
-          final availablePrefs = tempCountry != null
-              ? (locationMap[tempCountry] ?? [])
-              : <Map<String, String>>[];
-
-          return Container(
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-            ),
-            padding: EdgeInsets.fromLTRB(
-                24, 0, 24, MediaQuery.of(ctx).viewInsets.bottom + 32),
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      margin: const EdgeInsets.only(top: 12, bottom: 20),
-                      width: 40, height: 4,
-                      decoration: BoxDecoration(
-                          color: const Color(0xFFE0E0E0),
-                          borderRadius: BorderRadius.circular(2)),
-                    ),
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Filter',
-                          style: TextStyle(
-                              fontSize: 22, fontWeight: FontWeight.w800,
-                              color: Color(0xFF0D0D0D), letterSpacing: -0.4)),
-                      GestureDetector(
-                        onTap: () => Navigator.pop(ctx),
-                        child: Container(
-                          width: 34, height: 34,
-                          decoration: BoxDecoration(
-                              color: AppColors.primary.withOpacity(0.08),
-                              shape: BoxShape.circle),
-                          child: Icon(Icons.close_rounded,
-                              color: AppColors.primary, size: 18),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-                  Row(children: [
-                    Icon(Icons.location_on_rounded,
-                        size: 16, color: AppColors.primary),
-                    const SizedBox(width: 6),
-                    const Text('Location',
-                        style: TextStyle(
-                            fontSize: 15, fontWeight: FontWeight.w700,
-                            color: Color(0xFF0D0D0D))),
-                  ]),
-                  const SizedBox(height: 12),
-                  Row(children: [
-                    Expanded(child: _LocationDropdown(
-                      icon: Icons.public_rounded,
-                      label: tempCountry ?? 'Country',
-                      hasValue: tempCountry != null,
-                      onTap: () {
-                        showDialog(
-                          context: context,
-                          barrierColor: Colors.black.withOpacity(0.25),
-                          builder: (_) => _CountryPickerDialog(
-                            countries: locationMap.keys.toList(),
-                            currentCountry: tempCountry,
-                            onSelected: (c) => setModalState(() {
-                              tempCountry = c;
-                              if (c == null) {
-                                tempPrefecture = null;
-                              } else if (!(locationMap[c] ?? [])
-                                  .any((p) => p['en'] == tempPrefecture)) {
-                                tempPrefecture = null;
-                              }
-                            }),
-                          ),
-                        );
-                      },
-                    )),
-                    const SizedBox(width: 12),
-                    Expanded(child: _LocationDropdown(
-                      icon: Icons.location_on_rounded,
-                      label: tempPrefecture ?? 'Area',
-                      hasValue: tempPrefecture != null,
-                      enabled: tempCountry != null,
-                      onTap: tempCountry == null ? null : () {
-                        showDialog(
-                          context: context,
-                          barrierColor: Colors.black.withOpacity(0.25),
-                          builder: (_) => _PrefecturePickerDialog(
-                            country: tempCountry!,
-                            prefectures: availablePrefs,
-                            currentPrefecture: tempPrefecture,
-                            onSelected: (p) =>
-                                setModalState(() => tempPrefecture = p),
-                          ),
-                        );
-                      },
-                    )),
-                  ]),
-                  const SizedBox(height: 24),
-                  const Text('DATE',
-                      style: TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.w700,
-                          color: Color(0xFF888A90), letterSpacing: 1.0)),
-                  const SizedBox(height: 12),
-                  ..._filterOptions.map((opt) {
-                    final label    = opt.$1;
-                    final icon     = opt.$2;
-                    final isSel    = !hasRange && tempFilter == label;
-                    final subtitle = label == 'Upcoming'
-                        ? 'Today → next $_defaultDays days'
-                        : null;
-                    return GestureDetector(
-                      onTap: () => setModalState(() {
-                        tempFilter = label;
-                        tempStart  = null;
-                        tempEnd    = null;
-                      }),
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 150),
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 13),
-                        decoration: BoxDecoration(
-                          color: isSel
-                              ? AppColors.primary.withOpacity(0.07)
-                              : const Color(0xFFF7F8FA),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(
-                              color: isSel
-                                  ? AppColors.primary.withOpacity(0.4)
-                                  : Colors.transparent,
-                              width: 1.5),
-                        ),
-                        child: Row(children: [
-                          Container(
-                            width: 32, height: 32,
-                            decoration: BoxDecoration(
-                                color: isSel
-                                    ? AppColors.primary.withOpacity(0.12)
-                                    : Colors.white,
-                                borderRadius: BorderRadius.circular(9)),
-                            child: Icon(icon,
-                                size: 16,
-                                color: isSel
-                                    ? AppColors.primary
-                                    : const Color(0xFF888A90)),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: subtitle != null
-                                ? Column(
-                                crossAxisAlignment:
-                                CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(label,
-                                      style: TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: isSel
-                                              ? FontWeight.w700
-                                              : FontWeight.w500,
-                                          color: isSel
-                                              ? AppColors.primary
-                                              : const Color(0xFF0D0D0D))),
-                                  Text(subtitle,
-                                      style: TextStyle(
-                                          fontSize: 11,
-                                          color: isSel
-                                              ? AppColors.primary
-                                              .withOpacity(0.6)
-                                              : const Color(0xFF999BA0))),
-                                ])
-                                : Text(label,
-                                style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: isSel
-                                        ? FontWeight.w700
-                                        : FontWeight.w500,
-                                    color: isSel
-                                        ? AppColors.primary
-                                        : const Color(0xFF0D0D0D))),
-                          ),
-                          AnimatedContainer(
-                            duration: const Duration(milliseconds: 150),
-                            width: 20, height: 20,
-                            decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                    color: isSel
-                                        ? AppColors.primary
-                                        : const Color(0xFFCCCDD0),
-                                    width: 2)),
-                            child: isSel
-                                ? Center(
-                                child: Container(
-                                    width: 9, height: 9,
-                                    decoration: const BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: AppColors.primary)))
-                                : null,
-                          ),
-                        ]),
-                      ),
-                    );
-                  }),
-                  const SizedBox(height: 8),
-                  GestureDetector(
-                    onTap: () async {
-                      final result =
-                      await Navigator.push<Map<String, DateTime?>>(
-                        ctx,
-                        MaterialPageRoute(
-                            builder: (_) => ChooseDateScreen(
-                                initialStart: tempStart,
-                                initialEnd: tempEnd)),
-                      );
-                      if (result != null) {
-                        setModalState(() {
-                          tempStart  = result['start'];
-                          tempEnd    = result['end'];
-                          tempFilter = 'Upcoming';
-                        });
-                      }
-                    },
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 150),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 13),
-                      decoration: BoxDecoration(
-                        color: hasRange
-                            ? AppColors.primary.withOpacity(0.07)
-                            : const Color(0xFFF7F8FA),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                            color: hasRange
-                                ? AppColors.primary.withOpacity(0.4)
-                                : Colors.transparent,
-                            width: 1.5),
-                      ),
-                      child: Row(children: [
-                        Container(
-                          width: 32, height: 32,
-                          decoration: BoxDecoration(
-                              color: hasRange
-                                  ? AppColors.primary.withOpacity(0.12)
-                                  : Colors.white,
-                              borderRadius: BorderRadius.circular(9)),
-                          child: Icon(Icons.calendar_month_rounded,
-                              size: 16,
-                              color: hasRange
-                                  ? AppColors.primary
-                                  : const Color(0xFF888A90)),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: hasRange
-                              ? Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text('Custom date range',
-                                    style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppColors.primary)),
-                                const SizedBox(height: 2),
-                                Text(
-                                    tempEnd != null &&
-                                        !_isSameDay(
-                                            tempStart!, tempEnd!)
-                                        ? '${fmt.format(tempStart!)}  →  ${fmt.format(tempEnd!)}'
-                                        : fmt.format(tempStart!),
-                                    style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        color: AppColors.primary
-                                            .withOpacity(0.7))),
-                              ])
-                              : const Text('Choose a date',
-                              style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF0D0D0D))),
-                        ),
-                        Container(
-                          width: 32, height: 32,
-                          decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                  color: hasRange
-                                      ? AppColors.primary
-                                      : const Color(0xFFCCCDD0),
-                                  width: 1.5)),
-                          child: Icon(
-                              hasRange
-                                  ? Icons.edit_rounded
-                                  : Icons.arrow_forward_rounded,
-                              size: 14,
-                              color: hasRange
-                                  ? AppColors.primary
-                                  : const Color(0xFF888A90)),
-                        ),
-                      ]),
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Row(children: [
-                    Expanded(
-                      child: GestureDetector(
-                        onTap: () => setModalState(() {
-                          tempFilter     = 'Upcoming';
-                          tempStart      = null;
-                          tempEnd        = null;
-                          tempCountry    = 'Japan';
-                          tempPrefecture = 'Tokyo';
-                        }),
-                        child: Container(
-                          height: 52,
-                          decoration: BoxDecoration(
-                              border: Border.all(
-                                  color: AppColors.primary, width: 1.5),
-                              borderRadius: BorderRadius.circular(14)),
-                          child: const Center(
-                              child: Text('Reset',
-                                  style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.primary))),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      flex: 2,
-                      child: GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            _selectedFilter     = tempFilter;
-                            _customStart        = tempStart;
-                            _customEnd          = tempEnd;
-                            _selectedCountry    = tempCountry;
-                            _selectedPrefecture = tempPrefecture;
-                          });
-                          Navigator.pop(ctx);
-                        },
-                        child: Container(
-                          height: 52,
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(14),
-                            boxShadow: [
-                              BoxShadow(
-                                  color: AppColors.primary.withOpacity(0.3),
-                                  blurRadius: 12,
-                                  offset: const Offset(0, 4))
-                            ],
-                          ),
-                          child: const Center(
-                              child: Text('APPLY',
-                                  style: TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w800,
-                                      color: Colors.white,
-                                      letterSpacing: 0.8))),
-                        ),
-                      ),
-                    ),
-                  ]),
-                ],
-              ),
-            ),
           );
         });
       },
@@ -1220,10 +927,11 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                             letterSpacing: -0.5)),
                     const SizedBox(height: 4),
                     Wrap(spacing: 6, runSpacing: 4, children: [
+                      // Location badge — opens the UNIFIED filter modal
                       _activeBadge(
                           icon: Icons.location_on_rounded,
                           label: _locationLabel,
-                          onTap: _showLegacyFilterModal),
+                          onTap: _showFilterModal),
                       if (_hasCustomRange)
                         _activeBadge(
                           icon: Icons.calendar_today_rounded,
@@ -1238,13 +946,23 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                           }),
                           showClose: true,
                         ),
-                      if (_adv.isActive)
+                      // "Filters active" badge — only shown when non-location
+                      // advanced filters are on, so it doesn't duplicate the
+                      // location badge.
+                      if (_adv.hasNonLocationFilters)
                         _activeBadge(
                           icon: Icons.filter_alt_rounded,
                           label: 'Filters active',
                           onTap: _showFilterModal,
                           showClose: true,
-                          onClose: () => setState(() => _adv = _AdvFilter()),
+                          onClose: () => setState(() {
+                            // Clear only non-location filters; keep location.
+                            _adv = _AdvFilter(
+                              country:    _adv.country,
+                              prefecture: _adv.prefecture,
+                              city:       _adv.city,
+                            );
+                          }),
                         ),
                     ]),
                   ]),
@@ -1273,7 +991,8 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                       child: Container(
                         width: 10, height: 10,
                         decoration: const BoxDecoration(
-                            color: Colors.white, shape: BoxShape.circle),
+                            color: Colors.white,
+                            shape: BoxShape.circle),
                         child: Center(
                             child: Container(
                                 width: 7, height: 7,
@@ -1311,7 +1030,8 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
           child: TextField(
             controller: _searchController,
             onChanged: (_) => setState(() {}),
-            style: const TextStyle(fontSize: 15, color: Color(0xFF0D0D0D)),
+            style: const TextStyle(
+                fontSize: 15, color: Color(0xFF0D0D0D)),
             decoration: InputDecoration(
               hintText: 'Search events, type...',
               hintStyle: TextStyle(
@@ -1325,7 +1045,8 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                   onTap: () =>
                       setState(() => _searchController.clear()),
                   child: Icon(Icons.close_rounded,
-                      color: Colors.black.withOpacity(0.35), size: 20))
+                      color: Colors.black.withOpacity(0.35),
+                      size: 20))
                   : null,
               border: InputBorder.none,
               contentPadding: const EdgeInsets.symmetric(
@@ -1352,16 +1073,17 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
   }
 
   Widget _activeBadge({
-    required IconData icon,
-    required String label,
+    required IconData  icon,
+    required String    label,
     required VoidCallback onTap,
-    bool showClose = false,
+    bool showClose        = false,
     VoidCallback? onClose,
   }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+        padding:
+        const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
         decoration: BoxDecoration(
             color: AppColors.primary.withOpacity(0.10),
             borderRadius: BorderRadius.circular(20)),
@@ -1377,8 +1099,8 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
             const SizedBox(width: 4),
             GestureDetector(
                 onTap: onClose ?? onTap,
-                child:
-                Icon(Icons.close_rounded, size: 11, color: AppColors.primary)),
+                child: Icon(Icons.close_rounded,
+                    size: 11, color: AppColors.primary)),
           ],
         ]),
       ),
@@ -1396,19 +1118,23 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         margin: const EdgeInsets.only(right: 8, bottom: 12),
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+        padding:
+        const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
         decoration: BoxDecoration(
           color: isSelected ? AppColors.primary : Colors.transparent,
           borderRadius: BorderRadius.circular(30),
           border: Border.all(
-              color:
-              isSelected ? AppColors.primary : const Color(0xFFDDDEE1),
+              color: isSelected
+                  ? AppColors.primary
+                  : const Color(0xFFDDDEE1),
               width: 1.5),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(icon,
               size: 15,
-              color: isSelected ? Colors.white : const Color(0xFF888A90)),
+              color: isSelected
+                  ? Colors.white
+                  : const Color(0xFF888A90)),
           const SizedBox(width: 6),
           Text(label,
               style: TextStyle(
@@ -1429,22 +1155,22 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
       data: (events) {
         final filtered = _applyFilter(events, allLocs);
         if (filtered.isEmpty) {
-          final loc =
-              _selectedPrefecture ?? _selectedCountry ?? 'everywhere';
+          final loc = _locationLabel;
           return Center(
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               Icon(Icons.event_busy_rounded,
-                  size: 56, color: Colors.black.withOpacity(0.12)),
+                  size: 56,
+                  color: Colors.black.withOpacity(0.12)),
               const SizedBox(height: 14),
               Text(
                 _hasCustomRange
                     ? 'No events in $loc for this date range.'
                     : {
-                  'Today':     'No events in $loc today.',
-                  'Tomorrow':  'No events in $loc tomorrow.',
-                  'This Week': 'No events in $loc this week.',
-                  'Weekend':   'No events in $loc this weekend.',
-                  'Upcoming':  'No upcoming events in $loc\nin the next $_defaultDays days.',
+                  'Today':    'No events in $loc today.',
+                  'Tomorrow': 'No events in $loc tomorrow.',
+                  'This Week':'No events in $loc this week.',
+                  'Weekend':  'No events in $loc this weekend.',
+                  'Upcoming': 'No upcoming events in $loc\nin the next $_defaultDays days.',
                 }[_selectedFilter] ??
                     'No events found in $loc.',
                 textAlign: TextAlign.center,
@@ -1453,14 +1179,10 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                     color: Colors.black.withOpacity(0.35),
                     fontWeight: FontWeight.w500),
               ),
-              if (_selectedCountry != null || _adv.isActive) ...[
+              if (_adv.isActive) ...[
                 const SizedBox(height: 12),
                 GestureDetector(
-                  onTap: () => setState(() {
-                    _selectedCountry    = null;
-                    _selectedPrefecture = null;
-                    _adv = _AdvFilter();
-                  }),
+                  onTap: () => setState(() => _adv = _AdvFilter()),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 16, vertical: 8),
@@ -1505,7 +1227,8 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     return Stack(clipBehavior: Clip.none, children: [
       GestureDetector(
         onTap: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const AddEventScreen())),
+            MaterialPageRoute(
+                builder: (_) => const AddEventScreen())),
         child: Container(
           height: 54,
           padding: const EdgeInsets.symmetric(horizontal: 36),
@@ -1535,7 +1258,8 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
         top: -8, right: -8,
         child: GestureDetector(
           onTap: () =>
-          ref.read(showAddEventButtonProvider.notifier).state = false,
+          ref.read(showAddEventButtonProvider.notifier).state =
+          false,
           child: Container(
             width: 28, height: 28,
             decoration: BoxDecoration(
@@ -1560,7 +1284,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Light-mode Date Picker Field (for advanced filter modal)
+// Light-mode Date Picker Field (used inside the advanced filter modal)
 // ─────────────────────────────────────────────────────────────────────────────
 class _LightDatePickerField extends StatelessWidget {
   final String    label;
@@ -1582,69 +1306,77 @@ class _LightDatePickerField extends StatelessWidget {
 
     final hasVal = value != null;
 
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(label,
-          style: const TextStyle(
-              fontSize: 11, fontWeight: FontWeight.w700, color: textLight)),
-      const SizedBox(height: 6),
-      GestureDetector(
-        onTap: () async {
-          final picked = await showDatePicker(
-            context: context,
-            initialDate: value ?? DateTime.now(),
-            firstDate: DateTime.now().subtract(const Duration(days: 1)),
-            lastDate: DateTime.now().add(const Duration(days: 365 * 3)),
-            builder: (ctx, child) => Theme(
-              data: Theme.of(ctx).copyWith(
-                colorScheme: const ColorScheme.light(
-                    primary: AppColors.primary, onSurface: textDark),
-              ),
-              child: child!,
-            ),
-          );
-          onPicked(picked);
-        },
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          decoration: BoxDecoration(
-            color: hasVal
-                ? AppColors.primary.withOpacity(0.06)
-                : cardBg,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
+    return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label,
+              style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: textLight)),
+          const SizedBox(height: 6),
+          GestureDetector(
+            onTap: () async {
+              final picked = await showDatePicker(
+                context: context,
+                initialDate: value ?? DateTime.now(),
+                firstDate:
+                DateTime.now().subtract(const Duration(days: 1)),
+                lastDate:
+                DateTime.now().add(const Duration(days: 365 * 3)),
+                builder: (ctx, child) => Theme(
+                  data: Theme.of(ctx).copyWith(
+                    colorScheme: const ColorScheme.light(
+                        primary: AppColors.primary,
+                        onSurface: textDark),
+                  ),
+                  child: child!,
+                ),
+              );
+              onPicked(picked);
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 12, vertical: 12),
+              decoration: BoxDecoration(
                 color: hasVal
-                    ? AppColors.primary.withOpacity(0.4)
-                    : border),
-          ),
-          child: Row(children: [
-            Icon(Icons.calendar_today_rounded,
-                size: 14,
-                color: hasVal ? AppColors.primary : textLight),
-            const SizedBox(width: 8),
-            Text(
-              hasVal
-                  ? DateFormat('MM/dd/yyyy').format(value!)
-                  : 'Select',
-              style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: hasVal ? AppColors.primary : textLight),
+                    ? AppColors.primary.withOpacity(0.06)
+                    : cardBg,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: hasVal
+                        ? AppColors.primary.withOpacity(0.4)
+                        : border),
+              ),
+              child: Row(children: [
+                Icon(Icons.calendar_today_rounded,
+                    size: 14,
+                    color: hasVal ? AppColors.primary : textLight),
+                const SizedBox(width: 8),
+                Text(
+                  hasVal
+                      ? DateFormat('MM/dd/yyyy').format(value!)
+                      : 'Select',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: hasVal ? AppColors.primary : textLight),
+                ),
+              ]),
             ),
-          ]),
-        ),
-      ),
-    ]);
+          ),
+        ]);
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Shared sub-widgets (location pickers — unchanged)
+// Shared sub-widgets (location pickers — used by the advanced filter modal)
 // ─────────────────────────────────────────────────────────────────────────────
 class _LocationDropdown extends StatelessWidget {
-  final IconData   icon;
-  final String     label;
-  final bool       hasValue;
-  final bool       enabled;
+  final IconData      icon;
+  final String        label;
+  final bool          hasValue;
+  final bool          enabled;
   final VoidCallback? onTap;
 
   const _LocationDropdown({
@@ -1709,8 +1441,8 @@ class _LocationDropdown extends StatelessWidget {
 }
 
 class _CountryPickerDialog extends StatelessWidget {
-  final List<String>        countries;
-  final String?             currentCountry;
+  final List<String>           countries;
+  final String?                currentCountry;
   final void Function(String?) onSelected;
   const _CountryPickerDialog(
       {required this.countries,
@@ -1731,7 +1463,8 @@ class _CountryPickerDialog extends StatelessWidget {
           color: Colors.transparent,
           child: Container(
             constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.52),
+                maxHeight:
+                MediaQuery.of(context).size.height * 0.52),
             decoration: BoxDecoration(
               color: const Color(0xFFF5F5EF),
               borderRadius: BorderRadius.circular(20),
@@ -1745,7 +1478,8 @@ class _CountryPickerDialog extends StatelessWidget {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(20),
               child: SingleChildScrollView(
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                child:
+                Column(mainAxisSize: MainAxisSize.min, children: [
                   _PickerRow(
                       label: 'All Countries',
                       isHeader: true,
@@ -1766,7 +1500,8 @@ class _CountryPickerDialog extends StatelessWidget {
                             Navigator.pop(context);
                             onSelected(e.value);
                           }),
-                      if (e.key < countries.length - 1) const _Divider(),
+                      if (e.key < countries.length - 1)
+                        const _Divider(),
                     ],
                   )),
                 ]),
@@ -1780,10 +1515,10 @@ class _CountryPickerDialog extends StatelessWidget {
 }
 
 class _PrefecturePickerDialog extends StatelessWidget {
-  final String                   country;
+  final String                    country;
   final List<Map<String, String>> prefectures;
-  final String?                  currentPrefecture;
-  final void Function(String?)   onSelected;
+  final String?                   currentPrefecture;
+  final void Function(String?)    onSelected;
   const _PrefecturePickerDialog(
       {required this.country,
         required this.prefectures,
@@ -1804,7 +1539,8 @@ class _PrefecturePickerDialog extends StatelessWidget {
           color: Colors.transparent,
           child: Container(
             constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.52),
+                maxHeight:
+                MediaQuery.of(context).size.height * 0.52),
             decoration: BoxDecoration(
               color: const Color(0xFFF5F5EF),
               borderRadius: BorderRadius.circular(20),
@@ -1818,7 +1554,8 @@ class _PrefecturePickerDialog extends StatelessWidget {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(20),
               child: SingleChildScrollView(
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                child:
+                Column(mainAxisSize: MainAxisSize.min, children: [
                   _PickerRow(
                       label: 'All $country',
                       isHeader: true,
@@ -1831,18 +1568,23 @@ class _PrefecturePickerDialog extends StatelessWidget {
                   ...prefectures.asMap().entries.map((e) {
                     final en = e.value['en']!;
                     final jp = e.value['jp'] ?? '';
-                    return Column(mainAxisSize: MainAxisSize.min, children: [
-                      _PickerRow(
-                          label: en,
-                          sublabel: jp.isNotEmpty ? jp : null,
-                          isHeader: false,
-                          isSelected: currentPrefecture == en,
-                          onTap: () {
-                            Navigator.pop(context);
-                            onSelected(en);
-                          }),
-                      if (e.key < prefectures.length - 1) const _Divider(),
-                    ]);
+                    return Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _PickerRow(
+                              label: en,
+                              sublabel:
+                              jp.isNotEmpty ? jp : null,
+                              isHeader: false,
+                              isSelected:
+                              currentPrefecture == en,
+                              onTap: () {
+                                Navigator.pop(context);
+                                onSelected(en);
+                              }),
+                          if (e.key < prefectures.length - 1)
+                            const _Divider(),
+                        ]);
                   }),
                 ]),
               ),
@@ -1855,10 +1597,10 @@ class _PrefecturePickerDialog extends StatelessWidget {
 }
 
 class _PickerRow extends StatelessWidget {
-  final String    label;
-  final String?   sublabel;
-  final bool      isHeader;
-  final bool      isSelected;
+  final String       label;
+  final String?      sublabel;
+  final bool         isHeader;
+  final bool         isSelected;
   final VoidCallback onTap;
   const _PickerRow(
       {required this.label,
@@ -1874,8 +1616,11 @@ class _PickerRow extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 100),
-        color: isSelected ? const Color(0xFFE8E8E2) : Colors.transparent,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+        color: isSelected
+            ? const Color(0xFFE8E8E2)
+            : Colors.transparent,
+        padding: const EdgeInsets.symmetric(
+            horizontal: 20, vertical: 15),
         child: Row(children: [
           Expanded(
             child: sublabel != null
@@ -1902,15 +1647,17 @@ class _PickerRow extends StatelessWidget {
                 : Text(label,
                 style: TextStyle(
                     fontSize: isHeader ? 14 : 16,
-                    fontWeight:
-                    isHeader ? FontWeight.w500 : FontWeight.w600,
+                    fontWeight: isHeader
+                        ? FontWeight.w500
+                        : FontWeight.w600,
                     color: isHeader
                         ? const Color(0xFF888880)
                         : const Color(0xFF1A1A1A),
                     letterSpacing: -0.2)),
           ),
           if (isSelected)
-            Icon(Icons.check_rounded, size: 18, color: AppColors.primary),
+            Icon(Icons.check_rounded,
+                size: 18, color: AppColors.primary),
         ]),
       ),
     );
@@ -1920,6 +1667,6 @@ class _PickerRow extends StatelessWidget {
 class _Divider extends StatelessWidget {
   const _Divider();
   @override
-  Widget build(BuildContext context) =>
-      const Divider(height: 1, thickness: 1, color: Color(0xFFDDDDD5));
+  Widget build(BuildContext context) => const Divider(
+      height: 1, thickness: 1, color: Color(0xFFDDDDD5));
 }
