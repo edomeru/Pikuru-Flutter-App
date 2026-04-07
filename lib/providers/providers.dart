@@ -29,8 +29,8 @@ final eventsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   return FirebaseFirestore.instance
       .collection('events')
       .where('event_active',         isEqualTo: true)
-      .where('event_status',         isEqualTo: true)   // ← added
-      .where('event_pending_review', isEqualTo: false)  // ← added
+      .where('event_status',         isEqualTo: true)
+      .where('event_pending_review', isEqualTo: false)
       .where('event_date', isGreaterThanOrEqualTo: Timestamp.fromDate(today))
       .where('event_date', isLessThanOrEqualTo:    Timestamp.fromDate(thirtyDaysLater))
       .orderBy('event_date')
@@ -44,18 +44,32 @@ final eventsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
 });
 
 // ── Calendar Events Provider ──────────────────────────────────────────────────
-// Also filters out pending/inactive events so the calendar view stays clean.
+// Fetch window: event_date >= today AND event_date <= today + 30 days.
+//
+// The 30-day limit applies only to the FETCH (i.e. an event must *start*
+// within the next 30 days to be included). Once fetched, _buildEventMap in
+// calendar_events_screen.dart spans each event from its start date all the
+// way to its event_date_end with no upper cutoff, so a multi-day event that
+// begins inside the window but ends beyond it will still render correctly on
+// the calendar for its full duration — exactly matching the web app's logic.
+//
+// Required Firestore composite index:
+//   Collection : events
+//   Fields     : event_active ASC, event_status ASC,
+//                event_pending_review ASC, event_date ASC
 final calendarEventsProvider =
 StreamProvider<List<Map<String, dynamic>>>((ref) {
-  final now   = DateTime.now();
-  final today = DateTime(now.year, now.month, now.day);
+  final now             = DateTime.now();
+  final today           = DateTime(now.year, now.month, now.day);
+  final thirtyDaysLater = today.add(const Duration(days: 30)); // ← added upper bound
 
   return FirebaseFirestore.instance
       .collection('events')
       .where('event_active',         isEqualTo: true)
-      .where('event_status',         isEqualTo: true)   // ← added
-      .where('event_pending_review', isEqualTo: false)  // ← added
+      .where('event_status',         isEqualTo: true)
+      .where('event_pending_review', isEqualTo: false)
       .where('event_date', isGreaterThanOrEqualTo: Timestamp.fromDate(today))
+      .where('event_date', isLessThanOrEqualTo:    Timestamp.fromDate(thirtyDaysLater)) // ← added
       .orderBy('event_date')
       .snapshots()
       .map((s) => s.docs.map((d) {
@@ -125,14 +139,12 @@ FutureProvider.family<String, String>((ref, locId) async {
   if (locId.isEmpty) return '';
 
   String display(Map<String, dynamic> d) {
-    // City: prefer the dedicated English field
     final city = ((d['loc_city_en'] ?? '').toString().trim().isNotEmpty
         ? d['loc_city_en']
         : d['loc_city'] ?? '')
         .toString()
         .trim();
 
-    // Prefecture: prefer the dedicated English field
     final prefecture =
     ((d['loc_prefecture_en'] ?? '').toString().trim().isNotEmpty
         ? d['loc_prefecture_en']
@@ -142,7 +154,6 @@ FutureProvider.family<String, String>((ref, locId) async {
 
     final country = (d['loc_country'] ?? '').toString().trim();
 
-    // Build label — never fall back to loc_name so venue names don't show
     if (city.isNotEmpty && prefecture.isNotEmpty) return '$city, $prefecture';
     if (city.isNotEmpty && country.isNotEmpty)    return '$city, $country';
     if (city.isNotEmpty)                          return city;
