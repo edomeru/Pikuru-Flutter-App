@@ -8,27 +8,6 @@ import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// pubspec.yaml dependencies to add:
-//   google_maps_flutter: ^2.5.0
-//   geocoding: ^3.0.0
-//   geolocator: ^11.0.0
-//   image_picker: ^1.0.7
-//   firebase_storage: ^11.6.0
-//
-// Android → AndroidManifest.xml (inside <manifest>):
-//   <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
-//   <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-//   <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
-//   <meta-data android:name="com.google.android.geo.API_KEY" android:value="YOUR_MAPS_KEY"/>
-//
-// iOS → Info.plist:
-//   NSLocationWhenInUseUsageDescription → "We use your location to find nearby courts."
-//   NSPhotoLibraryUsageDescription → "Select a cover photo for this court."
-// iOS → AppDelegate.swift:
-//   GMSServices.provideAPIKey("YOUR_MAPS_KEY")
-// ─────────────────────────────────────────────────────────────────────────────
-
 class AddCourtScreen extends ConsumerStatefulWidget {
   const AddCourtScreen({Key? key}) : super(key: key);
 
@@ -50,91 +29,89 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
   static const Color _textMid    = Color(0xFF4A6651);
   static const Color _textLight  = Color(0xFF8FB398);
   static const Color _border     = Color(0xFFCDE5D1);
+  static const Color _errorBg    = Color(0xFFFFEEEE);
+  static const Color _errorColor = Color(0xFFCC3333);
 
   // ── Map State ─────────────────────────────────────────────────────────────
   GoogleMapController? _mapController;
-  final LatLng _defaultCenter = const LatLng(35.6762, 139.6503);
+  final LatLng _defaultCenter    = const LatLng(35.6762, 139.6503);
   LatLng? _pickedLocation;
-  Set<Marker> _markers        = {};
-  bool _isReverseGeocoding    = false;
-  bool _isSearchLoading       = false;
-  bool _isLocating            = false;
+  Set<Marker> _markers           = {};
+  bool _isReverseGeocoding       = false;
+  bool _isSearchLoading          = false;
+  bool _isLocating               = false;
 
   // ── Image State ───────────────────────────────────────────────────────────
-  File? _pickedImage;
-  bool _isUploadingImage = false;
+  File?  _pickedImage;
+  bool   _isUploadingImage       = false;
 
   // ── Form Controllers ──────────────────────────────────────────────────────
-  late TextEditingController _nameEnController;
-  late TextEditingController _nameJpController;
-  late TextEditingController _typeController;
+  late TextEditingController _nameController;
   late TextEditingController _courtCountController;
   late TextEditingController _addressEnController;
-  late TextEditingController _addressJpController;
   late TextEditingController _cityEnController;
-  late TextEditingController _cityJpController;
   late TextEditingController _prefectureEnController;
-  late TextEditingController _prefectureJpController;
   late TextEditingController _countryController;
-  late TextEditingController _latitudeController;
-  late TextEditingController _longitudeController;
+  late TextEditingController _latController;
+  late TextEditingController _lngController;
   late TextEditingController _googlelinkController;
   late TextEditingController _websiteController;
   late TextEditingController _contactEmailController;
   late TextEditingController _priceController;
   late TextEditingController _notesController;
-  late TextEditingController _hoursMonController;
-  late TextEditingController _hoursTuesController;
-  late TextEditingController _hoursWedsController;
-  late TextEditingController _hoursThursController;
-  late TextEditingController _hoursFriController;
-  late TextEditingController _hoursSatController;
-  late TextEditingController _hoursSunController;
   late TextEditingController _mapSearchController;
 
-  // ── Form State ────────────────────────────────────────────────────────────
-  String _selectedCourtType    = 'INDOOR COURTS';
-  bool   _isPriceFree          = false;
-  bool   _isDedicated          = false;
-  bool   _requiresMembership   = false;
-  bool   _hasOpenPlay          = false;
-  bool   _requiresReservations = false;
-  bool   _hasLessons           = false;
-  bool   _hasPaddleRentals     = false;
-  bool   _isPublic             = true;
-  bool   _isLoading            = false;
+  // ── Dropdown / toggle state ───────────────────────────────────────────────
+  static const List<String> _locTypes = [
+    'Arena', 'Professional Courts', 'Gym/Club', 'Gymnasium',
+    'Public Court', 'Event Center', 'Resort/Hotel', 'School',
+  ];
+  String _locType          = 'Gym/Club';
 
-  final List<String> _stepLabels = ['Basics', 'Location', 'Amenities', 'Hours', 'Review'];
+  static const List<String> _courtTypeLabels = [
+    'INDOOR\nCOURTS', 'OUTDOOR\nCOURTS', 'INDOOR/\nOUTDOOR',
+  ];
+  static const List<String> _courtTypeValues = [
+    'INDOOR COURTS', 'OUTDOOR COURTS', 'INDOOR/OUTDOOR COURTS',
+  ];
+  String _courtType = 'INDOOR COURTS';
 
+  bool _isPublic = true;
+  bool _isPriceFree = false;
+
+  static const List<String> _amenityOpts = ['', 'Yes', 'No', 'Unknown'];
+  String _dedicated        = '';
+  String _membership       = '';
+  String _openPlay         = '';
+  String _reservations     = '';
+  String _lessons          = '';
+  String _paddleRentals    = '';
+
+  bool _isLoading    = false;
+  String _errorText  = '';
+
+  final List<String> _stepLabels = [
+    'Basics', 'Location', 'Amenities', 'Hours', 'Review',
+  ];
+
+  // ── Init / Dispose ────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
     _pageController         = PageController();
-    _nameEnController       = TextEditingController();
-    _nameJpController       = TextEditingController();
-    _typeController         = TextEditingController(text: 'Gym/Club');
+    _nameController         = TextEditingController();
     _courtCountController   = TextEditingController();
     _addressEnController    = TextEditingController();
-    _addressJpController    = TextEditingController();
     _cityEnController       = TextEditingController();
-    _cityJpController       = TextEditingController();
     _prefectureEnController = TextEditingController(text: 'Tokyo');
-    _prefectureJpController = TextEditingController(text: '東京都');
     _countryController      = TextEditingController(text: 'Japan');
-    _latitudeController     = TextEditingController();
-    _longitudeController    = TextEditingController();
+    _latController          = TextEditingController();
+    _lngController          = TextEditingController();
     _googlelinkController   = TextEditingController();
     _websiteController      = TextEditingController();
     _contactEmailController = TextEditingController();
     _priceController        = TextEditingController();
     _notesController        = TextEditingController();
-    _hoursMonController     = TextEditingController();
-    _hoursTuesController    = TextEditingController();
-    _hoursWedsController    = TextEditingController();
-    _hoursThursController   = TextEditingController();
-    _hoursFriController     = TextEditingController();
-    _hoursSatController     = TextEditingController();
-    _hoursSunController     = TextEditingController();
     _mapSearchController    = TextEditingController();
   }
 
@@ -143,90 +120,66 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
     _mapController?.dispose();
     _pageController.dispose();
     for (final c in [
-      _nameEnController, _nameJpController, _typeController, _courtCountController,
-      _addressEnController, _addressJpController, _cityEnController, _cityJpController,
-      _prefectureEnController, _prefectureJpController, _countryController,
-      _latitudeController, _longitudeController, _googlelinkController,
-      _websiteController, _contactEmailController, _priceController, _notesController,
-      _hoursMonController, _hoursTuesController, _hoursWedsController, _hoursThursController,
-      _hoursFriController, _hoursSatController, _hoursSunController, _mapSearchController,
+      _nameController, _courtCountController,
+      _addressEnController, _cityEnController, _prefectureEnController,
+      _countryController, _latController, _lngController, _googlelinkController,
+      _websiteController, _contactEmailController, _priceController,
+      _notesController, _mapSearchController,
     ]) { c.dispose(); }
     super.dispose();
   }
 
-  // ── Generate next loc_id in format "L-XXXXXXXXX" ─────────────────────────
-  // Reads ALL existing loc_id values, extracts the numeric part,
-  // finds the maximum, and returns max + 1 zero-padded to 10 digits.
+  // ── Generate next loc_id ──────────────────────────────────────────────────
   Future<String> _generateNextLocId() async {
     try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('locations')
-          .get();
-
+      final snapshot =
+      await FirebaseFirestore.instance.collection('locations').get();
       int maxNum = 0;
-
       for (final doc in snapshot.docs) {
-        final data  = doc.data();
-        // loc_id can be stored as a field OR may not exist on older docs.
-        final locId = (data['loc_id'] ?? '').toString().trim();
-
-        // Expected format: "L-0000000001", "L-0000000053", etc.
+        final locId = (doc.data()['loc_id'] ?? '').toString().trim();
         if (locId.startsWith('L-')) {
-          final numStr = locId.substring(2); // strip the "L-" prefix
-          final num    = int.tryParse(numStr);
-          if (num != null && num > maxNum) {
-            maxNum = num;
-          }
+          final num = int.tryParse(locId.substring(2));
+          if (num != null && num > maxNum) maxNum = num;
         }
       }
-
-      // Increment and zero-pad to 10 digits → "L-0000000054"
-      final nextNum = maxNum + 1;
-      final padded  = nextNum.toString().padLeft(10, '0');
-      return 'L-$padded';
-
-    } catch (e) {
-      // If anything fails (e.g. offline), fall back to a timestamp-based ID
-      // so the submission never gets completely blocked.
-      final fallback = DateTime.now().millisecondsSinceEpoch.toString();
-      return 'L-$fallback';
+      return 'L-${(maxNum + 1).toString().padLeft(10, '0')}';
+    } catch (_) {
+      return 'L-${DateTime.now().millisecondsSinceEpoch}';
     }
   }
 
-  // ── Pick image from gallery ───────────────────────────────────────────────
+  // ── Image picker ──────────────────────────────────────────────────────────
   Future<void> _pickImage() async {
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+    final picked = await ImagePicker()
+        .pickImage(source: ImageSource.gallery, imageQuality: 85);
     if (picked != null && mounted) {
       setState(() => _pickedImage = File(picked.path));
     }
   }
 
-  // ── Place a pin on the map and populate all fields ────────────────────────
+  // ── Map helpers ───────────────────────────────────────────────────────────
   Future<void> _pinLocation(LatLng position) async {
     final lat = position.latitude.toStringAsFixed(6);
     final lng = position.longitude.toStringAsFixed(6);
-
     setState(() {
       _pickedLocation        = position;
       _isReverseGeocoding    = true;
-      _markers = {
+      _markers               = {
         Marker(
           markerId: const MarkerId('picked'),
           position: position,
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+              BitmapDescriptor.hueGreen),
         ),
       };
-      _latitudeController.text   = lat;
-      _longitudeController.text  = lng;
+      _latController.text        = lat;
+      _lngController.text        = lng;
       _googlelinkController.text =
       'https://www.google.com/maps/search/?api=1&query=$lat,$lng';
     });
-
     await _reverseGeocode(position.latitude, position.longitude);
   }
 
-  // ── Reverse geocode using the native geocoding package ────────────────────
   Future<void> _reverseGeocode(double lat, double lng) async {
     try {
       final placemarks = await placemarkFromCoordinates(lat, lng);
@@ -234,63 +187,49 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
         final p = placemarks.first;
         setState(() {
           final street = [p.subThoroughfare, p.thoroughfare]
-              .where((s) => s != null && s.isNotEmpty)
+              .where((s) => s != null && s!.isNotEmpty)
               .join(' ');
           if (street.isNotEmpty) _addressEnController.text = street;
-
           if ((p.locality ?? '').isNotEmpty)
             _cityEnController.text = p.locality!;
           else if ((p.subAdministrativeArea ?? '').isNotEmpty)
             _cityEnController.text = p.subAdministrativeArea!;
-
           if ((p.administrativeArea ?? '').isNotEmpty)
             _prefectureEnController.text = p.administrativeArea!;
-
           if ((p.country ?? '').isNotEmpty)
             _countryController.text = p.country!;
         });
       }
     } catch (_) {
-      // Device geocoder unavailable — user fills manually
     } finally {
       if (mounted) setState(() => _isReverseGeocoding = false);
     }
   }
 
-  // ── Search using the native geocoding package ─────────────────────────────
   Future<void> _searchLocation(String query) async {
     final trimmed = query.trim();
     if (trimmed.isEmpty) return;
-
     FocusManager.instance.primaryFocus?.unfocus();
     setState(() => _isSearchLoading = true);
-
     try {
       final locations = await locationFromAddress(trimmed);
-
       if (locations.isNotEmpty && mounted) {
         final best = locations.first;
         final pos  = LatLng(best.latitude, best.longitude);
-
         await _mapController?.animateCamera(
-          CameraUpdate.newLatLngZoom(pos, 13),
-        );
-
+            CameraUpdate.newLatLngZoom(pos, 14));
         await Future.delayed(const Duration(milliseconds: 400));
         await _pinLocation(pos);
       } else {
-        _showSnack('Location not found — try a different search.', isError: true);
+        _showSnack('Location not found.', isError: true);
       }
     } catch (_) {
-      if (mounted) {
-        _showSnack('Could not find "$trimmed". Try adding a country or city.', isError: true);
-      }
+      if (mounted) _showSnack('Could not find "$trimmed".', isError: true);
     } finally {
       if (mounted) setState(() => _isSearchLoading = false);
     }
   }
 
-  // ── Use device GPS location ───────────────────────────────────────────────
   Future<void> _useMyLocation() async {
     setState(() => _isLocating = true);
     try {
@@ -298,16 +237,16 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
       if (perm == LocationPermission.denied) {
         perm = await Geolocator.requestPermission();
       }
-      if (perm == LocationPermission.deniedForever || perm == LocationPermission.denied) {
+      if (perm == LocationPermission.denied ||
+          perm == LocationPermission.deniedForever) {
         _showSnack('Location permission denied.', isError: true);
         return;
       }
-
       final pos = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
+          desiredAccuracy: LocationAccuracy.high);
       final latlng = LatLng(pos.latitude, pos.longitude);
-      await _mapController?.animateCamera(CameraUpdate.newLatLngZoom(latlng, 16));
+      await _mapController?.animateCamera(
+          CameraUpdate.newLatLngZoom(latlng, 16));
       await _pinLocation(latlng);
     } catch (_) {
       if (mounted) _showSnack('Could not get your location.', isError: true);
@@ -316,101 +255,111 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
     }
   }
 
-  // ── Submit to Firestore ───────────────────────────────────────────────────
+  // ── Submit ────────────────────────────────────────────────────────────────
   Future<void> _submitForm() async {
-    if (_nameEnController.text.isEmpty || _googlelinkController.text.isEmpty) {
-      _showSnack('Please fill in required fields', isError: false);
+    if (_nameController.text.trim().isEmpty ||
+        _googlelinkController.text.trim().isEmpty ||
+        _courtType.isEmpty) {
+      setState(() =>
+      _errorText = 'Please fill out at least the Name, Google Map Link, and Court Type.');
+      _pageController.animateToPage(0,
+          duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
       return;
     }
-    setState(() => _isLoading = true);
+    setState(() { _isLoading = true; _errorText = ''; });
+
     try {
-      // ── 1. Generate the next loc_id ──────────────────────────────────────
       final newLocId = await _generateNextLocId();
 
-      // ── 2. Upload cover image (with 30-second timeout) ───────────────────
       String imageUrl = '';
       if (_pickedImage != null) {
         setState(() => _isUploadingImage = true);
         try {
           final fileRef = FirebaseStorage.instance.ref(
-            'loc_images/${DateTime.now().millisecondsSinceEpoch}_${_pickedImage!.path.split('/').last}',
-          );
-          final uploadTask = fileRef.putFile(_pickedImage!);
-          final snapshot  = await uploadTask.timeout(
-            const Duration(seconds: 30),
-            onTimeout: () {
-              uploadTask.cancel();
-              throw Exception('Image upload timed out');
-            },
-          );
-          imageUrl = await snapshot.ref.getDownloadURL();
+              'court_images/${DateTime.now().millisecondsSinceEpoch}_'
+                  '${_pickedImage!.path.split('/').last}');
+          final snap = await fileRef.putFile(_pickedImage!).timeout(
+              const Duration(seconds: 30));
+          imageUrl = await snap.ref.getDownloadURL();
         } catch (_) {
-          // Storage unreachable (emulator / App Check) — skip image silently
           if (mounted) {
-            _showSnack('Could not upload image — saving court without it.', isError: false);
+            _showSnack(
+                'Could not upload image — saving court without it.',
+                isError: false);
           }
-          imageUrl = '';
         } finally {
           if (mounted) setState(() => _isUploadingImage = false);
         }
       }
 
-      // ── 3. Write the document with the generated loc_id ──────────────────
       await FirebaseFirestore.instance.collection('locations').add({
-        'loc_id':                      newLocId,          // ← "L-0000000054"
-        'loc_active':                  true,
-        'loc_added':                   true,
-        'loc_addedby':                 true,
-        'loc_address_en':              _addressEnController.text,
-        'loc_address_jp':              _addressJpController.text,
-        'loc_amenities_dedicated':     _isDedicated,
-        'loc_amenities_lessons':       _hasLessons,
-        'loc_amenities_membership':    _requiresMembership ? 'Required' : '',
-        'loc_amenities_openplay':      _hasOpenPlay,
-        'loc_amenities_paddlerentals': _hasPaddleRentals,
-        'loc_amenities_reservation':   _requiresReservations,
-        'loc_checked':                 false,
-        'loc_city_en':                 _cityEnController.text,
-        'loc_city_jp':                 _cityJpController.text,
-        'loc_contact_email':           _contactEmailController.text,
-        'loc_country':                 _countryController.text,
-        'loc_court_count':             int.tryParse(_courtCountController.text) ?? 0,
+        'loc_id':              newLocId,
+        'loc_pending_review':  true,
+        'loc_active':          false,
+        'loc_checked':         false,
+        'loc_added':           FieldValue.serverTimestamp(),
+        'loc_created_at':      DateTime.now().toIso8601String(),
+        'loc_updated_at':      DateTime.now().toIso8601String(),
+        'loc_org_id':          '',
+
+        'loc_name':            _nameController.text.trim(),
+        'loc_name_jp':         '',
+        'loc_type':            _locType,
+        'loc_court_count':     int.tryParse(_courtCountController.text) ?? 0,
+        'loc_setup_type':      _isPublic ? 'Open to public' : 'Requires setup',
+
+        'loc_address':         _addressEnController.text.trim(),
+        'loc_address_jp':      '',
+        'loc_city_en':         _cityEnController.text.trim(),
+        'loc_city_jp':         '',
+        'loc_prefecture_en':   _prefectureEnController.text.trim(),
+        'loc_prefecture_jp':   '',
+        'loc_country':         _countryController.text.trim(),
+        'loc_latitude':        _latController.text.trim(),
+        'loc_longitude':       _lngController.text.trim(),
+        'loc_googlelink':      _googlelinkController.text.trim(),
+        'loc_website':         _websiteController.text.trim(),
+        'loc_contact_email':   _contactEmailController.text.trim(),
+
         'loc_court_type_indoor':
-        _selectedCourtType == 'INDOOR COURTS' || _selectedCourtType == 'INDOOR/OUTDOOR COURTS',
+        _courtType == 'INDOOR COURTS' ||
+            _courtType == 'INDOOR/OUTDOOR COURTS',
         'loc_court_type_outdoor':
-        _selectedCourtType == 'OUTDOOR COURTS' || _selectedCourtType == 'INDOOR/OUTDOOR COURTS',
-        'loc_created_at':              DateTime.now().toIso8601String(),
-        'loc_googlelink':              _googlelinkController.text,
-        'loc_hours_fri':               _hoursFriController.text,
-        'loc_hours_mon':               _hoursMonController.text,
-        'loc_hours_sat':               _hoursSatController.text,
-        'loc_hours_sun':               _hoursSunController.text,
-        'loc_hours_thurs':             _hoursThursController.text,
-        'loc_hours_tues':              _hoursTuesController.text,
-        'loc_hours_weds':              _hoursWedsController.text,
-        'loc_image':                   imageUrl,
-        'loc_latitude':                _latitudeController.text,
-        'loc_longitude':               _longitudeController.text,
-        'loc_name':                    _nameEnController.text,
-        'loc_name_jp':                 _nameJpController.text,
-        'loc_notes':                   _notesController.text,
-        'loc_org_id':                  '',
-        'loc_prefecture_en':           _prefectureEnController.text,
-        'loc_prefecture_jp':           _prefectureJpController.text,
-        'loc_price':                   _priceController.text,
-        'loc_price_free':              _isPriceFree,
-        'loc_public':                  _isPublic,
-        'loc_type':                    _typeController.text,
-        'loc_updated_at':              DateTime.now().toIso8601String(),
-        'loc_website':                 _websiteController.text,
+        _courtType == 'OUTDOOR COURTS' ||
+            _courtType == 'INDOOR/OUTDOOR COURTS',
+
+        'loc_price':           _priceController.text.trim(),
+        'loc_price_free':      _isPriceFree,
+
+        'loc_amenities_dedicated':     _dedicated,
+        'loc_amenities_membership':    _membership,
+        'loc_amenities_openplay':      _openPlay,
+        'loc_amenities_reservation':   _reservations,
+        'loc_amenities_lessons':       _lessons,
+        'loc_amenities_paddlerentals': _paddleRentals,
+
+        'loc_hours_mon':   '',
+        'loc_hours_tues':  '',
+        'loc_hours_weds':  '',
+        'loc_hours_thurs': '',
+        'loc_hours_fri':   '',
+        'loc_hours_sat':   '',
+        'loc_hours_sun':   '',
+        'loc_hours_notes': '',
+
+        'loc_notes':  _notesController.text.trim(),
+        'loc_image':  imageUrl.isNotEmpty ? imageUrl : null,
       });
 
       if (mounted) {
-        _showSnack('Court added successfully!');
+        _showSnack('Court submitted for review!');
         Navigator.pop(context);
       }
     } catch (e) {
-      if (mounted) _showSnack('Error: $e', isError: true);
+      if (mounted) {
+        setState(() => _errorText = 'Error: $e');
+        _showSnack('Submission failed — please try again.', isError: true);
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -418,14 +367,20 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
 
   void _showSnack(String msg, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
+      content: Text(msg,
+          style: const TextStyle(fontWeight: FontWeight.w600)),
       backgroundColor: isError ? Colors.red.shade400 : _primary,
       behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape:
+      RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      margin:
+      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
     ));
   }
 
-  // ── Build ─────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // BUILD
+  // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -440,22 +395,61 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
             decoration: BoxDecoration(
               color: _surface,
               borderRadius: BorderRadius.circular(12),
-              boxShadow: [BoxShadow(color: _primary.withOpacity(0.08), blurRadius: 8, offset: const Offset(0, 2))],
+              boxShadow: [
+                BoxShadow(
+                    color: _primary.withOpacity(0.08),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2))
+              ],
             ),
-            child: const Icon(Icons.arrow_back_ios_new, size: 16, color: _textDark),
+            child: const Icon(Icons.arrow_back_ios_new,
+                size: 16, color: _textDark),
           ),
           onPressed: () => Navigator.pop(context),
         ),
         title: Column(children: [
           const Text('Add a Court',
-              style: TextStyle(color: _textDark, fontWeight: FontWeight.w800, fontSize: 18, letterSpacing: -0.5)),
+              style: TextStyle(
+                  color: _textDark,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 18,
+                  letterSpacing: -0.5)),
           Text(_stepLabels[_currentPage],
-              style: const TextStyle(color: _accent, fontWeight: FontWeight.w500, fontSize: 12)),
+              style: const TextStyle(
+                  color: _accent,
+                  fontWeight: FontWeight.w500,
+                  fontSize: 12)),
         ]),
         centerTitle: true,
       ),
       body: Column(children: [
         _buildStepIndicator(),
+        if (_errorText.isNotEmpty)
+          Container(
+            margin: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+                color: _errorBg,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _errorColor.withOpacity(0.3))),
+            child: Row(children: [
+              const Icon(Icons.error_outline,
+                  color: _errorColor, size: 16),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(_errorText,
+                    style: const TextStyle(
+                        color: _errorColor,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600)),
+              ),
+              GestureDetector(
+                onTap: () => setState(() => _errorText = ''),
+                child: const Icon(Icons.close,
+                    color: _errorColor, size: 16),
+              ),
+            ]),
+          ),
         Expanded(
           child: PageView(
             controller: _pageController,
@@ -475,7 +469,7 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
     );
   }
 
-  // ── Step Indicator ────────────────────────────────────────────────────────
+  // ── Step indicator ────────────────────────────────────────────────────────
   Widget _buildStepIndicator() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -502,24 +496,57 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
     );
   }
 
-  // ── Page 1: Basic Info ────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // PAGE 1 — Basic Info
+  // ─────────────────────────────────────────────────────────────────────────
   Widget _buildBasicInfoPage() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _buildPageHeader('Basic Information', 'Tell us about the court', Icons.sports_tennis),
-        _buildTextField(label: 'Court Name (EN) *', controller: _nameEnController, hint: 'e.g. WELL RACKET CLUB'),
+        _buildPageHeader(
+            'Basic Information', 'Tell us about the court',
+            Icons.sports_tennis),
+
+        _buildTextField(
+            label: 'Court Name (English) *',
+            controller: _nameController,
+            hint: 'e.g. Tokyo Pickleball Club'),
         const SizedBox(height: 14),
-        _buildTextField(label: 'Court Name (JP)', controller: _nameJpController, hint: 'e.g. ウェルラケットクラブ'),
+
+        _buildLabel('Location Type'),
+        const SizedBox(height: 6),
+        _buildDropdown<String>(
+          value: _locType,
+          items: _locTypes,
+          itemLabel: (v) => v,
+          onChanged: (v) => setState(() => _locType = v ?? _locType),
+        ),
         const SizedBox(height: 14),
-        _buildTextField(label: 'Location Type', controller: _typeController, hint: 'e.g. Gym/Club'),
-        const SizedBox(height: 14),
-        _buildTextField(label: 'Number of Courts', controller: _courtCountController, hint: 'e.g. 4', keyboardType: TextInputType.number),
+
+        _buildTextField(
+            label: 'Number of Courts',
+            controller: _courtCountController,
+            hint: 'e.g. 4',
+            keyboardType: TextInputType.number),
         const SizedBox(height: 20),
-        _buildCheckbox('Publicly Listed', _isPublic, (v) => setState(() => _isPublic = v ?? false)),
+
+        _buildLabel('Access'),
+        const SizedBox(height: 8),
+        Row(children: [
+          Expanded(child: _buildToggleButton(
+            label: 'Open to public',
+            selected: _isPublic,
+            onTap: () => setState(() => _isPublic = true),
+          )),
+          const SizedBox(width: 10),
+          Expanded(child: _buildToggleButton(
+            label: 'Requires setup',
+            selected: !_isPublic,
+            onTap: () => setState(() => _isPublic = false),
+          )),
+        ]),
         const SizedBox(height: 24),
 
-        // ── Cover Picture ─────────────────────────────────────────────────
         _buildLabel('Cover Picture'),
         const SizedBox(height: 10),
         GestureDetector(
@@ -535,7 +562,12 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
                 color: _pickedImage != null ? _accent : _border,
                 width: _pickedImage != null ? 1.5 : 1,
               ),
-              boxShadow: [BoxShadow(color: _primary.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
+              boxShadow: [
+                BoxShadow(
+                    color: _primary.withOpacity(0.04),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2))
+              ],
             ),
             clipBehavior: Clip.hardEdge,
             child: _pickedImage != null
@@ -544,61 +576,88 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
               Positioned(
                 bottom: 0, left: 0, right: 0,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  padding:
+                  const EdgeInsets.symmetric(vertical: 8),
                   color: Colors.black.withOpacity(0.45),
-                  child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Icon(Icons.edit_outlined, color: Colors.white, size: 14),
-                    SizedBox(width: 6),
-                    Text('Tap to change',
-                        style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
-                  ]),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.edit_outlined,
+                          color: Colors.white, size: 14),
+                      SizedBox(width: 6),
+                      Text('Tap to change',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600)),
+                    ],
+                  ),
                 ),
               ),
             ])
-                : Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Container(
-                width: 48, height: 48,
-                decoration: const BoxDecoration(color: _textDark, shape: BoxShape.circle),
-                child: const Icon(Icons.add, color: Colors.white, size: 26),
-              ),
-              const SizedBox(height: 12),
-              const Text('Select an Image',
-                  style: TextStyle(color: _textDark, fontSize: 14, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 4),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 24),
-                child: Text(
-                  'This will be used as the location\'s cover photo in listings.',
-                  style: TextStyle(color: _textLight, fontSize: 12),
-                  textAlign: TextAlign.center,
+                : Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 48, height: 48,
+                  decoration: const BoxDecoration(
+                      color: _textDark, shape: BoxShape.circle),
+                  child: const Icon(Icons.add,
+                      color: Colors.white, size: 26),
                 ),
-              ),
-            ]),
+                const SizedBox(height: 12),
+                const Text('Select an Image',
+                    style: TextStyle(
+                        color: _textDark,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700)),
+                const SizedBox(height: 4),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 24),
+                  child: Text(
+                    'This will be used as the cover photo in listings.',
+                    style: TextStyle(
+                        color: _textLight, fontSize: 12),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ]),
     );
   }
 
-  // ── Page 2: Location ──────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // PAGE 2 — Location
+  // ─────────────────────────────────────────────────────────────────────────
   Widget _buildLocationPage() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _buildPageHeader('Location Details', 'Search or tap the map to set coordinates', Icons.place_outlined),
+        _buildPageHeader(
+            'Location Details',
+            'Search or tap the map to set coordinates',
+            Icons.place_outlined),
 
-        // ── Map card ───────────────────────────────────────────────────────
         Container(
-          height: 300,
+          height: 280,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(20),
             border: Border.all(color: _border, width: 1.5),
-            boxShadow: [BoxShadow(color: _primary.withOpacity(0.08), blurRadius: 16, offset: const Offset(0, 4))],
+            boxShadow: [
+              BoxShadow(
+                  color: _primary.withOpacity(0.08),
+                  blurRadius: 16,
+                  offset: const Offset(0, 4))
+            ],
           ),
           clipBehavior: Clip.hardEdge,
           child: Stack(children: [
             GoogleMap(
-              initialCameraPosition: CameraPosition(target: _defaultCenter, zoom: 12),
+              initialCameraPosition:
+              CameraPosition(target: _defaultCenter, zoom: 12),
               onMapCreated: (c) => _mapController = c,
               onTap: _pinLocation,
               markers: _markers,
@@ -607,24 +666,32 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
               mapToolbarEnabled: false,
             ),
 
-            // Search bar overlay
             Positioned(
               top: 12, left: 12, right: 12,
               child: Container(
                 decoration: BoxDecoration(
                   color: _surface,
                   borderRadius: BorderRadius.circular(14),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 12, offset: const Offset(0, 4))],
+                  boxShadow: [
+                    BoxShadow(
+                        color: Colors.black.withOpacity(0.12),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4))
+                  ],
                 ),
                 child: TextField(
                   controller: _mapSearchController,
-                  style: const TextStyle(color: _textDark, fontSize: 14, fontWeight: FontWeight.w500),
+                  style: const TextStyle(
+                      color: _textDark,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500),
                   textInputAction: TextInputAction.search,
                   onSubmitted: _searchLocation,
                   onChanged: (_) => setState(() {}),
                   decoration: InputDecoration(
-                    hintText: 'e.g. "Paris, France" or "Shibuya, Tokyo"',
-                    hintStyle: const TextStyle(color: _textLight, fontSize: 13),
+                    hintText: 'Search for a court or place...',
+                    hintStyle: const TextStyle(
+                        color: _textLight, fontSize: 13),
                     prefixIcon: _isSearchLoading
                         ? const Padding(
                       padding: EdgeInsets.all(13),
@@ -636,49 +703,63 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
                         ),
                       ),
                     )
-                        : const Icon(Icons.search_rounded, color: _accent, size: 20),
-                    suffixIcon: _mapSearchController.text.isNotEmpty && !_isSearchLoading
+                        : const Icon(Icons.search_rounded,
+                        color: _accent, size: 20),
+                    suffixIcon:
+                    _mapSearchController.text.isNotEmpty &&
+                        !_isSearchLoading
                         ? IconButton(
-                      icon: const Icon(Icons.close, color: _textLight, size: 18),
-                      onPressed: () { _mapSearchController.clear(); setState(() {}); },
+                      icon: const Icon(Icons.close,
+                          color: _textLight, size: 18),
+                      onPressed: () {
+                        _mapSearchController.clear();
+                        setState(() {});
+                      },
                     )
                         : null,
                     border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 14),
                   ),
                 ),
               ),
             ),
 
-            // Use my location button
             Positioned(
               top: 72, right: 12,
               child: GestureDetector(
                 onTap: _isLocating ? null : _useMyLocation,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 8),
                   decoration: BoxDecoration(
                     color: _surface,
                     borderRadius: BorderRadius.circular(10),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8)],
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 8)
+                    ],
                   ),
                   child: _isLocating
                       ? const SizedBox(
-                    width: 16, height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(_accent)),
-                  )
-                      : const Icon(Icons.my_location_rounded, color: _primary, size: 20),
+                      width: 16, height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation(_accent)))
+                      : const Icon(Icons.my_location_rounded,
+                      color: _primary, size: 20),
                 ),
               ),
             ),
 
-            // Tap to pin hint
             if (_pickedLocation == null && !_isSearchLoading)
               Positioned(
                 bottom: 12, left: 0, right: 0,
                 child: Center(
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 8),
                     decoration: BoxDecoration(
                       color: _textDark.withOpacity(0.82),
                       borderRadius: BorderRadius.circular(20),
@@ -686,47 +767,65 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
                     child: const Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.touch_app_rounded, color: _accent, size: 16),
+                        Icon(Icons.touch_app_rounded,
+                            color: _accent, size: 16),
                         SizedBox(width: 6),
                         Text('Tap the map to place a pin',
-                            style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600)),
                       ],
                     ),
                   ),
                 ),
               ),
 
-            // Reverse geocoding spinner
             if (_isReverseGeocoding)
               Positioned(
                 bottom: 12, right: 12,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(
                     color: _surface,
                     borderRadius: BorderRadius.circular(12),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 8)],
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black.withOpacity(0.08),
+                          blurRadius: 8)
+                    ],
                   ),
                   child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                    SizedBox(width: 14, height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(_accent))),
+                    SizedBox(
+                      width: 14, height: 14,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation(_accent)),
+                    ),
                     SizedBox(width: 8),
-                    Text('Getting address...', style: TextStyle(color: _textMid, fontSize: 12, fontWeight: FontWeight.w500)),
+                    Text('Getting address...',
+                        style: TextStyle(
+                            color: _textMid,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500)),
                   ]),
                 ),
               ),
           ]),
         ),
 
-        // Info / success banner
         const SizedBox(height: 12),
         AnimatedContainer(
           duration: const Duration(milliseconds: 300),
           padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: _accentSoft, borderRadius: BorderRadius.circular(12)),
+          decoration: BoxDecoration(
+              color: _accentSoft, borderRadius: BorderRadius.circular(12)),
           child: Row(children: [
             Icon(
-              _pickedLocation != null ? Icons.check_circle_outline : Icons.info_outline,
+              _pickedLocation != null
+                  ? Icons.check_circle_outline
+                  : Icons.info_outline,
               size: 16, color: _primary,
             ),
             const SizedBox(width: 8),
@@ -734,202 +833,306 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
               child: Text(
                 _pickedLocation != null
                     ? 'Coordinates & address auto-filled. Edit below if needed.'
-                    : 'Search a city above or tap the map to auto-fill all fields.',
-                style: const TextStyle(color: _primary, fontSize: 12, fontWeight: FontWeight.w500),
+                    : 'Search above or tap the map to auto-fill all fields.',
+                style: const TextStyle(
+                    color: _primary, fontSize: 12, fontWeight: FontWeight.w500),
               ),
             ),
           ]),
         ),
 
         const SizedBox(height: 20),
-        _buildTextField(label: 'Google Maps Link *', controller: _googlelinkController, hint: 'https://www.google.com/maps/...'),
+        _buildTextField(
+            label: 'Google Maps Link *',
+            controller: _googlelinkController,
+            hint: 'https://www.google.com/maps/...'),
         const SizedBox(height: 14),
         Row(children: [
-          Expanded(child: _buildTextField(label: 'Latitude', controller: _latitudeController, hint: '35.791', keyboardType: TextInputType.number)),
+          Expanded(child: _buildTextField(
+              label: 'Latitude',
+              controller: _latController,
+              hint: '35.6762',
+              keyboardType: TextInputType.number)),
           const SizedBox(width: 12),
-          Expanded(child: _buildTextField(label: 'Longitude', controller: _longitudeController, hint: '139.852', keyboardType: TextInputType.number)),
+          Expanded(child: _buildTextField(
+              label: 'Longitude',
+              controller: _lngController,
+              hint: '139.6503',
+              keyboardType: TextInputType.number)),
         ]),
         const SizedBox(height: 14),
-        _buildTextField(label: 'Address (EN)', controller: _addressEnController, hint: '6 Chome-5-1 Nishimizumoto...'),
-        const SizedBox(height: 14),
-        _buildTextField(label: 'Address (JP)', controller: _addressJpController, hint: '〒125-0031 東京都...'),
+        _buildTextField(
+            label: 'Address (English)',
+            controller: _addressEnController,
+            hint: 'e.g. 1-1 Shibuya, Tokyo'),
         const SizedBox(height: 14),
         Row(children: [
-          Expanded(child: _buildTextField(label: 'City (EN)', controller: _cityEnController, hint: 'Katsushika')),
+          Expanded(child: _buildTextField(
+              label: 'City',
+              controller: _cityEnController,
+              hint: 'e.g. Shibuya')),
           const SizedBox(width: 12),
-          Expanded(child: _buildTextField(label: 'City (JP)', controller: _cityJpController, hint: '葛飾区')),
+          Expanded(child: _buildTextField(
+              label: 'Prefecture',
+              controller: _prefectureEnController,
+              hint: 'e.g. Tokyo')),
         ]),
         const SizedBox(height: 14),
-        Row(children: [
-          Expanded(child: _buildTextField(label: 'Prefecture (EN)', controller: _prefectureEnController, hint: 'Tokyo')),
-          const SizedBox(width: 12),
-          Expanded(child: _buildTextField(label: 'Prefecture (JP)', controller: _prefectureJpController, hint: '東京都')),
-        ]),
+        _buildTextField(
+            label: 'Country',
+            controller: _countryController,
+            hint: 'Japan'),
         const SizedBox(height: 14),
-        _buildTextField(label: 'Country', controller: _countryController, hint: 'Japan'),
+        _buildTextField(
+            label: 'Website',
+            controller: _websiteController,
+            hint: 'https://example.com'),
         const SizedBox(height: 14),
-        _buildTextField(label: 'Website', controller: _websiteController, hint: 'https://example.com'),
-        const SizedBox(height: 14),
-        _buildTextField(label: 'Contact Email', controller: _contactEmailController, hint: 'https://example.com/contact'),
+        _buildTextField(
+            label: 'Contact Email',
+            controller: _contactEmailController,
+            hint: 'contact@example.com'),
       ]),
     );
   }
 
-  // ── Page 3: Amenities ─────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // PAGE 3 — Amenities
+  // ─────────────────────────────────────────────────────────────────────────
   Widget _buildAmenitiesPage() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _buildPageHeader('Court Type & Amenities', 'What does this venue offer?', Icons.star_outline),
+        _buildPageHeader(
+            'Court Type & Amenities',
+            'What does this venue offer?',
+            Icons.star_outline),
+
         _buildLabel('Court Type *'),
         const SizedBox(height: 10),
-        _buildCourtTypeSelector(),
-        const SizedBox(height: 22),
+        Row(
+          children: List.generate(3, (i) {
+            final isSelected = _courtType == _courtTypeValues[i];
+            return Expanded(
+              child: GestureDetector(
+                onTap: () => setState(() => _courtType = _courtTypeValues[i]),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  margin: EdgeInsets.only(right: i < 2 ? 8 : 0),
+                  padding: const EdgeInsets.symmetric(
+                      vertical: 14, horizontal: 6),
+                  decoration: BoxDecoration(
+                    color: isSelected ? _primary : _surface,
+                    border: Border.all(
+                      color: isSelected ? _primary : _border,
+                      width: isSelected ? 1.5 : 1,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: isSelected
+                        ? [
+                      BoxShadow(
+                          color: _primary.withOpacity(0.25),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4))
+                    ]
+                        : [
+                      BoxShadow(
+                          color: _primary.withOpacity(0.04),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2))
+                    ],
+                  ),
+                  child: Text(
+                    _courtTypeLabels[i],
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : _textLight,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.3,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
+        ),
+        const SizedBox(height: 24),
+
         _buildLabel('Pricing'),
         const SizedBox(height: 10),
-        _buildTextField(label: 'Price Info', controller: _priceController, hint: '¥4,000+ per hour'),
-        const SizedBox(height: 10),
-        _buildCheckbox('Courts are Free', _isPriceFree, (v) => setState(() => _isPriceFree = v ?? false)),
-        const SizedBox(height: 22),
+        _buildTextField(
+            label: 'Price Info',
+            controller: _priceController,
+            hint: 'e.g. ¥4,000/hr'),
+        const SizedBox(height: 12),
+        _buildToggleCheckbox(
+            label: 'Courts are Free',
+            value: _isPriceFree,
+            onChanged: (v) => setState(() => _isPriceFree = v)),
+        const SizedBox(height: 24),
+
         _buildLabel('Amenities'),
-        const SizedBox(height: 10),
-        _buildCheckbox('Dedicated Pickleball Court', _isDedicated, (v) => setState(() => _isDedicated = v ?? false)),
-        const SizedBox(height: 8),
-        _buildCheckbox('Requires Membership', _requiresMembership, (v) => setState(() => _requiresMembership = v ?? false)),
-        const SizedBox(height: 8),
-        _buildCheckbox('Open Play Available', _hasOpenPlay, (v) => setState(() => _hasOpenPlay = v ?? false)),
-        const SizedBox(height: 8),
-        _buildCheckbox('Reservations Required', _requiresReservations, (v) => setState(() => _requiresReservations = v ?? false)),
-        const SizedBox(height: 8),
-        _buildCheckbox('Lessons Available', _hasLessons, (v) => setState(() => _hasLessons = v ?? false)),
-        const SizedBox(height: 8),
-        _buildCheckbox('Paddle Rentals', _hasPaddleRentals, (v) => setState(() => _hasPaddleRentals = v ?? false)),
+        const SizedBox(height: 12),
+        _buildAmenityRow(
+            label: 'Dedicated Pickleball Court',
+            value: _dedicated,
+            onChanged: (v) => setState(() => _dedicated = v ?? '')),
+        const SizedBox(height: 12),
+        _buildAmenityRow(
+            label: 'Requires Membership',
+            value: _membership,
+            onChanged: (v) => setState(() => _membership = v ?? '')),
+        const SizedBox(height: 12),
+        _buildAmenityRow(
+            label: 'Open Play Available',
+            value: _openPlay,
+            onChanged: (v) => setState(() => _openPlay = v ?? '')),
+        const SizedBox(height: 12),
+        _buildAmenityRow(
+            label: 'Reservations Required',
+            value: _reservations,
+            onChanged: (v) => setState(() => _reservations = v ?? '')),
+        const SizedBox(height: 12),
+        _buildAmenityRow(
+            label: 'Lessons Available',
+            value: _lessons,
+            onChanged: (v) => setState(() => _lessons = v ?? '')),
+        const SizedBox(height: 12),
+        _buildAmenityRow(
+            label: 'Paddle Rentals',
+            value: _paddleRentals,
+            onChanged: (v) => setState(() => _paddleRentals = v ?? '')),
       ]),
     );
   }
 
-  // ── Page 4: Hours ─────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // PAGE 4 — Hours (notes only)
+  // ─────────────────────────────────────────────────────────────────────────
   Widget _buildHoursPage() {
-    final days = [
-      ('Monday',    _hoursMonController),
-      ('Tuesday',   _hoursTuesController),
-      ('Wednesday', _hoursWedsController),
-      ('Thursday',  _hoursThursController),
-      ('Friday',    _hoursFriController),
-      ('Saturday',  _hoursSatController),
-      ('Sunday',    _hoursSunController),
-    ];
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _buildPageHeader('Operating Hours', 'When is the court open?', Icons.schedule_outlined),
-        Container(
-          padding: const EdgeInsets.all(12),
-          margin: const EdgeInsets.only(bottom: 20),
-          decoration: BoxDecoration(color: _accentSoft, borderRadius: BorderRadius.circular(12)),
-          child: const Row(children: [
-            Icon(Icons.info_outline, size: 16, color: _primary),
-            SizedBox(width: 8),
-            Text('Format: HH:MM-HH:MM  (e.g. 09:00-22:00)',
-                style: TextStyle(color: _primary, fontSize: 12, fontWeight: FontWeight.w500)),
-          ]),
-        ),
-        ...days.map((d) => Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: _buildTextField(label: d.$1, controller: d.$2, hint: '09:00-22:00'),
-        )),
-        const SizedBox(height: 8),
-        _buildTextField(label: 'Additional Notes', controller: _notesController,
-            hint: 'e.g. online contact required', maxLines: 4),
+        _buildPageHeader('Operating Hours', 'When is the court open?',
+            Icons.schedule_outlined),
+        _buildTextField(
+            label: 'Additional Notes',
+            controller: _notesController,
+            hint: 'e.g. "Open weekdays 9am–10pm, weekends 8am–8pm"',
+            maxLines: 4),
       ]),
     );
   }
 
-  // ── Page 5: Summary ───────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // PAGE 5 — Review & Submit
+  // ─────────────────────────────────────────────────────────────────────────
   Widget _buildSummaryPage() {
-    final amenities = [
-      if (_isDedicated)          'Dedicated Court',
-      if (_requiresMembership)   'Requires Membership',
-      if (_hasOpenPlay)          'Open Play',
-      if (_requiresReservations) 'Reservations',
-      if (_hasLessons)           'Lessons',
-      if (_hasPaddleRentals)     'Paddle Rentals',
-    ];
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _buildPageHeader('Review & Submit', 'Everything look good?', Icons.check_circle_outline),
+    String amenityDisplay(String v) => v.isEmpty ? '—' : v;
 
-        // Cover image preview in summary
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        _buildPageHeader(
+            'Review & Submit', 'Everything look good?',
+            Icons.check_circle_outline),
+
         if (_pickedImage != null) ...[
           _buildLabel('Cover Picture'),
           const SizedBox(height: 8),
           ClipRRect(
             borderRadius: BorderRadius.circular(14),
-            child: Image.file(_pickedImage!, width: double.infinity, height: 140, fit: BoxFit.cover),
+            child: Image.file(_pickedImage!,
+                width: double.infinity,
+                height: 140,
+                fit: BoxFit.cover),
           ),
           const SizedBox(height: 16),
         ],
 
-        _buildSummarySection('Court', [
-          ('Name',   _nameEnController.text.isEmpty ? '—' : _nameEnController.text),
-          ('Type',   _typeController.text.isEmpty ? '—' : _typeController.text),
-          ('Courts', _courtCountController.text.isEmpty ? '—' : _courtCountController.text),
+        _buildSummarySection('Basic Info', [
+          ('Name',    _nameController.text.isEmpty ? '—' : _nameController.text),
+          ('Type',    _locType),
+          ('Courts',  _courtCountController.text.isEmpty ? '—' : _courtCountController.text),
+          ('Access',  _isPublic ? 'Open to public' : 'Requires setup'),
         ]),
         const SizedBox(height: 12),
+
         _buildSummarySection('Location', [
-          ('Lat',        _latitudeController.text.isEmpty ? '—' : _latitudeController.text),
-          ('Lng',        _longitudeController.text.isEmpty ? '—' : _longitudeController.text),
+          ('Latitude',   _latController.text.isEmpty ? '—' : _latController.text),
+          ('Longitude',  _lngController.text.isEmpty ? '—' : _lngController.text),
           ('City',       _cityEnController.text.isEmpty ? '—' : _cityEnController.text),
           ('Prefecture', _prefectureEnController.text.isEmpty ? '—' : _prefectureEnController.text),
+          ('Country',    _countryController.text.isEmpty ? '—' : _countryController.text),
         ]),
         const SizedBox(height: 12),
-        _buildSummarySection('Pricing', [
-          ('Price',      _isPriceFree ? 'Free' : (_priceController.text.isEmpty ? '—' : _priceController.text)),
-          ('Court Type', _selectedCourtType),
+
+        _buildSummarySection('Court & Pricing', [
+          ('Court Type', _courtType),
+          ('Price', _isPriceFree ? 'Free' : (_priceController.text.isEmpty ? '—' : _priceController.text)),
         ]),
-        if (amenities.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          _buildLabel('Amenities'),
-          const SizedBox(height: 8),
-          Wrap(spacing: 8, runSpacing: 8, children: amenities.map(_buildAmenityBadge).toList()),
-        ],
+        const SizedBox(height: 12),
+
+        _buildSummarySection('Amenities', [
+          ('Dedicated Court', amenityDisplay(_dedicated)),
+          ('Membership',      amenityDisplay(_membership)),
+          ('Open Play',       amenityDisplay(_openPlay)),
+          ('Reservations',    amenityDisplay(_reservations)),
+          ('Lessons',         amenityDisplay(_lessons)),
+          ('Paddle Rentals',  amenityDisplay(_paddleRentals)),
+        ]),
         const SizedBox(height: 24),
 
-        // Upload progress indicator
         if (_isUploadingImage) ...[
           Container(
             padding: const EdgeInsets.all(14),
             margin: const EdgeInsets.only(bottom: 16),
-            decoration: BoxDecoration(color: _accentSoft, borderRadius: BorderRadius.circular(12)),
+            decoration: BoxDecoration(
+                color: _accentSoft, borderRadius: BorderRadius.circular(12)),
             child: const Row(children: [
-              SizedBox(width: 16, height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(_primary))),
+              SizedBox(
+                width: 16, height: 16,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation(_primary)),
+              ),
               SizedBox(width: 12),
-              Text('Uploading cover image...', style: TextStyle(color: _primary, fontSize: 13, fontWeight: FontWeight.w600)),
+              Text('Uploading cover image...',
+                  style: TextStyle(
+                      color: _primary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600)),
             ]),
           ),
         ],
 
         Container(
           padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(color: _accentSoft, borderRadius: BorderRadius.circular(16)),
-          child: const Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Icon(Icons.info_outline, size: 18, color: _primary),
-            SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                'By submitting, you agree that this information will be reviewed by our team before appearing on the app.',
-                style: TextStyle(color: _textMid, fontSize: 13, height: 1.5),
-              ),
-            ),
-          ]),
+          decoration: BoxDecoration(
+              color: _accentSoft, borderRadius: BorderRadius.circular(16)),
+          child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.info_outline, size: 18, color: _primary),
+                SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'By submitting, you agree that this information will be reviewed by our team before appearing on the app.',
+                    style: TextStyle(
+                        color: _textMid, fontSize: 13, height: 1.5),
+                  ),
+                ),
+              ]),
         ),
       ]),
     );
   }
 
-  // ── Bottom nav ────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // BOTTOM NAV
+  // ─────────────────────────────────────────────────────────────────────────
   Widget _buildBottomNav() {
     return Container(
       color: _surface,
@@ -942,14 +1145,19 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
           Expanded(
             child: OutlinedButton(
               onPressed: () => _pageController.previousPage(
-                  duration: const Duration(milliseconds: 300), curve: Curves.easeInOut),
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeInOut),
               style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: _border, width: 1.5),
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
               ),
               child: const Text('Back',
-                  style: TextStyle(color: _textMid, fontWeight: FontWeight.w600, fontSize: 15)),
+                  style: TextStyle(
+                      color: _textMid,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 15)),
             ),
           ),
           const SizedBox(width: 12),
@@ -957,12 +1165,15 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
         Expanded(
           flex: 2,
           child: ElevatedButton(
-            onPressed: _isLoading ? null : () {
+            onPressed: _isLoading
+                ? null
+                : () {
               if (_currentPage == 4) {
                 _submitForm();
               } else {
                 _pageController.nextPage(
-                    duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut);
               }
             },
             style: ElevatedButton.styleFrom(
@@ -970,14 +1181,23 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
               disabledBackgroundColor: _accent.withOpacity(0.4),
               padding: const EdgeInsets.symmetric(vertical: 16),
               elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14)),
             ),
             child: _isLoading
-                ? const SizedBox(height: 20, width: 20,
-                child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(Colors.white)))
+                ? const SizedBox(
+                height: 20, width: 20,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation(Colors.white)))
                 : Text(
-              _currentPage == 4 ? 'Submit Court' : 'Continue',
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 15),
+              _currentPage == 4
+                  ? 'SAVE COURT INFORMATION'
+                  : 'Continue',
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15),
             ),
           ),
         ),
@@ -985,24 +1205,34 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
     );
   }
 
-  // ── Shared widgets ────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // SHARED WIDGETS
+  // ─────────────────────────────────────────────────────────────────────────
   Widget _buildPageHeader(String title, String subtitle, IconData icon) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 24),
       child: Row(children: [
         Container(
           padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: _accentSoft, borderRadius: BorderRadius.circular(14)),
+          decoration: BoxDecoration(
+              color: _accentSoft, borderRadius: BorderRadius.circular(14)),
           child: Icon(icon, color: _primary, size: 22),
         ),
         const SizedBox(width: 14),
         Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(title, style: const TextStyle(
-                color: _textDark, fontWeight: FontWeight.w800, fontSize: 18, letterSpacing: -0.3)),
-            const SizedBox(height: 2),
-            Text(subtitle, style: const TextStyle(color: _textLight, fontSize: 12)),
-          ]),
+          child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: const TextStyle(
+                        color: _textDark,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 18,
+                        letterSpacing: -0.3)),
+                const SizedBox(height: 2),
+                Text(subtitle,
+                    style: const TextStyle(color: _textLight, fontSize: 12)),
+              ]),
         ),
       ]),
     );
@@ -1010,7 +1240,11 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
 
   Widget _buildLabel(String text) => Text(
     text,
-    style: const TextStyle(color: _textMid, fontSize: 13, fontWeight: FontWeight.w700, letterSpacing: 0.2),
+    style: const TextStyle(
+        color: _textMid,
+        fontSize: 13,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 0.2),
   );
 
   Widget _buildTextField({
@@ -1027,22 +1261,149 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
         controller: controller,
         keyboardType: keyboardType,
         maxLines: maxLines,
-        style: const TextStyle(color: _textDark, fontSize: 14, fontWeight: FontWeight.w500),
+        style: const TextStyle(
+            color: _textDark, fontSize: 14, fontWeight: FontWeight.w500),
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: const TextStyle(color: _textLight, fontSize: 14),
           filled: true,
           fillColor: _surface,
-          border:        OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _border, width: 1)),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _border, width: 1)),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: _accent, width: 1.5)),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: _border, width: 1)),
+          enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: _border, width: 1)),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: _accent, width: 1.5)),
+          contentPadding:
+          const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
         ),
       ),
     ]);
   }
 
-  Widget _buildCheckbox(String label, bool value, Function(bool?) onChanged) {
+  Widget _buildDropdown<T>({
+    required T value,
+    required List<T> items,
+    required String Function(T) itemLabel,
+    required ValueChanged<T?> onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _border, width: 1),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<T>(
+          value: value,
+          isExpanded: true,
+          dropdownColor: _surface,
+          style: const TextStyle(
+              color: _textDark, fontSize: 14, fontWeight: FontWeight.w500),
+          icon: const Icon(Icons.keyboard_arrow_down_rounded,
+              color: _textLight, size: 20),
+          items: items
+              .map((v) => DropdownMenuItem<T>(
+            value: v,
+            child: Text(itemLabel(v)),
+          ))
+              .toList(),
+          onChanged: onChanged,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAmenityRow({
+    required String label,
+    required String value,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(label,
+              style: const TextStyle(
+                  color: _textDark,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500)),
+        ),
+        const SizedBox(width: 12),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: _surface,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+                color: value.isNotEmpty ? _accent : _border, width: 1),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: value.isEmpty ? '' : value,
+              dropdownColor: _surface,
+              style: TextStyle(
+                  color: value.isNotEmpty ? _primary : _textLight,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600),
+              icon: const Icon(Icons.keyboard_arrow_down_rounded,
+                  color: _textLight, size: 16),
+              items: _amenityOpts
+                  .map((o) => DropdownMenuItem<String>(
+                value: o,
+                child: Text(
+                  o.isEmpty ? 'Select...' : o,
+                  style: TextStyle(
+                      color: o.isEmpty ? _textLight : _textDark,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500),
+                ),
+              ))
+                  .toList(),
+              onChanged: onChanged,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildToggleButton({
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 13),
+        decoration: BoxDecoration(
+          color: selected ? _accentSoft : _surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+              color: selected ? _accent : _border,
+              width: selected ? 1.5 : 1),
+        ),
+        child: Center(
+          child: Text(label,
+              style: TextStyle(
+                  color: selected ? _primary : _textMid,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700)),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildToggleCheckbox({
+    required String label,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
     return GestureDetector(
       onTap: () => onChanged(!value),
       child: AnimatedContainer(
@@ -1051,8 +1412,8 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
         decoration: BoxDecoration(
           color: value ? _accentSoft : _surface,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: value ? _accent : _border, width: value ? 1.5 : 1),
-          boxShadow: [BoxShadow(color: _primary.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
+          border: Border.all(
+              color: value ? _accent : _border, width: value ? 1.5 : 1),
         ),
         child: Row(children: [
           AnimatedContainer(
@@ -1060,91 +1421,74 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
             width: 22, height: 22,
             decoration: BoxDecoration(
               color: value ? _primary : Colors.transparent,
-              border: Border.all(color: value ? _primary : _border, width: 1.5),
+              border: Border.all(
+                  color: value ? _primary : _border, width: 1.5),
               borderRadius: BorderRadius.circular(6),
             ),
-            child: value ? const Icon(Icons.check, size: 15, color: Colors.white) : null,
+            child: value
+                ? const Icon(Icons.check, size: 15, color: Colors.white)
+                : null,
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(label, style: TextStyle(
-              color: value ? _textDark : _textMid,
-              fontSize: 14,
-              fontWeight: value ? FontWeight.w600 : FontWeight.w500,
-            )),
+            child: Text(label,
+                style: TextStyle(
+                    color: value ? _textDark : _textMid,
+                    fontSize: 14,
+                    fontWeight:
+                    value ? FontWeight.w600 : FontWeight.w500)),
           ),
         ]),
       ),
     );
   }
 
-  Widget _buildCourtTypeSelector() {
-    final labels = ['INDOOR\nCOURTS', 'OUTDOOR\nCOURTS', 'INDOOR/\nOUTDOOR'];
-    final values = ['INDOOR COURTS', 'OUTDOOR COURTS', 'INDOOR/OUTDOOR COURTS'];
-    return Row(
-      children: List.generate(3, (i) {
-        final isSelected = _selectedCourtType == values[i];
-        return Expanded(
-          child: GestureDetector(
-            onTap: () => setState(() => _selectedCourtType = values[i]),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              margin: EdgeInsets.only(right: i < 2 ? 8 : 0),
-              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
-              decoration: BoxDecoration(
-                color: isSelected ? _primary : _surface,
-                border: Border.all(color: isSelected ? _primary : _border, width: isSelected ? 1.5 : 1),
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: isSelected
-                    ? [BoxShadow(color: _primary.withOpacity(0.25), blurRadius: 10, offset: const Offset(0, 4))]
-                    : [BoxShadow(color: _primary.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 2))],
-              ),
-              child: Text(labels[i], textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: isSelected ? Colors.white : _textLight,
-                    fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 0.3, height: 1.4,
-                  )),
-            ),
-          ),
-        );
-      }),
-    );
-  }
-
   Widget _buildSummarySection(String title, List<(String, String)> rows) {
     return Container(
       decoration: BoxDecoration(
-        color: _surface, borderRadius: BorderRadius.circular(16),
+        color: _surface,
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _border),
-        boxShadow: [BoxShadow(color: _primary.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
+        boxShadow: [
+          BoxShadow(
+              color: _primary.withOpacity(0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2))
+        ],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-          child: Text(title, style: const TextStyle(color: _accent, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1)),
+          child: Text(title.toUpperCase(),
+              style: const TextStyle(
+                  color: _accent,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1)),
         ),
         const Divider(height: 1, color: _border),
         ...rows.map((r) => Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-            Text(r.$1, style: const TextStyle(color: _textLight, fontSize: 13, fontWeight: FontWeight.w500)),
-            Flexible(child: Text(r.$2,
-                style: const TextStyle(color: _textDark, fontSize: 13, fontWeight: FontWeight.w600),
-                textAlign: TextAlign.end)),
-          ]),
+          child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(r.$1,
+                    style: const TextStyle(
+                        color: _textLight,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500)),
+                const SizedBox(width: 16),
+                Flexible(
+                  child: Text(r.$2,
+                      style: const TextStyle(
+                          color: _textDark,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600),
+                      textAlign: TextAlign.end),
+                ),
+              ]),
         )),
       ]),
-    );
-  }
-
-  Widget _buildAmenityBadge(String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: _accentSoft, borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _accent.withOpacity(0.4)),
-      ),
-      child: Text(label, style: const TextStyle(color: _primary, fontSize: 12, fontWeight: FontWeight.w600)),
     );
   }
 }
