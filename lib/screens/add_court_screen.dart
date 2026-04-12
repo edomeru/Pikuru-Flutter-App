@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -7,6 +8,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:http/http.dart' as http;
 
 class AddCourtScreen extends ConsumerStatefulWidget {
   const AddCourtScreen({Key? key}) : super(key: key);
@@ -34,16 +36,16 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
 
   // ── Map State ─────────────────────────────────────────────────────────────
   GoogleMapController? _mapController;
-  final LatLng _defaultCenter    = const LatLng(35.6762, 139.6503);
+  final LatLng _defaultCenter = const LatLng(35.6762, 139.6503);
   LatLng? _pickedLocation;
-  Set<Marker> _markers           = {};
-  bool _isReverseGeocoding       = false;
-  bool _isSearchLoading          = false;
-  bool _isLocating               = false;
+  Set<Marker> _markers        = {};
+  bool _isReverseGeocoding    = false;
+  bool _isSearchLoading       = false;
+  bool _isLocating            = false;
 
   // ── Image State ───────────────────────────────────────────────────────────
-  File?  _pickedImage;
-  bool   _isUploadingImage       = false;
+  File? _pickedImage;
+  bool  _isUploadingImage = false;
 
   // ── Form Controllers ──────────────────────────────────────────────────────
   late TextEditingController _nameController;
@@ -66,7 +68,7 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
     'Arena', 'Professional Courts', 'Gym/Club', 'Gymnasium',
     'Public Court', 'Event Center', 'Resort/Hotel', 'School',
   ];
-  String _locType          = 'Gym/Club';
+  String _locType = 'Gym/Club';
 
   static const List<String> _courtTypeLabels = [
     'INDOOR\nCOURTS', 'OUTDOOR\nCOURTS', 'INDOOR/\nOUTDOOR',
@@ -76,18 +78,18 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
   ];
   String _courtType = 'INDOOR COURTS';
 
-  bool _isPublic = true;
+  bool _isPublic    = true;
   bool _isPriceFree = false;
 
   static const List<String> _amenityOpts = ['', 'Yes', 'No', 'Unknown'];
-  String _dedicated        = '';
-  String _membership       = '';
-  String _openPlay         = '';
-  String _reservations     = '';
-  String _lessons          = '';
-  String _paddleRentals    = '';
+  String _dedicated     = '';
+  String _membership    = '';
+  String _openPlay      = '';
+  String _reservations  = '';
+  String _lessons       = '';
+  String _paddleRentals = '';
 
-  bool _isLoading    = false;
+  bool   _isLoading  = false;
   String _errorText  = '';
 
   final List<String> _stepLabels = [
@@ -122,11 +124,76 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
     for (final c in [
       _nameController, _courtCountController,
       _addressEnController, _cityEnController, _prefectureEnController,
-      _countryController, _latController, _lngController, _googlelinkController,
-      _websiteController, _contactEmailController, _priceController,
-      _notesController, _mapSearchController,
-    ]) { c.dispose(); }
+      _countryController, _latController, _lngController,
+      _googlelinkController, _websiteController, _contactEmailController,
+      _priceController, _notesController, _mapSearchController,
+    ]) {
+      c.dispose();
+    }
     super.dispose();
+  }
+
+  // ── Language detection ────────────────────────────────────────────────────
+  bool _isJapanese(String text) {
+    return RegExp(r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF]').hasMatch(text);
+  }
+
+  // ── Claude translation helper ─────────────────────────────────────────────
+  Future<String> _translate(String text, String toLang) async {
+    if (text.trim().isEmpty) return '';
+    try {
+      const apiKey = 'YOUR_ACTUAL_API_KEY_HERE'; // ← replace with your real key
+      final response = await http.post(
+        Uri.parse('https://api.anthropic.com/v1/messages'),
+        headers: {
+          'Content-Type':      'application/json',
+          'x-api-key':         apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: jsonEncode({
+          'model':      'claude-haiku-4-5-20251001',
+          'max_tokens': 256,
+          'messages': [
+            {
+              'role':    'user',
+              'content': 'Translate the following text to $toLang. '
+                  'Return ONLY the translated text with no explanation, '
+                  'no quotes, and no extra punctuation.\n\n$text',
+            }
+          ],
+        }),
+      ).timeout(const Duration(seconds: 20));
+
+      debugPrint('[_translate] status: ${response.statusCode}');
+      debugPrint('[_translate] body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final body    = jsonDecode(response.body) as Map<String, dynamic>;
+        final content = body['content'] as List<dynamic>;
+        if (content.isNotEmpty) {
+          final translated = (content.first['text'] as String? ?? '').trim();
+          debugPrint('[_translate] "$text" → "$translated"');
+          return translated;
+        }
+      } else {
+        debugPrint('[_translate] ERROR ${response.statusCode}: ${response.body}');
+      }
+    } catch (e, st) {
+      debugPrint('[_translate] Exception: $e\n$st');
+    }
+    return '';
+  }
+
+  // ── Resolve bilingual pair ────────────────────────────────────────────────
+  Future<({String en, String jp})> _resolveBilingual(String raw) async {
+    if (raw.trim().isEmpty) return (en: '', jp: '');
+    if (_isJapanese(raw)) {
+      final en = await _translate(raw, 'English');
+      return (en: en, jp: raw);
+    } else {
+      final jp = await _translate(raw, 'Japanese');
+      return (en: raw, jp: jp);
+    }
   }
 
   // ── Generate next loc_id ──────────────────────────────────────────────────
@@ -162,9 +229,9 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
     final lat = position.latitude.toStringAsFixed(6);
     final lng = position.longitude.toStringAsFixed(6);
     setState(() {
-      _pickedLocation        = position;
-      _isReverseGeocoding    = true;
-      _markers               = {
+      _pickedLocation     = position;
+      _isReverseGeocoding = true;
+      _markers            = {
         Marker(
           markerId: const MarkerId('picked'),
           position: position,
@@ -190,14 +257,17 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
               .where((s) => s != null && s!.isNotEmpty)
               .join(' ');
           if (street.isNotEmpty) _addressEnController.text = street;
-          if ((p.locality ?? '').isNotEmpty)
+          if ((p.locality ?? '').isNotEmpty) {
             _cityEnController.text = p.locality!;
-          else if ((p.subAdministrativeArea ?? '').isNotEmpty)
+          } else if ((p.subAdministrativeArea ?? '').isNotEmpty) {
             _cityEnController.text = p.subAdministrativeArea!;
-          if ((p.administrativeArea ?? '').isNotEmpty)
+          }
+          if ((p.administrativeArea ?? '').isNotEmpty) {
             _prefectureEnController.text = p.administrativeArea!;
-          if ((p.country ?? '').isNotEmpty)
+          }
+          if ((p.country ?? '').isNotEmpty) {
             _countryController.text = p.country!;
+          }
         });
       }
     } catch (_) {
@@ -260,17 +330,37 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
     if (_nameController.text.trim().isEmpty ||
         _googlelinkController.text.trim().isEmpty ||
         _courtType.isEmpty) {
-      setState(() =>
-      _errorText = 'Please fill out at least the Name, Google Map Link, and Court Type.');
+      setState(() => _errorText =
+      'Please fill out at least the Name, Google Map Link, and Court Type.');
       _pageController.animateToPage(0,
-          duration: const Duration(milliseconds: 300), curve: Curves.easeInOut);
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut);
       return;
     }
-    setState(() { _isLoading = true; _errorText = ''; });
+    setState(() {
+      _isLoading = true;
+      _errorText = '';
+    });
 
     try {
       final newLocId = await _generateNextLocId();
 
+      // ── 1. Resolve bilingual name & address sequentially ─────────────────
+      final rawName    = _nameController.text.trim();
+      final rawAddress = _addressEnController.text.trim();
+
+      final nameResult    = await _resolveBilingual(rawName);
+      final addressResult = await _resolveBilingual(rawAddress);
+
+      final nameEn    = nameResult.en;
+      final nameJp    = nameResult.jp;
+      final addressEn = addressResult.en;
+      final addressJp = addressResult.jp;
+
+      debugPrint('[submit] nameEn=$nameEn | nameJp=$nameJp');
+      debugPrint('[submit] addressEn=$addressEn | addressJp=$addressJp');
+
+      // ── 2. Upload image ──────────────────────────────────────────────────
       String imageUrl = '';
       if (_pickedImage != null) {
         setState(() => _isUploadingImage = true);
@@ -278,13 +368,13 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
           final fileRef = FirebaseStorage.instance.ref(
               'court_images/${DateTime.now().millisecondsSinceEpoch}_'
                   '${_pickedImage!.path.split('/').last}');
-          final snap = await fileRef.putFile(_pickedImage!).timeout(
-              const Duration(seconds: 30));
+          final snap = await fileRef
+              .putFile(_pickedImage!)
+              .timeout(const Duration(seconds: 30));
           imageUrl = await snap.ref.getDownloadURL();
         } catch (_) {
           if (mounted) {
-            _showSnack(
-                'Could not upload image — saving court without it.',
+            _showSnack('Could not upload image — saving court without it.',
                 isError: false);
           }
         } finally {
@@ -292,34 +382,39 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
         }
       }
 
+      // ── 3. Write to Firestore ────────────────────────────────────────────
       await FirebaseFirestore.instance.collection('locations').add({
-        'loc_id':              newLocId,
-        'loc_pending_review':  true,
-        'loc_active':          false,
-        'loc_checked':         false,
-        'loc_added':           FieldValue.serverTimestamp(),
-        'loc_created_at':      DateTime.now().toIso8601String(),
-        'loc_updated_at':      DateTime.now().toIso8601String(),
-        'loc_org_id':          '',
+        'loc_id':             newLocId,
+        'loc_pending_review': true,
+        'loc_active':         false,
+        'loc_checked':        false,
+        'loc_added':          FieldValue.serverTimestamp(),
+        'loc_created_at':     DateTime.now().toIso8601String(),
+        'loc_updated_at':     DateTime.now().toIso8601String(),
+        'loc_org_id':         '',
 
-        'loc_name':            _nameController.text.trim(),
-        'loc_name_jp':         '',
-        'loc_type':            _locType,
-        'loc_court_count':     int.tryParse(_courtCountController.text) ?? 0,
-        'loc_setup_type':      _isPublic ? 'Open to public' : 'Requires setup',
+        // ── name (bilingual) ──────────────────────────────────────────────
+        'loc_name':    nameEn,
+        'loc_name_jp': nameJp,
 
-        'loc_address':         _addressEnController.text.trim(),
-        'loc_address_jp':      '',
-        'loc_city_en':         _cityEnController.text.trim(),
-        'loc_city_jp':         '',
-        'loc_prefecture_en':   _prefectureEnController.text.trim(),
-        'loc_prefecture_jp':   '',
-        'loc_country':         _countryController.text.trim(),
-        'loc_latitude':        _latController.text.trim(),
-        'loc_longitude':       _lngController.text.trim(),
-        'loc_googlelink':      _googlelinkController.text.trim(),
-        'loc_website':         _websiteController.text.trim(),
-        'loc_contact_email':   _contactEmailController.text.trim(),
+        'loc_type':        _locType,
+        'loc_court_count': int.tryParse(_courtCountController.text) ?? 0,
+        'loc_setup_type':  _isPublic ? 'Open to public' : 'Requires setup',
+
+        // ── address (bilingual) ───────────────────────────────────────────
+        'loc_address':    addressEn,
+        'loc_address_jp': addressJp,
+
+        'loc_city_en':       _cityEnController.text.trim(),
+        'loc_city_jp':       '',
+        'loc_prefecture_en': _prefectureEnController.text.trim(),
+        'loc_prefecture_jp': '',
+        'loc_country':       _countryController.text.trim(),
+        'loc_latitude':      _latController.text.trim(),
+        'loc_longitude':     _lngController.text.trim(),
+        'loc_googlelink':    _googlelinkController.text.trim(),
+        'loc_website':       _websiteController.text.trim(),
+        'loc_contact_email': _contactEmailController.text.trim(),
 
         'loc_court_type_indoor':
         _courtType == 'INDOOR COURTS' ||
@@ -328,8 +423,8 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
         _courtType == 'OUTDOOR COURTS' ||
             _courtType == 'INDOOR/OUTDOOR COURTS',
 
-        'loc_price':           _priceController.text.trim(),
-        'loc_price_free':      _isPriceFree,
+        'loc_price':      _priceController.text.trim(),
+        'loc_price_free': _isPriceFree,
 
         'loc_amenities_dedicated':     _dedicated,
         'loc_amenities_membership':    _membership,
@@ -347,12 +442,13 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
         'loc_hours_sun':   '',
         'loc_hours_notes': '',
 
-        'loc_notes':  _notesController.text.trim(),
-        'loc_image':  imageUrl.isNotEmpty ? imageUrl : null,
+        'loc_notes': _notesController.text.trim(),
+        'loc_image': imageUrl.isNotEmpty ? imageUrl : null,
       });
 
       if (mounted) {
-        _showSnack('Court submitted for review!');
+        _showSnack(
+            'Court is under review. It will be added to our system within 48 hours');
         Navigator.pop(context);
       }
     } catch (e) {
@@ -371,10 +467,8 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
           style: const TextStyle(fontWeight: FontWeight.w600)),
       backgroundColor: isError ? Colors.red.shade400 : _primary,
       behavior: SnackBarBehavior.floating,
-      shape:
-      RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      margin:
-      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
     ));
   }
 
@@ -433,8 +527,7 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: _errorColor.withOpacity(0.3))),
             child: Row(children: [
-              const Icon(Icons.error_outline,
-                  color: _errorColor, size: 16),
+              const Icon(Icons.error_outline, color: _errorColor, size: 16),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(_errorText,
@@ -445,8 +538,7 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
               ),
               GestureDetector(
                 onTap: () => setState(() => _errorText = ''),
-                child: const Icon(Icons.close,
-                    color: _errorColor, size: 16),
+                child: const Icon(Icons.close, color: _errorColor, size: 16),
               ),
             ]),
           ),
@@ -508,7 +600,7 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
             Icons.sports_tennis),
 
         _buildTextField(
-            label: 'Court Name (English) *',
+            label: 'Court Name *',
             controller: _nameController,
             hint: 'e.g. Tokyo Pickleball Club'),
         const SizedBox(height: 14),
@@ -576,8 +668,7 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
               Positioned(
                 bottom: 0, left: 0, right: 0,
                 child: Container(
-                  padding:
-                  const EdgeInsets.symmetric(vertical: 8),
+                  padding: const EdgeInsets.symmetric(vertical: 8),
                   color: Colors.black.withOpacity(0.45),
                   child: const Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -616,8 +707,7 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
                   padding: EdgeInsets.symmetric(horizontal: 24),
                   child: Text(
                     'This will be used as the cover photo in listings.',
-                    style: TextStyle(
-                        color: _textLight, fontSize: 12),
+                    style: TextStyle(color: _textLight, fontSize: 12),
                     textAlign: TextAlign.center,
                   ),
                 ),
@@ -666,6 +756,7 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
               mapToolbarEnabled: false,
             ),
 
+            // Search bar
             Positioned(
               top: 12, left: 12, right: 12,
               child: Container(
@@ -690,8 +781,8 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
                   onChanged: (_) => setState(() {}),
                   decoration: InputDecoration(
                     hintText: 'Search for a court or place...',
-                    hintStyle: const TextStyle(
-                        color: _textLight, fontSize: 13),
+                    hintStyle:
+                    const TextStyle(color: _textLight, fontSize: 13),
                     prefixIcon: _isSearchLoading
                         ? const Padding(
                       padding: EdgeInsets.all(13),
@@ -699,14 +790,14 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
                         width: 18, height: 18,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation(_accent),
+                          valueColor:
+                          AlwaysStoppedAnimation(_accent),
                         ),
                       ),
                     )
                         : const Icon(Icons.search_rounded,
                         color: _accent, size: 20),
-                    suffixIcon:
-                    _mapSearchController.text.isNotEmpty &&
+                    suffixIcon: _mapSearchController.text.isNotEmpty &&
                         !_isSearchLoading
                         ? IconButton(
                       icon: const Icon(Icons.close,
@@ -725,6 +816,7 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
               ),
             ),
 
+            // Use my location button
             Positioned(
               top: 72, right: 12,
               child: GestureDetector(
@@ -746,13 +838,15 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
                       width: 16, height: 16,
                       child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation(_accent)))
+                          valueColor:
+                          AlwaysStoppedAnimation(_accent)))
                       : const Icon(Icons.my_location_rounded,
                       color: _primary, size: 20),
                 ),
               ),
             ),
 
+            // Tap hint
             if (_pickedLocation == null && !_isSearchLoading)
               Positioned(
                 bottom: 12, left: 0, right: 0,
@@ -781,6 +875,7 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
                 ),
               ),
 
+            // Reverse geocoding spinner
             if (_isReverseGeocoding)
               Positioned(
                 bottom: 12, right: 12,
@@ -796,20 +891,23 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
                           blurRadius: 8)
                     ],
                   ),
-                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                    SizedBox(
-                      width: 14, height: 14,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation(_accent)),
-                    ),
-                    SizedBox(width: 8),
-                    Text('Getting address...',
-                        style: TextStyle(
-                            color: _textMid,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500)),
-                  ]),
+                  child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                          width: 14, height: 14,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor:
+                              AlwaysStoppedAnimation(_accent)),
+                        ),
+                        SizedBox(width: 8),
+                        Text('Getting address...',
+                            style: TextStyle(
+                                color: _textMid,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500)),
+                      ]),
                 ),
               ),
           ]),
@@ -820,7 +918,8 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
           duration: const Duration(milliseconds: 300),
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-              color: _accentSoft, borderRadius: BorderRadius.circular(12)),
+              color: _accentSoft,
+              borderRadius: BorderRadius.circular(12)),
           child: Row(children: [
             Icon(
               _pickedLocation != null
@@ -835,7 +934,9 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
                     ? 'Coordinates & address auto-filled. Edit below if needed.'
                     : 'Search above or tap the map to auto-fill all fields.',
                 style: const TextStyle(
-                    color: _primary, fontSize: 12, fontWeight: FontWeight.w500),
+                    color: _primary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500),
               ),
             ),
           ]),
@@ -862,7 +963,7 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
         ]),
         const SizedBox(height: 14),
         _buildTextField(
-            label: 'Address (English)',
+            label: 'Address',
             controller: _addressEnController,
             hint: 'e.g. 1-1 Shibuya, Tokyo'),
         const SizedBox(height: 14),
@@ -915,7 +1016,8 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
             final isSelected = _courtType == _courtTypeValues[i];
             return Expanded(
               child: GestureDetector(
-                onTap: () => setState(() => _courtType = _courtTypeValues[i]),
+                onTap: () =>
+                    setState(() => _courtType = _courtTypeValues[i]),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 200),
                   margin: EdgeInsets.only(right: i < 2 ? 8 : 0),
@@ -1045,18 +1147,16 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
           ClipRRect(
             borderRadius: BorderRadius.circular(14),
             child: Image.file(_pickedImage!,
-                width: double.infinity,
-                height: 140,
-                fit: BoxFit.cover),
+                width: double.infinity, height: 140, fit: BoxFit.cover),
           ),
           const SizedBox(height: 16),
         ],
 
         _buildSummarySection('Basic Info', [
-          ('Name',    _nameController.text.isEmpty ? '—' : _nameController.text),
-          ('Type',    _locType),
-          ('Courts',  _courtCountController.text.isEmpty ? '—' : _courtCountController.text),
-          ('Access',  _isPublic ? 'Open to public' : 'Requires setup'),
+          ('Name',   _nameController.text.isEmpty ? '—' : _nameController.text),
+          ('Type',   _locType),
+          ('Courts', _courtCountController.text.isEmpty ? '—' : _courtCountController.text),
+          ('Access', _isPublic ? 'Open to public' : 'Requires setup'),
         ]),
         const SizedBox(height: 12),
 
@@ -1071,7 +1171,11 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
 
         _buildSummarySection('Court & Pricing', [
           ('Court Type', _courtType),
-          ('Price', _isPriceFree ? 'Free' : (_priceController.text.isEmpty ? '—' : _priceController.text)),
+          ('Price', _isPriceFree
+              ? 'Free'
+              : (_priceController.text.isEmpty
+              ? '—'
+              : _priceController.text)),
         ]),
         const SizedBox(height: 12),
 
@@ -1090,7 +1194,8 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
             padding: const EdgeInsets.all(14),
             margin: const EdgeInsets.only(bottom: 16),
             decoration: BoxDecoration(
-                color: _accentSoft, borderRadius: BorderRadius.circular(12)),
+                color: _accentSoft,
+                borderRadius: BorderRadius.circular(12)),
             child: const Row(children: [
               SizedBox(
                 width: 16, height: 16,
@@ -1111,7 +1216,8 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
         Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-              color: _accentSoft, borderRadius: BorderRadius.circular(16)),
+              color: _accentSoft,
+              borderRadius: BorderRadius.circular(16)),
           child: const Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1119,7 +1225,8 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
                 SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'By submitting, you agree that this information will be reviewed by our team before appearing on the app.',
+                    'By submitting, you agree that this information will be '
+                        'reviewed by our team before appearing on the app.',
                     style: TextStyle(
                         color: _textMid, fontSize: 13, height: 1.5),
                   ),
@@ -1189,7 +1296,8 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
                 height: 20, width: 20,
                 child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation(Colors.white)))
+                    valueColor:
+                    AlwaysStoppedAnimation(Colors.white)))
                 : Text(
               _currentPage == 4
                   ? 'SAVE COURT INFORMATION'
@@ -1215,7 +1323,8 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
         Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-              color: _accentSoft, borderRadius: BorderRadius.circular(14)),
+              color: _accentSoft,
+              borderRadius: BorderRadius.circular(14)),
           child: Icon(icon, color: _primary, size: 22),
         ),
         const SizedBox(width: 14),
@@ -1231,7 +1340,8 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
                         letterSpacing: -0.3)),
                 const SizedBox(height: 2),
                 Text(subtitle,
-                    style: const TextStyle(color: _textLight, fontSize: 12)),
+                    style: const TextStyle(
+                        color: _textLight, fontSize: 12)),
               ]),
         ),
       ]),
@@ -1413,7 +1523,8 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
           color: value ? _accentSoft : _surface,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-              color: value ? _accent : _border, width: value ? 1.5 : 1),
+              color: value ? _accent : _border,
+              width: value ? 1.5 : 1),
         ),
         child: Row(children: [
           AnimatedContainer(
@@ -1443,7 +1554,8 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
     );
   }
 
-  Widget _buildSummarySection(String title, List<(String, String)> rows) {
+  Widget _buildSummarySection(
+      String title, List<(String, String)> rows) {
     return Container(
       decoration: BoxDecoration(
         color: _surface,
@@ -1456,7 +1568,8 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
               offset: const Offset(0, 2))
         ],
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      child:
+      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
           child: Text(title.toUpperCase(),
@@ -1468,7 +1581,8 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
         ),
         const Divider(height: 1, color: _border),
         ...rows.map((r) => Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          padding: const EdgeInsets.symmetric(
+              horizontal: 16, vertical: 10),
           child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
