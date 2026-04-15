@@ -4,13 +4,6 @@ import 'package:pikuru/theme/material.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ResourcesScreen
-//
-// Mirrors web app's ResourcesPage exactly:
-//   • Fetches `resources` collection ordered by `order` ASC
-//   • Splits docs by `category`: 'learn' | 'tools'
-//   • Each doc: { id, category, order, en:{title,sub}, ja:{title,sub} }
-//   • Tapping a row → ResourceDetailScreen(docId)
-//   • Supports EN / JA language toggle (persisted in-page)
 // ─────────────────────────────────────────────────────────────────────────────
 
 class ResourcesScreen extends StatefulWidget {
@@ -22,15 +15,12 @@ class ResourcesScreen extends StatefulWidget {
 
 class _ResourcesScreenState extends State<ResourcesScreen>
     with TickerProviderStateMixin {
-  // ── Language toggle ────────────────────────────────────────────────────────
-  String _lang = 'en'; // 'en' | 'ja'
+  String _lang = 'en';
 
-  // ── Firestore data ─────────────────────────────────────────────────────────
   bool _loading = true;
   List<Map<String, dynamic>> _learnItems = [];
   List<Map<String, dynamic>> _toolsItems = [];
 
-  // ── Animations ─────────────────────────────────────────────────────────────
   late final AnimationController _fadeController;
   late final Animation<double>   _fadeAnim;
   late final AnimationController _slideController;
@@ -43,8 +33,7 @@ class _ResourcesScreenState extends State<ResourcesScreen>
     _fadeController = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 900))
       ..forward();
-    _fadeAnim =
-        CurvedAnimation(parent: _fadeController, curve: Curves.easeOut);
+    _fadeAnim = CurvedAnimation(parent: _fadeController, curve: Curves.easeOut);
 
     _slideController = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 800))
@@ -64,31 +53,21 @@ class _ResourcesScreenState extends State<ResourcesScreen>
     super.dispose();
   }
 
-  // ── Fetch from Firestore ───────────────────────────────────────────────────
-  // Tries orderBy('order') first; if that fails (missing index or field),
-  // falls back to a plain collection fetch sorted client-side.
   Future<void> _fetchResources() async {
     List<QueryDocumentSnapshot<Map<String, dynamic>>> docs = [];
 
-    // Attempt 1: ordered query
     try {
       final snap = await FirebaseFirestore.instance
           .collection('resources')
           .orderBy('order')
           .get();
       docs = snap.docs;
-      debugPrint('[ResourcesScreen] ordered fetch: ${docs.length} docs');
     } catch (e) {
-      debugPrint('[ResourcesScreen] orderBy failed ($e), trying unordered...');
-      // Attempt 2: plain fetch (no orderBy)
       try {
-        final snap = await FirebaseFirestore.instance
-            .collection('resources')
-            .get();
+        final snap =
+        await FirebaseFirestore.instance.collection('resources').get();
         docs = snap.docs;
-        debugPrint('[ResourcesScreen] unordered fetch: ${docs.length} docs');
       } catch (e2) {
-        debugPrint('[ResourcesScreen] both fetches failed: $e2');
         if (mounted) setState(() => _loading = false);
         return;
       }
@@ -101,22 +80,19 @@ class _ResourcesScreenState extends State<ResourcesScreen>
       final data = Map<String, dynamic>.from(doc.data());
       data['_doc_id'] = doc.id;
       final category = (data['category'] ?? '').toString();
-      debugPrint('[ResourcesScreen] doc ${doc.id}: category=$category, '
-          'en.title=${(data['en'] is Map ? data['en']['title'] : '?')}');
       if (category == 'learn') learn.add(data);
       else if (category == 'tools') tools.add(data);
     }
 
-    // Client-side sort by 'order' field (handles missing field gracefully)
-    int _order(Map<String, dynamic> d) {
+    int order(Map<String, dynamic> d) {
       final v = d['order'];
       if (v is int) return v;
       if (v is double) return v.toInt();
       if (v is String) return int.tryParse(v) ?? 999;
       return 999;
     }
-    learn.sort((a, b) => _order(a).compareTo(_order(b)));
-    tools.sort((a, b) => _order(a).compareTo(_order(b)));
+    learn.sort((a, b) => order(a).compareTo(order(b)));
+    tools.sort((a, b) => order(a).compareTo(order(b)));
 
     if (mounted) {
       setState(() {
@@ -127,14 +103,12 @@ class _ResourcesScreenState extends State<ResourcesScreen>
     }
   }
 
-  // ── Localised string helper ────────────────────────────────────────────────
   String _t(Map<String, dynamic> doc, String key) {
     final langMap = doc[_lang] ?? doc['en'];
     if (langMap is Map) return (langMap[key] ?? '').toString();
     return '';
   }
 
-  // ── Navigate to detail ─────────────────────────────────────────────────────
   void _openDetail(Map<String, dynamic> doc) {
     final id = (doc['_doc_id'] ?? doc['id'] ?? '').toString();
     if (id.isEmpty) return;
@@ -152,7 +126,6 @@ class _ResourcesScreenState extends State<ResourcesScreen>
       backgroundColor: const Color(0xFFF4F9F5),
       body: CustomScrollView(
         slivers: [
-          // ── Hero AppBar ───────────────────────────────────────────────────
           SliverAppBar(
             expandedHeight: 180,
             pinned: true,
@@ -169,7 +142,6 @@ class _ResourcesScreenState extends State<ResourcesScreen>
                     fontSize: 18,
                     letterSpacing: 0.3)),
             actions: [
-              // ── EN / JA toggle — mirrors web LangToggle ──────────────────
               Padding(
                 padding: const EdgeInsets.only(right: 16),
                 child: Center(
@@ -182,15 +154,13 @@ class _ResourcesScreenState extends State<ResourcesScreen>
                     ),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
                       _LangButton(
-                        label: 'EN',
-                        selected: _lang == 'en',
-                        onTap: () => setState(() => _lang = 'en'),
-                      ),
+                          label: 'EN',
+                          selected: _lang == 'en',
+                          onTap: () => setState(() => _lang = 'en')),
                       _LangButton(
-                        label: '日本語',
-                        selected: _lang == 'ja',
-                        onTap: () => setState(() => _lang = 'ja'),
-                      ),
+                          label: '日本語',
+                          selected: _lang == 'ja',
+                          onTap: () => setState(() => _lang = 'ja')),
                     ]),
                   ),
                 ),
@@ -221,15 +191,6 @@ class _ResourcesScreenState extends State<ResourcesScreen>
                   ),
                 ),
                 Positioned(
-                  bottom: -20, left: -20,
-                  child: Container(
-                    width: 110, height: 110,
-                    decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withOpacity(0.05)),
-                  ),
-                ),
-                Positioned(
                   bottom: 24, left: 24, right: 24,
                   child: FadeTransition(
                     opacity: _fadeAnim,
@@ -255,8 +216,7 @@ class _ResourcesScreenState extends State<ResourcesScreen>
                               : 'Learn, discover, and explore pickleball in Japan',
                           style: TextStyle(
                               fontSize: 13,
-                              color: Colors.white.withOpacity(0.72),
-                              fontWeight: FontWeight.w400),
+                              color: Colors.white.withOpacity(0.72)),
                         ),
                       ],
                     ),
@@ -266,7 +226,6 @@ class _ResourcesScreenState extends State<ResourcesScreen>
             ),
           ),
 
-          // ── Body ──────────────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: FadeTransition(
               opacity: _fadeAnim,
@@ -278,7 +237,6 @@ class _ResourcesScreenState extends State<ResourcesScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // ── Info banner ──────────────────────────────────────
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 12),
@@ -308,13 +266,11 @@ class _ResourcesScreenState extends State<ResourcesScreen>
 
                       const SizedBox(height: 28),
 
-                      // ── Loading skeleton ──────────────────────────────────
                       if (_loading) ...[
                         _SkeletonSection(),
                         const SizedBox(height: 28),
                         _SkeletonSection(),
                       ] else ...[
-                        // ── Learn Pickleball ─────────────────────────────
                         _SectionHeader(
                           label: _lang == 'ja'
                               ? 'ピックルボールを学ぶ'
@@ -324,23 +280,21 @@ class _ResourcesScreenState extends State<ResourcesScreen>
                         const SizedBox(height: 12),
                         _ResourceCard(
                           items: _learnItems,
-                          lang:  _lang,
-                          tFn:   _t,
+                          lang: _lang,
+                          tFn: _t,
                           onTap: _openDetail,
                         ),
-
                         const SizedBox(height: 28),
-
-                        // ── Helpful Tools ────────────────────────────────
                         _SectionHeader(
-                          label: _lang == 'ja' ? '便利なツール' : 'Helpful Tools',
+                          label:
+                          _lang == 'ja' ? '便利なツール' : 'Helpful Tools',
                           icon: Icons.build_rounded,
                         ),
                         const SizedBox(height: 12),
                         _ResourceCard(
                           items: _toolsItems,
-                          lang:  _lang,
-                          tFn:   _t,
+                          lang: _lang,
+                          tFn: _t,
                           onTap: _openDetail,
                         ),
                       ],
@@ -363,7 +317,7 @@ class _ResourcesScreenState extends State<ResourcesScreen>
 // ─────────────────────────────────────────────────────────────────────────────
 class _LangButton extends StatelessWidget {
   final String label;
-  final bool   selected;
+  final bool selected;
   final VoidCallback onTap;
   const _LangButton(
       {required this.label, required this.selected, required this.onTap});
@@ -376,14 +330,12 @@ class _LangButton extends StatelessWidget {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: selected
-              ? Colors.white.withOpacity(0.9)
-              : Colors.transparent,
+          color: selected ? Colors.white.withOpacity(0.9) : Colors.transparent,
           borderRadius: BorderRadius.circular(18),
         ),
         child: Text(label,
             style: TextStyle(
-                fontSize:   11,
+                fontSize: 11,
                 fontWeight: FontWeight.w700,
                 color: selected
                     ? AppColors.primary
@@ -397,7 +349,7 @@ class _LangButton extends StatelessWidget {
 // Section header
 // ─────────────────────────────────────────────────────────────────────────────
 class _SectionHeader extends StatelessWidget {
-  final String   label;
+  final String label;
   final IconData icon;
   const _SectionHeader({required this.label, required this.icon});
 
@@ -407,7 +359,7 @@ class _SectionHeader extends StatelessWidget {
       Container(
         width: 32, height: 32,
         decoration: BoxDecoration(
-          color:        AppColors.primary.withOpacity(0.12),
+          color: AppColors.primary.withOpacity(0.12),
           borderRadius: BorderRadius.circular(8),
         ),
         child: Icon(icon, color: AppColors.primary, size: 17),
@@ -415,22 +367,22 @@ class _SectionHeader extends StatelessWidget {
       const SizedBox(width: 10),
       Text(label,
           style: const TextStyle(
-              fontSize:   16,
+              fontSize: 16,
               fontWeight: FontWeight.w800,
-              color:      AppColors.primary,
+              color: AppColors.primary,
               letterSpacing: 0.1)),
     ]);
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Resource card — wraps a list of rows in a white rounded card
+// Resource card
 // ─────────────────────────────────────────────────────────────────────────────
 class _ResourceCard extends StatelessWidget {
-  final List<Map<String, dynamic>>   items;
-  final String                        lang;
+  final List<Map<String, dynamic>> items;
+  final String lang;
   final String Function(Map<String, dynamic>, String) tFn;
-  final void Function(Map<String, dynamic>)            onTap;
+  final void Function(Map<String, dynamic>) onTap;
 
   const _ResourceCard({
     required this.items,
@@ -445,9 +397,9 @@ class _ResourceCard extends StatelessWidget {
       return Container(
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-          color:        Colors.white,
+          color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          border:       Border.all(color: AppColors.primary.withOpacity(0.15)),
+          border: Border.all(color: AppColors.primary.withOpacity(0.15)),
         ),
         child: Center(
           child: Text('No resources found.',
@@ -458,33 +410,31 @@ class _ResourceCard extends StatelessWidget {
 
     return Container(
       decoration: BoxDecoration(
-        color:        Colors.white,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border:       Border.all(color: AppColors.primary.withOpacity(0.15)),
+        border: Border.all(color: AppColors.primary.withOpacity(0.15)),
         boxShadow: [
           BoxShadow(
-              color:      AppColors.primary.withOpacity(0.07),
+              color: AppColors.primary.withOpacity(0.07),
               blurRadius: 16,
-              offset:     const Offset(0, 4)),
+              offset: const Offset(0, 4)),
         ],
       ),
       child: Column(
         children: items.asMap().entries.map((entry) {
-          final idx  = entry.key;
-          final doc  = entry.value;
+          final idx = entry.key;
+          final doc = entry.value;
           final isLast = idx == items.length - 1;
-          // Web uses href === '#' for coming-soon; we check a 'soon' bool
-          // or fall back to checking if the doc has no real content route.
           final isSoon = doc['soon'] == true ||
               (doc['href'] ?? '').toString() == '#';
 
           return _ResourceTile(
-            title:   tFn(doc, 'title'),
+            title: tFn(doc, 'title'),
             subtitle: tFn(doc, 'sub'),
-            docId:   (doc['_doc_id'] ?? doc['id'] ?? '').toString(),
-            isSoon:  isSoon,
-            isLast:  isLast,
-            onTap:   isSoon ? null : () => onTap(doc),
+            docId: (doc['_doc_id'] ?? doc['id'] ?? '').toString(),
+            isSoon: isSoon,
+            isLast: isLast,
+            onTap: isSoon ? null : () => onTap(doc),
           );
         }).toList(),
       ),
@@ -493,14 +443,14 @@ class _ResourceCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Resource tile row
+// Resource tile
 // ─────────────────────────────────────────────────────────────────────────────
 class _ResourceTile extends StatelessWidget {
-  final String   title;
-  final String   subtitle;
-  final String   docId;
-  final bool     isSoon;
-  final bool     isLast;
+  final String title;
+  final String subtitle;
+  final String docId;
+  final bool isSoon;
+  final bool isLast;
   final VoidCallback? onTap;
 
   const _ResourceTile({
@@ -512,7 +462,6 @@ class _ResourceTile extends StatelessWidget {
     required this.onTap,
   });
 
-  // Mirror web getIcon() — maps doc id → icon
   IconData _iconForId(String id) {
     switch (id) {
       case 'what-is-pickleball':
@@ -548,18 +497,15 @@ class _ResourceTile extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
           child: Row(children: [
-            // Icon badge
             Container(
               width: 38, height: 38,
               decoration: BoxDecoration(
-                color:        AppColors.primary.withOpacity(0.09),
+                color: AppColors.primary.withOpacity(0.09),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(_iconForId(docId),
-                  color: AppColors.primary, size: 19),
+              child: Icon(_iconForId(docId), color: AppColors.primary, size: 19),
             ),
             const SizedBox(width: 14),
-            // Text
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -568,7 +514,7 @@ class _ResourceTile extends StatelessWidget {
                     Expanded(
                       child: Text(title,
                           style: TextStyle(
-                              fontSize:   14,
+                              fontSize: 14,
                               fontWeight: FontWeight.w700,
                               color: isSoon
                                   ? Colors.black.withOpacity(0.4)
@@ -579,14 +525,14 @@ class _ResourceTile extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
-                          color:        AppColors.primary.withOpacity(0.1),
+                          color: AppColors.primary.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: const Text('Soon',
                             style: TextStyle(
-                                fontSize:   10,
+                                fontSize: 10,
                                 fontWeight: FontWeight.w700,
-                                color:      AppColors.primary,
+                                color: AppColors.primary,
                                 letterSpacing: 0.3)),
                       ),
                   ]),
@@ -595,8 +541,8 @@ class _ResourceTile extends StatelessWidget {
                     Text(subtitle,
                         style: TextStyle(
                             fontSize: 12,
-                            color:    Colors.grey.shade500,
-                            height:   1.4)),
+                            color: Colors.grey.shade500,
+                            height: 1.4)),
                   ],
                 ],
               ),
@@ -612,7 +558,8 @@ class _ResourceTile extends StatelessWidget {
       ),
       if (!isLast)
         Divider(
-            height: 1, thickness: 1,
+            height: 1,
+            thickness: 1,
             indent: 68,
             color: AppColors.primary.withOpacity(0.08)),
     ]);
@@ -626,58 +573,59 @@ class _SkeletonSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      // Section header skeleton
       Row(children: [
         Container(
-          width: 32, height: 32,
-          decoration: BoxDecoration(
-              color:        Colors.grey.shade200,
-              borderRadius: BorderRadius.circular(8)),
-        ),
+            width: 32, height: 32,
+            decoration: BoxDecoration(
+                color: Colors.grey.shade200,
+                borderRadius: BorderRadius.circular(8))),
         const SizedBox(width: 10),
         Container(
             width: 140, height: 14,
             decoration: BoxDecoration(
-                color:        Colors.grey.shade200,
+                color: Colors.grey.shade200,
                 borderRadius: BorderRadius.circular(6))),
       ]),
       const SizedBox(height: 12),
       Container(
         decoration: BoxDecoration(
-          color:        Colors.white,
+          color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          border:       Border.all(color: Colors.grey.shade100),
+          border: Border.all(color: Colors.grey.shade100),
         ),
         child: Column(
-          children: List.generate(3, (i) => Padding(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 16, vertical: 14),
-            child: Row(children: [
-              Container(
-                  width: 38, height: 38,
-                  decoration: BoxDecoration(
-                      color:        Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(10))),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                          width: double.infinity, height: 12,
-                          decoration: BoxDecoration(
-                              color:        Colors.grey.shade200,
-                              borderRadius: BorderRadius.circular(6))),
-                      const SizedBox(height: 6),
-                      Container(
-                          width: 120, height: 10,
-                          decoration: BoxDecoration(
-                              color:        Colors.grey.shade100,
-                              borderRadius: BorderRadius.circular(6))),
-                    ]),
-              ),
-            ]),
-          )),
+          children: List.generate(
+            3,
+                (i) => Padding(
+              padding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              child: Row(children: [
+                Container(
+                    width: 38, height: 38,
+                    decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(10))),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                            width: double.infinity, height: 12,
+                            decoration: BoxDecoration(
+                                color: Colors.grey.shade200,
+                                borderRadius: BorderRadius.circular(6))),
+                        const SizedBox(height: 6),
+                        Container(
+                            width: 120, height: 10,
+                            decoration: BoxDecoration(
+                                color: Colors.grey.shade100,
+                                borderRadius: BorderRadius.circular(6))),
+                      ]),
+                ),
+              ]),
+            ),
+          ),
         ),
       ),
     ]);
@@ -686,14 +634,6 @@ class _SkeletonSection extends StatelessWidget {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ResourceDetailScreen
-//
-// Mirrors web app's DynamicResourcePage ([id]/page.tsx):
-//   • Fetches doc(db, 'resources', id) from Firestore
-//   • Renders dynamically based on which fields exist in the localised map:
-//     – t.sections   → multi-section grid layout (Rules/Scoring style)
-//     – t.content    → single content block with optional images, keywords,
-//                      greatForPoints (Meetup/Gyms/TennisBear style)
-//     – t.aboutOrigin→ custom "What is Pikuru" / About layout
 // ─────────────────────────────────────────────────────────────────────────────
 class ResourceDetailScreen extends StatefulWidget {
   final String docId;
@@ -708,24 +648,21 @@ class ResourceDetailScreen extends StatefulWidget {
 
 class _ResourceDetailScreenState extends State<ResourceDetailScreen>
     with TickerProviderStateMixin {
-  bool   _loading  = true;
+  bool _loading = true;
   Map<String, dynamic>? _docData;
   late String _lang;
 
   late final AnimationController _fadeCtrl;
-  late final Animation<double>   _fadeAnim;
+  late final Animation<double> _fadeAnim;
 
   @override
   void initState() {
     super.initState();
     _lang = widget.lang;
-
     _fadeCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 700))
       ..forward();
-    _fadeAnim =
-        CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
-
+    _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
     _fetch();
   }
 
@@ -750,12 +687,10 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
         });
       }
     } catch (e) {
-      debugPrint('[ResourceDetailScreen] error: $e');
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  // ── Localised content map ──────────────────────────────────────────────────
   Map<String, dynamic> get _t {
     if (_docData == null) return {};
     final langMap = _docData![_lang] ?? _docData!['en'];
@@ -767,14 +702,13 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
 
   @override
   Widget build(BuildContext context) {
-    final hero    = _s('hero').isNotEmpty ? _s('hero') : _s('title');
+    final hero = _s('hero').isNotEmpty ? _s('hero') : _s('title');
     final heroSub = _s('heroSub').isNotEmpty ? _s('heroSub') : _s('sub');
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F9F5),
       body: CustomScrollView(
         slivers: [
-          // ── Hero AppBar ────────────────────────────────────────────────
           SliverAppBar(
             expandedHeight: 180,
             pinned: true,
@@ -797,15 +731,13 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
                     ),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
                       _LangButton(
-                        label: 'EN',
-                        selected: _lang == 'en',
-                        onTap: () => setState(() => _lang = 'en'),
-                      ),
+                          label: 'EN',
+                          selected: _lang == 'en',
+                          onTap: () => setState(() => _lang = 'en')),
                       _LangButton(
-                        label: '日本語',
-                        selected: _lang == 'ja',
-                        onTap: () => setState(() => _lang = 'ja'),
-                      ),
+                          label: '日本語',
+                          selected: _lang == 'ja',
+                          onTap: () => setState(() => _lang = 'ja')),
                     ]),
                   ),
                 ),
@@ -862,7 +794,6 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
             ),
           ),
 
-          // ── Body ──────────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: _loading
                 ? const Padding(
@@ -897,21 +828,15 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
     );
   }
 
-  // ── Dynamic content renderer ───────────────────────────────────────────────
   Widget _buildContent() {
     final t = _t;
 
-    // ── RENDERER 1: sections (Rules / Scoring style) ───────────────────
     if (t['sections'] is List && (t['sections'] as List).isNotEmpty) {
       return _buildSectionsLayout(t['sections'] as List);
     }
-
-    // ── RENDERER 2: aboutOrigin (What is Pikuru / About style) ─────────
     if (t['aboutOrigin'] is Map) {
       return _buildAboutLayout(t);
     }
-
-    // ── RENDERER 3: plain content block ────────────────────────────────
     if (t['content'] != null) {
       return _buildContentBlock(t);
     }
@@ -924,14 +849,13 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
         ));
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // RENDERER 1 — multi-section grid
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── RENDERER 1 — sections grid ─────────────────────────────────────────────
   Widget _buildSectionsLayout(List sections) {
     return Column(
       children: sections.map<Widget>((sec) {
-        final secMap = sec is Map ? Map<String, dynamic>.from(sec) : {};
-        final title  = (secMap['title']  ?? '').toString();
+        final secMap =
+        sec is Map ? Map<String, dynamic>.from(sec) : <String, dynamic>{};
+        final title = (secMap['title'] ?? '').toString();
         final points = secMap['points'] is List
             ? (secMap['points'] as List).map((e) => e.toString()).toList()
             : <String>[];
@@ -940,26 +864,15 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
         return Container(
           margin: const EdgeInsets.only(bottom: 16),
           padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color:        Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            border:       Border.all(color: AppColors.primary.withOpacity(0.12)),
-            boxShadow: [
-              BoxShadow(
-                  color:      AppColors.primary.withOpacity(0.06),
-                  blurRadius: 12,
-                  offset:     const Offset(0, 3)),
-            ],
-          ),
+          decoration: _cardDecor(),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Section header
               Row(children: [
                 Container(
                   width: 40, height: 40,
                   decoration: BoxDecoration(
-                      color:        AppColors.primary.withOpacity(0.1),
+                      color: AppColors.primary.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12)),
                   child: Icon(Icons.check_circle_outline_rounded,
                       color: AppColors.primary, size: 20),
@@ -968,13 +881,12 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
                 Expanded(
                   child: Text(title,
                       style: const TextStyle(
-                          fontSize:   16,
+                          fontSize: 16,
                           fontWeight: FontWeight.w800,
-                          color:      Color(0xFF0D0D0D))),
+                          color: Color(0xFF0D0D0D))),
                 ),
               ]),
               const SizedBox(height: 16),
-              // Bullet points
               ...points.map((pt) => Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: Row(
@@ -993,20 +905,19 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
                       child: Text(pt,
                           style: const TextStyle(
                               fontSize: 14,
-                              height:   1.5,
-                              color:    Color(0xFF333438))),
+                              height: 1.5,
+                              color: Color(0xFF333438))),
                     ),
                   ],
                 ),
               )),
-              // Highlight callout
               if (highlight.isNotEmpty)
                 Container(
                   margin: const EdgeInsets.only(top: 6),
                   padding: const EdgeInsets.symmetric(
                       horizontal: 14, vertical: 12),
                   decoration: BoxDecoration(
-                    color:  AppColors.primary.withOpacity(0.06),
+                    color: AppColors.primary.withOpacity(0.06),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                         color: AppColors.primary.withOpacity(0.2)),
@@ -1018,9 +929,9 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
                     Expanded(
                       child: Text(highlight,
                           style: const TextStyle(
-                              fontSize:   13,
+                              fontSize: 13,
                               fontWeight: FontWeight.w600,
-                              color:      AppColors.primary)),
+                              color: AppColors.primary)),
                     ),
                   ]),
                 ),
@@ -1031,37 +942,33 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // RENDERER 2 — About / What is Pikuru layout
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── RENDERER 2 — About / What is Pikuru ────────────────────────────────────
   Widget _buildAboutLayout(Map<String, dynamic> t) {
-    final origin    = t['aboutOrigin'] is Map
+    final origin = t['aboutOrigin'] is Map
         ? Map<String, dynamic>.from(t['aboutOrigin'] as Map)
         : <String, dynamic>{};
-    final joinUs    = t['joinUs'] is Map
+    final joinUs = t['joinUs'] is Map
         ? Map<String, dynamic>.from(t['joinUs'] as Map)
         : <String, dynamic>{};
     final whatWeOffer = t['whatWeOffer'] is Map
         ? Map<String, dynamic>.from(t['whatWeOffer'] as Map)
         : <String, dynamic>{};
-    final followUs  = t['followUs'] is Map
+    final followUs = t['followUs'] is Map
         ? Map<String, dynamic>.from(t['followUs'] as Map)
         : <String, dynamic>{};
-
     final offerItems = whatWeOffer['items'] is List
         ? (whatWeOffer['items'] as List)
-        .map((e) => e is Map ? Map<String, dynamic>.from(e) : <String, dynamic>{})
+        .map((e) => e is Map
+        ? Map<String, dynamic>.from(e)
+        : <String, dynamic>{})
         .toList()
         : <Map<String, dynamic>>[];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-
-        // ── Origin ──────────────────────────────────────────────────────
         if (origin.isNotEmpty) ...[
-          _DetailSectionLabel(
-              (origin['title'] ?? '').toString()),
+          _DetailSectionLabel((origin['title'] ?? '').toString()),
           const SizedBox(height: 12),
           Container(
             padding: const EdgeInsets.all(20),
@@ -1080,7 +987,7 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color:  AppColors.primary.withOpacity(0.06),
+                      color: AppColors.primary.withOpacity(0.06),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                           color: AppColors.primary.withOpacity(0.2)),
@@ -1089,10 +996,9 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Container(
-                          width: 3,
-                          height: 48,
+                          width: 3, height: 48,
                           decoration: BoxDecoration(
-                              color:        AppColors.primary.withOpacity(0.6),
+                              color: AppColors.primary.withOpacity(0.6),
                               borderRadius: BorderRadius.circular(2)),
                         ),
                         const SizedBox(width: 12),
@@ -1100,10 +1006,10 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
                           child: Text(
                               (origin['highlight'] ?? '').toString(),
                               style: const TextStyle(
-                                  fontSize:   14,
-                                  fontStyle:  FontStyle.italic,
-                                  height:     1.5,
-                                  color:      Color(0xFF333438))),
+                                  fontSize: 14,
+                                  fontStyle: FontStyle.italic,
+                                  height: 1.5,
+                                  color: Color(0xFF333438))),
                         ),
                       ],
                     ),
@@ -1119,10 +1025,8 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
           const SizedBox(height: 24),
         ],
 
-        // ── What We Offer ────────────────────────────────────────────────
         if (offerItems.isNotEmpty) ...[
-          _DetailSectionLabel(
-              (whatWeOffer['title'] ?? '').toString()),
+          _DetailSectionLabel((whatWeOffer['title'] ?? '').toString()),
           const SizedBox(height: 12),
           ...offerItems.map((item) => Container(
             margin: const EdgeInsets.only(bottom: 10),
@@ -1132,7 +1036,7 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
               Container(
                 width: 44, height: 44,
                 decoration: BoxDecoration(
-                    color:        AppColors.primary.withOpacity(0.1),
+                    color: AppColors.primary.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12)),
                 child: Icon(_iconForKey(item['icon'] ?? ''),
                     color: AppColors.primary, size: 22),
@@ -1144,14 +1048,14 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
                   children: [
                     Text((item['title'] ?? '').toString(),
                         style: const TextStyle(
-                            fontSize:   14,
+                            fontSize: 14,
                             fontWeight: FontWeight.w700,
-                            color:      Color(0xFF1A1A1A))),
+                            color: Color(0xFF1A1A1A))),
                     const SizedBox(height: 2),
                     Text((item['sub'] ?? '').toString(),
                         style: TextStyle(
                             fontSize: 12,
-                            color:    Colors.grey.shade500)),
+                            color: Colors.grey.shade500)),
                   ],
                 ),
               ),
@@ -1160,7 +1064,6 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
           const SizedBox(height: 24),
         ],
 
-        // ── Join Us ──────────────────────────────────────────────────────
         if (joinUs.isNotEmpty) ...[
           _DetailSectionLabel((joinUs['title'] ?? '').toString()),
           const SizedBox(height: 12),
@@ -1176,10 +1079,10 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
                   const SizedBox(height: 10),
                   Text((joinUs['p2'] ?? '').toString(),
                       style: const TextStyle(
-                          fontSize:   14,
+                          fontSize: 14,
                           fontWeight: FontWeight.w700,
-                          color:      AppColors.primary,
-                          height:     1.5)),
+                          color: AppColors.primary,
+                          height: 1.5)),
                 ],
               ],
             ),
@@ -1187,7 +1090,6 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
           const SizedBox(height: 24),
         ],
 
-        // ── Follow Us ────────────────────────────────────────────────────
         if (followUs.isNotEmpty)
           Container(
             padding: const EdgeInsets.all(24),
@@ -1205,23 +1107,22 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
             child: Column(children: [
               Text((followUs['title'] ?? '').toString(),
                   style: const TextStyle(
-                      fontSize:   20,
+                      fontSize: 20,
                       fontWeight: FontWeight.w900,
-                      color:      Colors.white,
+                      color: Colors.white,
                       letterSpacing: -0.4)),
               const SizedBox(height: 6),
               Text((followUs['sub'] ?? '').toString(),
                   style: TextStyle(
                       fontSize: 13,
-                      color:    Colors.white.withOpacity(0.8))),
+                      color: Colors.white.withOpacity(0.8))),
               const SizedBox(height: 20),
-              // Social icon row
               Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                _SocialBtn(icon: Icons.camera_alt_rounded),  // Instagram
+                _SocialBtn(icon: Icons.camera_alt_rounded),
                 const SizedBox(width: 12),
-                _SocialBtn(icon: Icons.facebook_rounded),    // Facebook
+                _SocialBtn(icon: Icons.facebook_rounded),
                 const SizedBox(width: 12),
-                _SocialBtn(icon: Icons.play_arrow_rounded),  // YouTube
+                _SocialBtn(icon: Icons.play_arrow_rounded),
                 const SizedBox(width: 12),
                 _SocialBtn(label: 'LINE'),
               ]),
@@ -1233,27 +1134,38 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // RENDERER 3 — plain content block
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── RENDERER 3 — content block with diagram images ─────────────────────────
   Widget _buildContentBlock(Map<String, dynamic> t) {
-    final content       = (t['content'] ?? '').toString();
-    final images        = t['images'] is List
+    final content = (t['content'] ?? '').toString();
+    final rawImages = t['images'] is List
         ? (t['images'] as List).map((e) => e.toString()).toList()
         : <String>[];
-    final keywords      = t['keywords'] is List
+
+    // ── KEY FIX: only keep entries that are valid absolute URLs ──────────────
+    // The web app stores images as relative paths like "/images/diagram1.png"
+    // which only work in Next.js (served from public/). Flutter's Image.network
+    // requires full https:// URLs. We filter them out here so the "Diagrams"
+    // section is hidden entirely when only relative/placeholder paths exist,
+    // instead of showing broken error cards.
+    final images = rawImages
+        .where((url) =>
+    url.startsWith('http://') || url.startsWith('https://'))
+        .toList();
+
+    final keywords = t['keywords'] is List
         ? (t['keywords'] as List).map((e) => e.toString()).toList()
         : <String>[];
-    final searchTitle   = (t['searchTitle'] ?? '').toString();
+    final searchTitle = (t['searchTitle'] ?? '').toString();
     final greatForTitle = (t['greatForTitle'] ?? '').toString();
-    final greatForPts   = t['greatForPoints'] is List
+    final greatForPts = t['greatForPoints'] is List
         ? (t['greatForPoints'] as List).map((e) => e.toString()).toList()
         : <String>[];
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Content paragraphs
+
+        // ── Description text ───────────────────────────────────────────────
         if (content.isNotEmpty)
           Container(
             padding: const EdgeInsets.all(20),
@@ -1271,24 +1183,35 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
             ),
           ),
 
-        // Images
+        // ── Diagram images ─────────────────────────────────────────────────
+        // Only rendered when valid https:// URLs exist in Firestore.
+        // Update your Firestore "diagrams" document to use Firebase Storage
+        // download URLs instead of relative paths like "/images/diagram1.png".
         if (images.isNotEmpty) ...[
-          const SizedBox(height: 16),
-          ...images.map((url) => Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            decoration: BoxDecoration(
-                color:        Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border:       Border.all(
-                    color: AppColors.primary.withOpacity(0.12))),
-            clipBehavior: Clip.antiAlias,
-            child: Image.network(url,
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const SizedBox(height: 0)),
-          )),
+          const SizedBox(height: 20),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(children: [
+              Container(
+                width: 4, height: 18,
+                decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(2)),
+              ),
+              const SizedBox(width: 10),
+              const Text('Diagrams',
+                  style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF0D0D0D),
+                      letterSpacing: -0.2)),
+            ]),
+          ),
+          ...images.asMap().entries.map((entry) =>
+              _DiagramCard(url: entry.value, index: entry.key)),
         ],
 
-        // Great For points (Meetup style)
+        // ── Great For points ───────────────────────────────────────────────
         if (greatForPts.isNotEmpty) ...[
           const SizedBox(height: 16),
           if (greatForTitle.isNotEmpty)
@@ -1296,43 +1219,41 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
               padding: const EdgeInsets.only(bottom: 10),
               child: Text(greatForTitle.toUpperCase(),
                   style: const TextStyle(
-                      fontSize:   11,
+                      fontSize: 11,
                       fontWeight: FontWeight.w800,
-                      color:      AppColors.primary,
+                      color: AppColors.primary,
                       letterSpacing: 1.0)),
             ),
-          Wrap(
-            spacing: 10, runSpacing: 10,
-            children: greatForPts.map((pt) => Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 22, height: 22,
-                  decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.1),
-                      shape: BoxShape.circle),
-                  child: Icon(Icons.check_rounded,
-                      size: 13, color: AppColors.primary),
-                ),
-                const SizedBox(width: 8),
-                Text(pt,
+          ...greatForPts.map((pt) => Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(children: [
+              Container(
+                width: 22, height: 22,
+                decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    shape: BoxShape.circle),
+                child: Icon(Icons.check_rounded,
+                    size: 13, color: AppColors.primary),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(pt,
                     style: const TextStyle(
                         fontSize: 13, color: Color(0xFF333438))),
-              ],
-            )).toList(),
-          ),
+              ),
+            ]),
+          )),
         ],
 
-        // Keywords (Local Gyms style)
+        // ── Keywords ──────────────────────────────────────────────────────
         if (keywords.isNotEmpty) ...[
           const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color:        AppColors.primary.withOpacity(0.05),
+              color: AppColors.primary.withOpacity(0.05),
               borderRadius: BorderRadius.circular(14),
-              border:       Border.all(
-                  color: AppColors.primary.withOpacity(0.15)),
+              border: Border.all(color: AppColors.primary.withOpacity(0.15)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1344,30 +1265,32 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
                     const SizedBox(width: 8),
                     Text(searchTitle.toUpperCase(),
                         style: const TextStyle(
-                            fontSize:   11,
+                            fontSize: 11,
                             fontWeight: FontWeight.w800,
-                            color:      AppColors.primary,
+                            color: AppColors.primary,
                             letterSpacing: 1.0)),
                   ]),
                   const SizedBox(height: 12),
                 ],
                 Wrap(
                   spacing: 8, runSpacing: 8,
-                  children: keywords.map((kw) => Container(
+                  children: keywords
+                      .map((kw) => Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 14, vertical: 7),
                     decoration: BoxDecoration(
-                      color:        AppColors.primary.withOpacity(0.12),
+                      color: AppColors.primary.withOpacity(0.12),
                       borderRadius: BorderRadius.circular(10),
-                      border:       Border.all(
+                      border: Border.all(
                           color: AppColors.primary.withOpacity(0.2)),
                     ),
                     child: Text(kw,
                         style: const TextStyle(
-                            fontSize:   13,
+                            fontSize: 13,
                             fontWeight: FontWeight.w700,
-                            color:      AppColors.primary)),
-                  )).toList(),
+                            color: AppColors.primary)),
+                  ))
+                      .toList(),
                 ),
               ],
             ),
@@ -1381,31 +1304,204 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
 
   // ── Shared helpers ─────────────────────────────────────────────────────────
   BoxDecoration _cardDecor() => BoxDecoration(
-    color:        Colors.white,
+    color: Colors.white,
     borderRadius: BorderRadius.circular(16),
-    border:       Border.all(color: AppColors.primary.withOpacity(0.12)),
+    border: Border.all(color: AppColors.primary.withOpacity(0.12)),
     boxShadow: [
       BoxShadow(
-          color:      AppColors.primary.withOpacity(0.06),
+          color: AppColors.primary.withOpacity(0.06),
           blurRadius: 12,
-          offset:     const Offset(0, 3)),
+          offset: const Offset(0, 3)),
     ],
   );
 
-  // Mirror web getIcon() for detail screen
   IconData _iconForKey(String key) {
     switch (key) {
-      case 'map-pin':  return Icons.place_rounded;
-      case 'calendar': return Icons.calendar_month_rounded;
-      case 'search':   return Icons.search_rounded;
-      case 'news':     return Icons.newspaper_rounded;
-      case 'phone':    return Icons.smartphone_rounded;
-      default:         return Icons.circle_outlined;
+      case 'map-pin':
+        return Icons.place_rounded;
+      case 'calendar':
+        return Icons.calendar_month_rounded;
+      case 'search':
+        return Icons.search_rounded;
+      case 'news':
+        return Icons.newspaper_rounded;
+      case 'phone':
+        return Icons.smartphone_rounded;
+      default:
+        return Icons.circle_outlined;
     }
   }
 }
 
-// ── Shared detail screen sub-widgets ─────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// DiagramCard
+//
+// Only receives validated https:// URLs (filtered upstream in _buildContentBlock).
+// Shows a loading skeleton with progress, then the full-width natural-height
+// image once loaded. Falls back to a friendly error state on network failure.
+// ─────────────────────────────────────────────────────────────────────────────
+class _DiagramCard extends StatefulWidget {
+  final String url;
+  final int    index;
+
+  const _DiagramCard({required this.url, required this.index});
+
+  @override
+  State<_DiagramCard> createState() => _DiagramCardState();
+}
+
+class _DiagramCardState extends State<_DiagramCard> {
+  bool _loaded  = false;
+  bool _errored = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color:        Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border:       Border.all(color: AppColors.primary.withOpacity(0.12)),
+        boxShadow: [
+          BoxShadow(
+            color:      Colors.black.withOpacity(0.06),
+            blurRadius: 16,
+            offset:     const Offset(0, 4),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: _errored
+          ? _buildErrorState()
+          : Stack(
+        children: [
+          // ── Actual image (natural height, full width) ──────────────
+          Image.network(
+            widget.url,
+            width: double.infinity,
+            fit: BoxFit.contain,
+            loadingBuilder: (ctx, child, progress) {
+              if (progress == null) {
+                WidgetsBinding.instance.addPostFrameCallback(
+                        (_) { if (mounted) setState(() => _loaded = true); });
+                return child;
+              }
+              return Stack(children: [
+                _buildLoadingSkeleton(progress),
+                Opacity(opacity: 0, child: child),
+              ]);
+            },
+            errorBuilder: (_, __, ___) {
+              WidgetsBinding.instance.addPostFrameCallback(
+                      (_) { if (mounted) setState(() => _errored = true); });
+              return _buildErrorState();
+            },
+          ),
+
+          // ── Badge shown once image finishes loading ────────────────
+          if (_loaded)
+            Positioned(
+              top: 12, left: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.92),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                        color: Colors.black.withOpacity(0.08),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2)),
+                  ],
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Container(
+                    width: 6, height: 6,
+                    decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Diagram ${widget.index + 1}',
+                    style: const TextStyle(
+                        fontSize:   11,
+                        fontWeight: FontWeight.w700,
+                        color:      AppColors.primary,
+                        letterSpacing: 0.3),
+                  ),
+                ]),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadingSkeleton(ImageChunkEvent? progress) {
+    final percent = (progress?.expectedTotalBytes != null &&
+        progress!.expectedTotalBytes! > 0)
+        ? progress.cumulativeBytesLoaded / progress.expectedTotalBytes!
+        : null;
+
+    return Container(
+      width: double.infinity,
+      height: MediaQuery.of(context).size.width * 0.56,
+      color: const Color(0xFFF2F3F5),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 36, height: 36,
+              child: CircularProgressIndicator(
+                strokeWidth: 3,
+                value: percent,
+                color: AppColors.primary,
+                backgroundColor: AppColors.primary.withOpacity(0.12),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              percent != null
+                  ? '${(percent * 100).toInt()}%'
+                  : 'Loading diagram…',
+              style: TextStyle(
+                  fontSize: 12,
+                  color:    Colors.grey.shade400,
+                  fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState() {
+    return Container(
+      width: double.infinity,
+      height: 160,
+      color: AppColors.primary.withOpacity(0.05),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.broken_image_outlined,
+              size: 36, color: AppColors.primary.withOpacity(0.3)),
+          const SizedBox(height: 8),
+          Text('Could not load diagram ${widget.index + 1}',
+              style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade400)),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared detail-screen sub-widgets
+// ─────────────────────────────────────────────────────────────────────────────
 class _DetailSectionLabel extends StatelessWidget {
   final String label;
   const _DetailSectionLabel(this.label);
@@ -1416,16 +1512,15 @@ class _DetailSectionLabel extends StatelessWidget {
       Container(
         width: 4, height: 20,
         decoration: BoxDecoration(
-            color:        AppColors.primary,
-            borderRadius: BorderRadius.circular(2)),
+            color: AppColors.primary, borderRadius: BorderRadius.circular(2)),
       ),
       const SizedBox(width: 10),
       Expanded(
         child: Text(label,
             style: const TextStyle(
-                fontSize:   17,
+                fontSize: 17,
                 fontWeight: FontWeight.w800,
-                color:      Color(0xFF0D0D0D),
+                color: Color(0xFF0D0D0D),
                 letterSpacing: -0.3)),
       ),
     ]);
@@ -1458,17 +1553,17 @@ class _SocialBtn extends StatelessWidget {
           ? const EdgeInsets.symmetric(horizontal: 16)
           : EdgeInsets.zero,
       decoration: BoxDecoration(
-        color:        Colors.white.withOpacity(0.15),
+        color: Colors.white.withOpacity(0.15),
         borderRadius: BorderRadius.circular(14),
-        border:       Border.all(color: Colors.white.withOpacity(0.25)),
+        border: Border.all(color: Colors.white.withOpacity(0.25)),
       ),
       child: Center(
         child: label != null
             ? Text(label!,
             style: const TextStyle(
-                color:      Colors.white,
+                color: Colors.white,
                 fontWeight: FontWeight.w800,
-                fontSize:   14))
+                fontSize: 14))
             : Icon(icon, color: Colors.white, size: 22),
       ),
     );
