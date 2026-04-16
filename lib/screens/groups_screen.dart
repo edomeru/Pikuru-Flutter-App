@@ -6,6 +6,65 @@ import 'package:pikuru/widgets/group_card_list.dart';
 import 'package:pikuru/modal/group_filter_modal.dart';
 import 'package:pikuru/screens/add_group_screen.dart';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// buildLocMap
+// ─────────────────────────────────────────────────────────────────────────────
+Map<String, Map<String, dynamic>> buildLocMap(
+    List<Map<String, dynamic>> locations) {
+  final map = <String, Map<String, dynamic>>{};
+  for (final d in locations) {
+    final docId = (d['_doc_id'] ?? '').toString();
+    final locId = (d['loc_id'] ?? '').toString();
+    if (docId.isNotEmpty) map[docId] = d;
+    if (locId.isNotEmpty) map[locId] = d;
+  }
+  return map;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// resolveLocation
+// ─────────────────────────────────────────────────────────────────────────────
+String resolveLocation(
+    Map<String, dynamic> g, Map<String, Map<String, dynamic>> locMap) {
+  String cityEn = '', city = '', prefEn = '', pref = '', country = '';
+
+  final locId = (g['org_loc_id'] ?? '').toString();
+  if (locId.isNotEmpty && locMap.containsKey(locId)) {
+    final d = locMap[locId]!;
+    cityEn  = (d['loc_city_en']       ?? '').toString().trim();
+    city    = (d['loc_city']           ?? '').toString().trim();
+    prefEn  = (d['loc_prefecture_en']  ?? '').toString().trim();
+    pref    = (d['loc_prefecture']     ?? '').toString().trim();
+    country = (d['loc_country']        ?? '').toString().trim();
+  }
+
+  if (prefEn.isEmpty)  prefEn  = (g['org_prefecture'] ?? '').toString().trim();
+  if (pref.isEmpty)    pref    = (g['org_prefecture'] ?? '').toString().trim();
+  if (cityEn.isEmpty)  cityEn  = (g['org_city']       ?? '').toString().trim();
+  if (city.isEmpty)    city    = (g['org_city']        ?? '').toString().trim();
+  if (country.isEmpty) country = (g['org_country']     ?? '').toString().trim();
+
+  final c = cityEn.isNotEmpty ? cityEn : city;
+  final p = prefEn.isNotEmpty ? prefEn : pref;
+
+  String loc;
+  if (c.isNotEmpty && p.isNotEmpty) {
+    loc = '$c, $p';
+  } else if (c.isNotEmpty && country.isNotEmpty) {
+    loc = '$c, $country';
+  } else {
+    loc = c.isNotEmpty ? c : (p.isNotEmpty ? p : country);
+  }
+
+  final venue = (g['org_venue_loc_name'] ?? '').toString().trim();
+  if (venue.isNotEmpty && loc.isNotEmpty) return '$venue - $loc';
+  if (venue.isNotEmpty) return venue;
+  return loc;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GroupsScreen
+// ─────────────────────────────────────────────────────────────────────────────
 class GroupsScreen extends ConsumerStatefulWidget {
   const GroupsScreen({super.key});
 
@@ -16,7 +75,7 @@ class GroupsScreen extends ConsumerStatefulWidget {
 class _GroupsScreenState extends ConsumerState<GroupsScreen>
     with AutomaticKeepAliveClientMixin {
   final TextEditingController _searchController = TextEditingController();
-  GroupFilter _filter = GroupFilter.tokyo;
+  GroupFilter _filter = const GroupFilter(orgCountry: 'Japan');
 
   @override
   bool get wantKeepAlive => false;
@@ -41,24 +100,133 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
     required List<Map<String, dynamic>> allGroups,
     required Map<String, Map<String, dynamic>> locMap,
   }) async {
-    final result = await GroupFilterModal.show(
-      context,
-      currentFilter: _filter,
-      allGroups: allGroups,
-      locMap: locMap,
+    final result = await showModalBottomSheet<GroupFilter>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => GroupFilterModal(
+        currentFilter: _filter,
+        allGroups: allGroups,
+        locMap: locMap,
+      ),
     );
     if (result != null && mounted) setState(() => _filter = result);
   }
 
+  // ── Active filter chips ────────────────────────────────────────────────────
+  List<_Chip> _activeChips() {
+    final chips = <_Chip>[];
+
+    void add(String label, VoidCallback remove) =>
+        chips.add(_Chip(label: label, onRemove: remove));
+
+    if (_filter.orgPrefecture != null) {
+      add(
+        _filter.orgPrefecture!,
+            () => setState(() =>
+        _filter = _filter.copyWith(orgPrefecture: null, orgCity: null)),
+      );
+    }
+    if (_filter.orgCity != null) {
+      add(
+        _filter.orgCity!,
+            () => setState(() => _filter = _filter.copyWith(orgCity: null)),
+      );
+    }
+    if (_filter.orgSkillBeginner) {
+      add('Beginner',
+              () => setState(() => _filter = _filter.copyWith(orgSkillBeginner: false)));
+    }
+    if (_filter.orgSkillIntermediate) {
+      add('Intermediate',
+              () => setState(() => _filter = _filter.copyWith(orgSkillIntermediate: false)));
+    }
+    if (_filter.orgSkillAdvance) {
+      add('Advanced',
+              () => setState(() => _filter = _filter.copyWith(orgSkillAdvance: false)));
+    }
+    if (_filter.orgAgeJuniors) {
+      add('Juniors',
+              () => setState(() => _filter = _filter.copyWith(orgAgeJuniors: false)));
+    }
+    if (_filter.orgAgeStudents) {
+      add('Students',
+              () => setState(() => _filter = _filter.copyWith(orgAgeStudents: false)));
+    }
+    if (_filter.orgAgeAdult) {
+      add('Adults',
+              () => setState(() => _filter = _filter.copyWith(orgAgeAdult: false)));
+    }
+    if (_filter.orgAgeSeniors) {
+      add('Seniors',
+              () => setState(() => _filter = _filter.copyWith(orgAgeSeniors: false)));
+    }
+    if (_filter.orgMeetupSun) {
+      add('Sun',
+              () => setState(() => _filter = _filter.copyWith(orgMeetupSun: false)));
+    }
+    if (_filter.orgMeetupMon) {
+      add('Mon',
+              () => setState(() => _filter = _filter.copyWith(orgMeetupMon: false)));
+    }
+    if (_filter.orgMeetupTues) {
+      add('Tue',
+              () => setState(() => _filter = _filter.copyWith(orgMeetupTues: false)));
+    }
+    if (_filter.orgMeetupWeds) {
+      add('Wed',
+              () => setState(() => _filter = _filter.copyWith(orgMeetupWeds: false)));
+    }
+    if (_filter.orgMeetupThurs) {
+      add('Thu',
+              () => setState(() => _filter = _filter.copyWith(orgMeetupThurs: false)));
+    }
+    if (_filter.orgMeetupFri) {
+      add('Fri',
+              () => setState(() => _filter = _filter.copyWith(orgMeetupFri: false)));
+    }
+    if (_filter.orgMeetupSat) {
+      add('Sat',
+              () => setState(() => _filter = _filter.copyWith(orgMeetupSat: false)));
+    }
+    if (_filter.orgMeetupTimeMornings) {
+      add('Mornings',
+              () => setState(() => _filter = _filter.copyWith(orgMeetupTimeMornings: false)));
+    }
+    if (_filter.orgMeetupTimeAfternoons) {
+      add('Afternoons',
+              () => setState(() => _filter = _filter.copyWith(orgMeetupTimeAfternoons: false)));
+    }
+    if (_filter.orgMeetupTimeEvenings) {
+      add('Evenings',
+              () => setState(() => _filter = _filter.copyWith(orgMeetupTimeEvenings: false)));
+    }
+
+    return chips;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final showAddButton  = ref.watch(showAddGroupButtonProvider);
-    final groupsAsync    = ref.watch(organizationsProvider);
-    final locationsAsync = ref.watch(locationsProvider);
+    final showAddButton   = ref.watch(showAddGroupButtonProvider);
+    final groupsAsync     = ref.watch(organizationsProvider);
+    final locationsAsync  = ref.watch(locationsProvider);
 
     final locMap    = buildLocMap(locationsAsync.asData?.value ?? []);
     final allGroups = groupsAsync.asData?.value ?? [];
+
+    final validGroups = allGroups.where((g) {
+      if (g['org_type'] != 'Local Group') return false;
+      if (g['org_public'] != true) return false;
+      if (g['org_pending_review'] == true) return false;
+      return true;
+    }).toList()
+      ..sort((a, b) {
+        final ca = resolveCity(a, locMap).toLowerCase();
+        final cb = resolveCity(b, locMap).toLowerCase();
+        return ca.compareTo(cb);
+      });
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
@@ -67,13 +235,16 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
           children: [
             Column(
               children: [
-                _buildHeader(allGroups: allGroups, locMap: locMap),
-                Expanded(child: _buildGroupsList(groupsAsync, locMap)),
+                _buildHeader(allGroups: validGroups, locMap: locMap),
+                Expanded(
+                    child: _buildGroupsList(groupsAsync, validGroups, locMap)),
               ],
             ),
             if (showAddButton)
               Positioned(
-                bottom: 24, left: 0, right: 0,
+                bottom: 24,
+                left: 0,
+                right: 0,
                 child: Center(child: _buildAddGroupButton()),
               ),
           ],
@@ -87,13 +258,14 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
     required List<Map<String, dynamic>> allGroups,
     required Map<String, Map<String, dynamic>> locMap,
   }) {
+    final chips = _activeChips();
+
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Title + filter button
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -106,7 +278,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
                           fontWeight: FontWeight.w800,
                           color: Color(0xFF0D0D0D),
                           letterSpacing: -0.5)),
-                  if (_filter.prefecture != null)
+                  if (_filter.orgPrefecture != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 2),
                       child: Row(
@@ -115,9 +287,10 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
                               size: 12, color: AppColors.primary),
                           const SizedBox(width: 3),
                           Text(
-                            [_filter.prefecture, if (_filter.city != null) _filter.city]
-                                .whereType<String>()
-                                .join(', '),
+                            [
+                              _filter.orgPrefecture,
+                              if (_filter.orgCity != null) _filter.orgCity,
+                            ].whereType<String>().join(', '),
                             style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
@@ -135,7 +308,8 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
                   children: [
                     AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
-                      width: 42, height: 42,
+                      width: 42,
+                      height: 42,
                       decoration: BoxDecoration(
                         color: _hasActiveFilter
                             ? AppColors.primary
@@ -143,14 +317,18 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Icon(Icons.tune_rounded,
-                          color: _hasActiveFilter ? Colors.white : AppColors.primary,
+                          color: _hasActiveFilter
+                              ? Colors.white
+                              : AppColors.primary,
                           size: 20),
                     ),
                     if (_hasActiveFilter)
                       Positioned(
-                        top: -3, right: -3,
+                        top: -3,
+                        right: -3,
                         child: Container(
-                          width: 10, height: 10,
+                          width: 10,
+                          height: 10,
                           decoration: const BoxDecoration(
                             color: Colors.orangeAccent,
                             shape: BoxShape.circle,
@@ -191,22 +369,22 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
                         color: Colors.black.withOpacity(0.35), size: 20))
                     : null,
                 border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 14),
+                contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               ),
             ),
           ),
 
           const SizedBox(height: 10),
 
-          // Active filter chips
-          if (_filter.orgType != null ||
-              _filter.skillLevel != null ||
-              _filter.meetingTime != null) ...[
+          if (chips.isNotEmpty) ...[
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
-                children: [..._activeChips(), const SizedBox(width: 4)],
+                children: [
+                  ...chips.map((c) => _buildFilterChip(c)),
+                  const SizedBox(width: 4),
+                ],
               ),
             ),
             const SizedBox(height: 10),
@@ -218,74 +396,59 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
     );
   }
 
-  List<Widget> _activeChips() {
-    final chips = <Widget>[];
-
-    void add(String label, VoidCallback remove) {
-      chips.add(Container(
-        margin: const EdgeInsets.only(right: 8),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: AppColors.primary.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.primary.withOpacity(0.3)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(label,
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.primary)),
-            const SizedBox(width: 4),
-            GestureDetector(
-              onTap: remove,
-              child: Icon(Icons.close_rounded,
-                  size: 13, color: AppColors.primary),
-            ),
-          ],
-        ),
-      ));
-    }
-
-    if (_filter.orgType != null) {
-      add(_filter.orgType!,
-              () => setState(() => _filter = _filter.copyWith(orgType: null)));
-    }
-    if (_filter.skillLevel != null) {
-      add(_filter.skillLevel!,
-              () => setState(() => _filter = _filter.copyWith(skillLevel: null)));
-    }
-    if (_filter.meetingTime != null) {
-      add(_filter.meetingTime!,
-              () => setState(() => _filter = _filter.copyWith(meetingTime: null)));
-    }
-    return chips;
+  Widget _buildFilterChip(_Chip chip) {
+    return Container(
+      margin: const EdgeInsets.only(right: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(chip.label,
+              style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary)),
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: chip.onRemove,
+            child: Icon(Icons.close_rounded,
+                size: 13, color: AppColors.primary),
+          ),
+        ],
+      ),
+    );
   }
 
-  // ── Groups list ────────────────────────────────────────────────────────────
+  // ── Groups list ─────────────────────────────────────────────────────────────
   Widget _buildGroupsList(
       AsyncValue<List<Map<String, dynamic>>> groupsAsync,
+      List<Map<String, dynamic>> validGroups,
       Map<String, Map<String, dynamic>> locMap,
       ) {
     return groupsAsync.when(
-      data: (groups) {
-        if (groups.isEmpty) {
+      data: (_) {
+        if (validGroups.isEmpty) {
           return _empty(Icons.group_off_rounded, 'No groups found.');
         }
 
         final query = _searchController.text.toLowerCase().trim();
+
         var filtered = query.isEmpty
-            ? groups
-            : groups
+            ? validGroups
+            : validGroups
             .where((g) => (g['org_name'] ?? '')
             .toString()
             .toLowerCase()
             .contains(query))
             .toList();
 
-        filtered = filtered.where((g) => _filter.matches(g, locMap)).toList();
+        filtered =
+            filtered.where((g) => _filter.matches(g, locMap)).toList();
 
         if (filtered.isEmpty) {
           return _empty(
@@ -297,10 +460,15 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
           );
         }
 
+        final enriched = filtered.map((g) {
+          final loc = resolveLocation(g, locMap);
+          return {...g, '_resolved_location': loc};
+        }).toList();
+
         return ListView.builder(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 110),
-          itemCount: filtered.length,
-          itemBuilder: (context, i) => GroupCardList(group: filtered[i]),
+          itemCount: enriched.length,
+          itemBuilder: (context, i) => GroupCardList(group: enriched[i]),
         );
       },
       loading: () => Center(
@@ -382,16 +550,19 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
           ),
         ),
         Positioned(
-          top: -8, right: -8,
+          top: -8,
+          right: -8,
           child: GestureDetector(
             onTap: () =>
             ref.read(showAddGroupButtonProvider.notifier).state = false,
             child: Container(
-              width: 28, height: 28,
+              width: 28,
+              height: 28,
               decoration: BoxDecoration(
                 color: Colors.white,
                 shape: BoxShape.circle,
-                border: Border.all(color: const Color(0xFF0D0D0D), width: 1.5),
+                border: Border.all(
+                    color: const Color(0xFF0D0D0D), width: 1.5),
                 boxShadow: [
                   BoxShadow(
                       color: Colors.black.withOpacity(0.12),
@@ -407,4 +578,26 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
       ],
     );
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+String resolveCity(
+    Map<String, dynamic> g, Map<String, Map<String, dynamic>> locMap) {
+  final locId = (g['org_loc_id'] ?? '').toString();
+  if (locId.isNotEmpty && locMap.containsKey(locId)) {
+    final d = locMap[locId]!;
+    final en = (d['loc_city_en'] ?? '').toString().trim();
+    final ja = (d['loc_city']    ?? '').toString().trim();
+    if (en.isNotEmpty) return en;
+    if (ja.isNotEmpty) return ja;
+  }
+  return (g['org_city'] ?? '').toString().trim();
+}
+
+class _Chip {
+  final String label;
+  final VoidCallback onRemove;
+  const _Chip({required this.label, required this.onRemove});
 }
