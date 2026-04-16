@@ -137,6 +137,17 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
     }
   }
 
+  // ── NEW: launch social link ───────────────────────────────────────────────
+  Future<void> _launchSocial(String url) async {
+    if (url.isEmpty) return;
+    final raw = url.startsWith('http') ? url : 'https://$url';
+    final uri = Uri.tryParse(raw);
+    if (uri == null) return;
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
   String get _orgId =>
       (widget.group['org_id'] ??
           widget.group['org_ID'] ??
@@ -208,7 +219,6 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
                 padding: const EdgeInsets.all(8),
                 child: _GlassButton(
                   icon: Icons.ios_share_rounded,
-                  // ── Opens the share modal ──────────────────────────────
                   onTap: () => ShareGroupModal.show(
                     context,
                     group: widget.group,
@@ -405,6 +415,78 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
                               ),
                             ),
                           ],
+
+                          // ── NEW: org_prefecture, org_city, org_social ──
+                          Builder(builder: (context) {
+                            final prefecture =
+                            (widget.group['org_prefecture'] ?? '').toString().trim();
+                            final city =
+                            (widget.group['org_city'] ?? '').toString().trim();
+                            final social =
+                            (widget.group['org_social'] ?? '').toString().trim();
+
+                            if (prefecture.isEmpty && city.isEmpty && social.isEmpty) {
+                              return const SizedBox.shrink();
+                            }
+
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  if (prefecture.isNotEmpty || city.isNotEmpty)
+                                    Padding(
+                                      padding: const EdgeInsets.only(bottom: 12),
+                                      child: _buildInfoItem(
+                                        Icons.map_outlined,
+                                        [city, prefecture]
+                                            .where((s) => s.isNotEmpty)
+                                            .join(', '),
+                                      ),
+                                    ),
+                                  if (social.isNotEmpty)
+                                    GestureDetector(
+                                      onTap: () => _launchSocial(social),
+                                      child: Row(
+                                        crossAxisAlignment:
+                                        CrossAxisAlignment.center,
+                                        children: [
+                                          Icon(Icons.link_rounded,
+                                              color: AppColors.primary, size: 22),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(
+                                              social
+                                                  .replaceFirst(
+                                                  RegExp(r'^https?://'), '')
+                                                  .replaceFirst(
+                                                  RegExp(r'/$'), ''),
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                color: AppColors.primary,
+                                                fontWeight: FontWeight.w500,
+                                                decoration:
+                                                TextDecoration.underline,
+                                                decorationColor:
+                                                AppColors.primary
+                                                    .withOpacity(0.5),
+                                                height: 1.4,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          Icon(Icons.open_in_new_rounded,
+                                              size: 14,
+                                              color: AppColors.primary
+                                                  .withOpacity(0.6)),
+                                        ],
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            );
+                          }),
                         ],
                       ),
                     ),
