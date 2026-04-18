@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/loginpage.dart';
 import 'package:pikuru/otp_verification_page.dart';
+import 'package:pikuru/theme/material.dart';
 import 'package:modal_progress_hud_nsn/modal_progress_hud_nsn.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'dart:math';
@@ -15,40 +15,32 @@ class RegisterPage extends StatefulWidget {
 
 class _RegisterPageState extends State<RegisterPage>
     with SingleTickerProviderStateMixin {
-  final TextEditingController firstNameController = TextEditingController();
-  final TextEditingController lastNameController = TextEditingController();
-  final TextEditingController emailController = TextEditingController();
-  final TextEditingController passwordController = TextEditingController();
-  final TextEditingController confirmPasswordController =
-  TextEditingController();
+  final TextEditingController nicknameController    = TextEditingController();
+  final TextEditingController emailController       = TextEditingController();
+  final TextEditingController passwordController    = TextEditingController();
+  final TextEditingController confirmPasswordController = TextEditingController();
 
   final _formKey = GlobalKey<FormState>();
   late AnimationController _controller;
   late Animation<double> _fadeAnimation;
 
-  bool agree = false;
-  bool showPassword = false;
+  bool agree              = false;
+  bool showPassword       = false;
   bool showConfirmPassword = false;
-  bool showSpinner = false;
+  bool showSpinner        = false;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
-    _fadeAnimation = CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeIn,
-    );
+        vsync: this, duration: const Duration(milliseconds: 600));
+    _fadeAnimation = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
     _controller.forward();
   }
 
   @override
   void dispose() {
-    firstNameController.dispose();
-    lastNameController.dispose();
+    nicknameController.dispose();
     emailController.dispose();
     passwordController.dispose();
     confirmPasswordController.dispose();
@@ -63,14 +55,14 @@ class _RegisterPageState extends State<RegisterPage>
 
   Future<void> _sendOtpViaCloudFunction({
     required String toEmail,
-    required String firstName,
+    required String nickname,
     required String otp,
   }) async {
     final callable = FirebaseFunctions.instance.httpsCallable('sendOtp');
     await callable.call({
-      'email': toEmail,
-      'firstName': firstName,
-      'otp': otp,
+      'email':     toEmail,
+      'firstName': nickname, // Cloud Function expects 'firstName' for greeting
+      'otp':       otp,
     });
   }
 
@@ -79,7 +71,7 @@ class _RegisterPageState extends State<RegisterPage>
 
     if (!agree) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("You must agree to the terms first")),
+        const SnackBar(content: Text('You must agree to the terms first')),
       );
       return;
     }
@@ -87,17 +79,13 @@ class _RegisterPageState extends State<RegisterPage>
     setState(() => showSpinner = true);
 
     try {
-      final email     = emailController.text.trim();
-      final firstName = firstNameController.text.trim();
-      final lastName  = lastNameController.text.trim();
-      final password  = passwordController.text;
-      final otp       = _generateOtp();
+      final email    = emailController.text.trim();
+      final nickname = nicknameController.text.trim();
+      final password = passwordController.text;
+      final otp      = _generateOtp();
 
       await _sendOtpViaCloudFunction(
-        toEmail: email,
-        firstName: firstName,
-        otp: otp,
-      );
+          toEmail: email, nickname: nickname, otp: otp);
 
       setState(() => showSpinner = false);
       if (!mounted) return;
@@ -106,10 +94,9 @@ class _RegisterPageState extends State<RegisterPage>
         context,
         MaterialPageRoute(
           builder: (_) => OtpVerificationPage(
-            email: email,
-            firstName: firstName,
-            lastName: lastName,
-            password: password,
+            email:        email,
+            nickname:     nickname,
+            password:     password,
             generatedOtp: otp,
           ),
         ),
@@ -118,13 +105,13 @@ class _RegisterPageState extends State<RegisterPage>
       setState(() => showSpinner = false);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Failed to send code: ${e.message}")),
+        SnackBar(content: Text('Failed to send code: ${e.message}')),
       );
     } catch (e) {
       setState(() => showSpinner = false);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error: ${e.toString()}")),
+        SnackBar(content: Text('Error: ${e.toString()}')),
       );
     }
   }
@@ -149,35 +136,34 @@ class _RegisterPageState extends State<RegisterPage>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const SizedBox(height: 32),
+
+                        // ── Nickname / Username ────────────────────
                         TextFormField(
-                          controller: firstNameController,
-                          decoration: _inputDecoration("First Name"),
+                          controller: nicknameController,
+                          decoration: _inputDecoration('Nickname / Username'),
                           validator: (v) =>
-                          v == null || v.isEmpty ? "Required" : null,
+                          v == null || v.trim().isEmpty ? 'Required' : null,
                         ),
                         const SizedBox(height: 16),
-                        TextFormField(
-                          controller: lastNameController,
-                          decoration: _inputDecoration("Last Name"),
-                          validator: (v) =>
-                          v == null || v.isEmpty ? "Required" : null,
-                        ),
-                        const SizedBox(height: 16),
+
+                        // ── Email ──────────────────────────────────
                         TextFormField(
                           controller: emailController,
                           keyboardType: TextInputType.emailAddress,
-                          decoration: _inputDecoration("Email"),
+                          decoration: _inputDecoration('Email'),
                           validator: (v) {
-                            if (v == null || v.isEmpty) return "Required";
-                            if (!v.contains("@")) return "Invalid email";
+                            if (v == null || v.isEmpty) return 'Required';
+                            if (!v.contains('@')) return 'Invalid email';
                             return null;
                           },
                         ),
                         const SizedBox(height: 16),
+
+                        // ── Password ───────────────────────────────
                         TextFormField(
                           controller: passwordController,
                           obscureText: !showPassword,
-                          decoration: _inputDecoration("Password").copyWith(
+                          decoration: _inputDecoration('Password').copyWith(
                             suffixIcon: IconButton(
                               icon: Icon(
                                 showPassword
@@ -190,17 +176,19 @@ class _RegisterPageState extends State<RegisterPage>
                             ),
                           ),
                           validator: (v) {
-                            if (v == null || v.isEmpty) return "Required";
-                            if (v.length < 6) return "Min 6 characters";
+                            if (v == null || v.isEmpty) return 'Required';
+                            if (v.length < 6) return 'Min 6 characters';
                             return null;
                           },
                         ),
                         const SizedBox(height: 16),
+
+                        // ── Confirm Password ───────────────────────
                         TextFormField(
                           controller: confirmPasswordController,
                           obscureText: !showConfirmPassword,
                           decoration:
-                          _inputDecoration("Confirm Password").copyWith(
+                          _inputDecoration('Confirm Password').copyWith(
                             suffixIcon: IconButton(
                               icon: Icon(
                                 showConfirmPassword
@@ -208,31 +196,31 @@ class _RegisterPageState extends State<RegisterPage>
                                     : Icons.visibility_off_outlined,
                                 color: Colors.grey,
                               ),
-                              onPressed: () => setState(() =>
-                              showConfirmPassword = !showConfirmPassword),
+                              onPressed: () => setState(
+                                      () => showConfirmPassword = !showConfirmPassword),
                             ),
                           ),
                           validator: (v) {
-                            if (v == null || v.isEmpty) return "Required";
+                            if (v == null || v.isEmpty) return 'Required';
                             if (v != passwordController.text) {
-                              return "Passwords do not match";
+                              return 'Passwords do not match';
                             }
                             return null;
                           },
                         ),
                         const SizedBox(height: 12),
+
+                        // ── Terms checkbox ─────────────────────────
                         Row(
                           children: [
                             SizedBox(
-                              width: 24,
-                              height: 24,
+                              width: 24, height: 24,
                               child: Checkbox(
                                 value: agree,
                                 onChanged: (v) =>
                                     setState(() => agree = v ?? false),
                                 shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
+                                    borderRadius: BorderRadius.circular(4)),
                                 side: const BorderSide(color: Colors.grey),
                                 activeColor: AppColors.primary,
                               ),
@@ -241,39 +229,33 @@ class _RegisterPageState extends State<RegisterPage>
                             const Expanded(
                               child: Text(
                                 'I agree to the Terms & Conditions and Privacy Policy',
-                                style: TextStyle(
-                                    fontSize: 13, color: Colors.black87),
+                                style: TextStyle(fontSize: 13, color: Colors.black87),
                               ),
                             ),
                           ],
                         ),
                         const SizedBox(height: 24),
+
+                        // ── Sign up row ────────────────────────────
                         Row(
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
-                            const Text(
-                              'Sign up',
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black87,
-                              ),
-                            ),
+                            const Text('Sign up',
+                                style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87)),
                             const SizedBox(width: 10),
                             GestureDetector(
                               onTap: _onSignUp,
                               child: Container(
-                                width: 48,
-                                height: 48,
+                                width: 48, height: 48,
                                 decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                      color: Colors.black87, width: 2),
-                                ),
-                                child: const Icon(
-                                  Icons.arrow_forward,
-                                  color: Colors.black87,
-                                ),
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                        color: Colors.black87, width: 2)),
+                                child: const Icon(Icons.arrow_forward,
+                                    color: Colors.black87),
                               ),
                             ),
                           ],
@@ -301,29 +283,21 @@ class _RegisterPageState extends State<RegisterPage>
         color: AppColors.primary,
         child: Stack(
           children: [
-            // ── Dog logo replaces the woman image ──────────────────────
             Positioned(
-              right: 24,
-              bottom: 40,
+              right: 24, bottom: 40,
               child: SizedBox(
                 height: 160,
-                child: Image.asset(
-                  'assets/pikuru_logo_dog.png',  // ← changed
-                  fit: BoxFit.contain,
-                ),
+                child: Image.asset('assets/pikuru_logo_dog.png',
+                    fit: BoxFit.contain),
               ),
             ),
             const Positioned(
-              left: 28,
-              bottom: 56,
+              left: 28, bottom: 56,
               child: Text(
                 'Create\nAccount',
                 style: TextStyle(
-                  fontSize: 44,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                  height: 1.1,
-                ),
+                    fontSize: 44, fontWeight: FontWeight.bold,
+                    color: Colors.white, height: 1.1),
               ),
             ),
           ],
@@ -341,37 +315,30 @@ class _RegisterPageState extends State<RegisterPage>
         padding: const EdgeInsets.only(top: 56, bottom: 40),
         child: Column(
           children: [
-            const Text(
-              'Already have an account?',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500),
-            ),
+            const Text('Already have an account?',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500)),
             const SizedBox(height: 8),
             GestureDetector(
               onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => LoginScreen()),
-              ),
+                  context,
+                  MaterialPageRoute(builder: (_) => LoginScreen())),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Text(
-                    'Login',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 26,
-                        fontWeight: FontWeight.bold),
-                  ),
+                  const Text('Login',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 26,
+                          fontWeight: FontWeight.bold)),
                   const SizedBox(width: 10),
                   Container(
-                    width: 44,
-                    height: 44,
+                    width: 44, height: 44,
                     decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 2),
-                    ),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2)),
                     child: const Icon(Icons.arrow_forward,
                         color: Colors.white, size: 22),
                   ),
@@ -388,28 +355,22 @@ class _RegisterPageState extends State<RegisterPage>
 InputDecoration _inputDecoration(String hint) {
   return InputDecoration(
     hintText: hint,
-    hintStyle:
-    const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+    hintStyle: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
     filled: true,
     fillColor: Colors.white,
-    contentPadding:
-    const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+    contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
     enabledBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
-      borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
-    ),
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
     focusedBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
-      borderSide: const BorderSide(color: AppColors.primary, width: 2),
-    ),
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: AppColors.primary, width: 2)),
     errorBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
-      borderSide: const BorderSide(color: Colors.red, width: 1.5),
-    ),
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Colors.red, width: 1.5)),
     focusedErrorBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
-      borderSide: const BorderSide(color: Colors.red, width: 2),
-    ),
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Colors.red, width: 2)),
   );
 }
 

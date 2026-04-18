@@ -11,16 +11,14 @@ import 'dart:convert';
 
 class OtpVerificationPage extends StatefulWidget {
   final String email;
-  final String firstName;
-  final String lastName;
+  final String nickname;   // ← replaces firstName + lastName
   final String password;
   final String generatedOtp;
 
   const OtpVerificationPage({
     super.key,
     required this.email,
-    required this.firstName,
-    required this.lastName,
+    required this.nickname,
     required this.password,
     required this.generatedOtp,
   });
@@ -34,17 +32,17 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
   List.generate(6, (_) => TextEditingController());
   final List<FocusNode> _focusNodes = List.generate(6, (_) => FocusNode());
 
-  bool _isVerifying = false;
-  bool _canResend = false;
-  int _secondsRemaining = 30;
+  bool   _isVerifying      = false;
+  bool   _canResend        = false;
+  int    _secondsRemaining = 30;
   Timer? _timer;
 
   late String _currentOtp;
 
-  // ── EmailJS credentials ──────────────────────────────────────────────
-  static const String _emailJsServiceId = 'service_u0cfg9g';
+  // ── EmailJS credentials ───────────────────────────────────────────
+  static const String _emailJsServiceId  = 'service_u0cfg9g';
   static const String _emailJsTemplateId = 'template_ndurfap';
-  static const String _emailJsPublicKey = 'wwRoip-Q64dQgUzeH';
+  static const String _emailJsPublicKey  = 'wwRoip-Q64dQgUzeH';
 
   @override
   void initState() {
@@ -61,18 +59,15 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
     super.dispose();
   }
 
-  // ── Countdown timer ──────────────────────────────────────────────────
+  // ── Countdown timer ───────────────────────────────────────────────
   void _startTimer() {
     setState(() {
       _secondsRemaining = 30;
-      _canResend = false;
+      _canResend        = false;
     });
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
+      if (!mounted) { timer.cancel(); return; }
       setState(() {
         if (_secondsRemaining > 0) {
           _secondsRemaining--;
@@ -84,32 +79,31 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
     });
   }
 
-  // ── Resend OTP ───────────────────────────────────────────────────────
+  // ── Resend OTP ────────────────────────────────────────────────────
   Future<void> _resendOtp() async {
     if (!_canResend) return;
 
     final newOtp = _generateOtp();
-    _currentOtp = newOtp;
+    _currentOtp  = newOtp;
 
     for (final c in _controllers) c.clear();
     _focusNodes[0].requestFocus();
 
     try {
       await _sendOtpEmail(
-        toEmail: widget.email,
-        firstName: widget.firstName,
-        otp: newOtp,
+        toEmail:  widget.email,
+        nickname: widget.nickname,
+        otp:      newOtp,
       );
       _startTimer();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text("A new code has been sent to your email")),
+        const SnackBar(content: Text('A new code has been sent to your email')),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Failed to resend: ${e.toString()}")),
+        SnackBar(content: Text('Failed to resend: ${e.toString()}')),
       );
     }
   }
@@ -119,9 +113,13 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
     return (100000 + rand.nextInt(900000)).toString();
   }
 
+  // ── Send via EmailJS ──────────────────────────────────────────────
+  // The template uses {{to_name}} for the greeting — we pass nickname there.
+  // The Cloud Function also accepts 'firstName' as the greeting param;
+  // we keep passing nickname so existing templates work without changes.
   Future<void> _sendOtpEmail({
     required String toEmail,
-    required String firstName,
+    required String nickname,
     required String otp,
   }) async {
     const url = 'https://api.emailjs.com/api/v1.0/email/send';
@@ -129,12 +127,12 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
       Uri.parse(url),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
-        'service_id': _emailJsServiceId,
+        'service_id':  _emailJsServiceId,
         'template_id': _emailJsTemplateId,
-        'user_id': _emailJsPublicKey,
+        'user_id':     _emailJsPublicKey,
         'template_params': {
           'to_email': toEmail,
-          'to_name': firstName,
+          'to_name':  nickname,
           'otp_code': otp,
         },
       }),
@@ -144,14 +142,13 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
     }
   }
 
-  // ── Verify OTP & Create Firebase Account ────────────────────────────
+  // ── Verify OTP & create Firebase account ─────────────────────────
   Future<void> _onVerify() async {
     final enteredOtp = _controllers.map((c) => c.text.trim()).join();
 
     if (enteredOtp.length < 6) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text("Please enter the complete 6-digit code")),
+        const SnackBar(content: Text('Please enter the complete 6-digit code')),
       );
       return;
     }
@@ -159,8 +156,7 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
     if (enteredOtp != _currentOtp) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-              "Incorrect code. Please check your email and try again."),
+          content: Text('Incorrect code. Please check your email and try again.'),
           backgroundColor: Colors.red,
         ),
       );
@@ -172,37 +168,35 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
     setState(() => _isVerifying = true);
 
     try {
-      // ✅ Step 1: Create Firebase Auth user
-      final credential =
-      await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: widget.email,
+      // 1. Create Firebase Auth user
+      final credential = await FirebaseAuth.instance
+          .createUserWithEmailAndPassword(
+        email:    widget.email,
         password: widget.password,
       );
-
       final user = credential.user!;
-      final uid = user.uid;
 
-      // ✅ Step 2: Update Firebase Auth display name
-      await user.updateDisplayName('${widget.firstName} ${widget.lastName}');
+      // 2. Set Auth display name
+      await user.updateDisplayName(widget.nickname);
 
-      // ✅ Step 3: Write to 'registration' collection using Auth UID as doc ID
-      //    - Keeps your existing login/register flow intact
-      //    - Adds 'address' and 'description' as empty fields for EditProfileScreen
-      //    - Uses .doc(uid) so the document ID = Auth UID (easy lookup everywhere)
+      // 3. Write registration doc — 'nickname' field matches web app schema.
+      //    No firstName/lastName split; single field keeps things consistent
+      //    with the web app's registration collection.
       await FirebaseFirestore.instance
-          .collection('registration')  // ✅ your existing collection
-          .doc(uid)                    // ✅ Auth UID as document ID
+          .collection('registration')
+          .doc(user.uid)
           .set({
-        'firstName': widget.firstName,
-        'lastName': widget.lastName,
-        'email': widget.email,
-        'uid': uid,
-        'address': '',               // ✅ new field for EditProfileScreen
-        'description': '',           // ✅ new field for EditProfileScreen
-        'createdAt': FieldValue.serverTimestamp(),
+        'nickname':    widget.nickname,
+        'email':       widget.email,
+        'uid':         user.uid,
+        'address':     '',
+        'description': '',
+        'profile_img': '',
+        'provider':    'password',
+        'createdAt':   FieldValue.serverTimestamp(),
       });
 
-      debugPrint('✅ registration/$uid created successfully');
+      debugPrint('✅ registration/${user.uid} created successfully');
 
       setState(() => _isVerifying = false);
       if (!mounted) return;
@@ -214,12 +208,11 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
       );
     } on FirebaseAuthException catch (e) {
       setState(() => _isVerifying = false);
-      String message = "Registration failed.";
+      String message = 'Registration failed.';
       if (e.code == 'email-already-in-use') {
-        message =
-        "This email is already registered. Please log in instead.";
+        message = 'This email is already registered. Please log in instead.';
       } else if (e.code == 'weak-password') {
-        message = "Password is too weak.";
+        message = 'Password is too weak.';
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -230,16 +223,17 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
       debugPrint('Error creating account: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error: ${e.toString()}")),
+        SnackBar(content: Text('Error: ${e.toString()}')),
       );
     }
   }
 
-  // ── OTP Box input handler ────────────────────────────────────────────
+  // ── OTP box input handlers ────────────────────────────────────────
   void _onOtpChanged(String value, int index) {
     if (value.length == 1 && index < 5) {
       _focusNodes[index + 1].requestFocus();
     }
+    // Handle paste of full 6-digit code into the first box
     if (value.length == 6 && index == 0) {
       for (int i = 0; i < 6; i++) {
         _controllers[i].text = value[i];
@@ -278,10 +272,7 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
         title: const Text(
           'Sign up Verification Screen',
           style: TextStyle(
-            color: Colors.black54,
-            fontSize: 13,
-            fontWeight: FontWeight.w400,
-          ),
+              color: Colors.black54, fontSize: 13, fontWeight: FontWeight.w400),
         ),
         centerTitle: true,
       ),
@@ -295,10 +286,9 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
               const Text(
                 'We just sent an Email',
                 style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 12),
@@ -312,15 +302,15 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
               Text(
                 widget.email,
                 style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black87),
                 textAlign: TextAlign.center,
               ),
 
               const Spacer(flex: 1),
 
+              // ── Six OTP boxes ──────────────────────────────────
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: List.generate(6, (index) {
@@ -331,35 +321,30 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
                       width: 48,
                       height: 56,
                       child: TextFormField(
-                        controller: _controllers[index],
-                        focusNode: _focusNodes[index],
-                        textAlign: TextAlign.center,
+                        controller:   _controllers[index],
+                        focusNode:    _focusNodes[index],
+                        textAlign:    TextAlign.center,
                         keyboardType: TextInputType.number,
-                        maxLength: index == 0 ? 6 : 1,
+                        maxLength:    index == 0 ? 6 : 1,
                         inputFormatters: [
                           FilteringTextInputFormatter.digitsOnly,
                         ],
                         style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
-                        ),
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87),
                         decoration: InputDecoration(
                           counterText: '',
                           contentPadding: EdgeInsets.zero,
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
                             borderSide: const BorderSide(
-                              color: AppColors.primary,
-                              width: 1.5,
-                            ),
+                                color: AppColors.primary, width: 1.5),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
                             borderSide: const BorderSide(
-                              color: AppColors.primary,
-                              width: 2.5,
-                            ),
+                                color: AppColors.primary, width: 2.5),
                           ),
                         ),
                         onChanged: (value) => _onOtpChanged(value, index),
@@ -371,6 +356,7 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
 
               const Spacer(flex: 1),
 
+              // ── Verify button ──────────────────────────────────
               SizedBox(
                 width: double.infinity,
                 height: 52,
@@ -379,51 +365,40 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(30),
-                    ),
+                        borderRadius: BorderRadius.circular(30)),
                     elevation: 0,
                   ),
                   child: _isVerifying
                       ? const SizedBox(
-                    width: 22,
-                    height: 22,
-                    child: CircularProgressIndicator(
-                      color: Colors.white,
-                      strokeWidth: 2.5,
-                    ),
-                  )
-                      : const Text(
-                    'Verify',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
+                      width: 22, height: 22,
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2.5))
+                      : const Text('Verify',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold)),
                 ),
               ),
               const SizedBox(height: 20),
 
-              Column(
-                children: [
-                  const Text(
-                    "Don't receive code?",
-                    style: TextStyle(fontSize: 14, color: Colors.black54),
-                  ),
-                  const SizedBox(height: 4),
-                  GestureDetector(
-                    onTap: _canResend ? _resendOtp : null,
-                    child: Text(
-                      _canResend ? 'Resend Code' : 'Resend in $_timerText',
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                        color: _canResend ? AppColors.primary : Colors.black87,
-                      ),
+              // ── Resend ─────────────────────────────────────────
+              Column(children: [
+                const Text("Don't receive code?",
+                    style: TextStyle(fontSize: 14, color: Colors.black54)),
+                const SizedBox(height: 4),
+                GestureDetector(
+                  onTap: _canResend ? _resendOtp : null,
+                  child: Text(
+                    _canResend ? 'Resend Code' : 'Resend in $_timerText',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: _canResend ? AppColors.primary : Colors.black87,
                     ),
                   ),
-                ],
-              ),
+                ),
+              ]),
 
               const Spacer(flex: 2),
             ],

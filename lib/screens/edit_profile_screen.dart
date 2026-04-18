@@ -21,10 +21,9 @@ class _EditProfileScreenState extends State<EditProfileScreen>
   late final AnimationController _slideController;
   late final Animation<Offset> _slideAnim;
 
-  final _formKey = GlobalKey<FormState>();
-  final _firstNameController   = TextEditingController();
-  final _lastNameController    = TextEditingController();
-  final _addressController     = TextEditingController();
+  final _formKey              = GlobalKey<FormState>();
+  final _nicknameController   = TextEditingController();
+  final _addressController    = TextEditingController();
   final _descriptionController = TextEditingController();
 
   bool    _isLoading    = true;
@@ -32,12 +31,8 @@ class _EditProfileScreenState extends State<EditProfileScreen>
   bool    _isPickingImg = false;
   String? _errorMessage;
 
-  // Stored as the full data URL (e.g. "data:image/jpeg;base64,/9j/...")
-  // because that's what the web app saves. We strip the prefix when decoding.
   String? _profileImgDataUrl;
-
-  // Local file picked from device — shown as preview before saving
-  File? _pickedImageFile;
+  File?   _pickedImageFile;
 
   @override
   void initState() {
@@ -62,50 +57,50 @@ class _EditProfileScreenState extends State<EditProfileScreen>
   void dispose() {
     _fadeController.dispose();
     _slideController.dispose();
-    _firstNameController.dispose();
-    _lastNameController.dispose();
+    _nicknameController.dispose();
     _addressController.dispose();
     _descriptionController.dispose();
     super.dispose();
   }
 
-  // ── Strip data URL prefix to get raw base64 ───────────────────────
-  // Web app saves "data:image/jpeg;base64,/9j/..."
-  // base64Decode needs only "/9j/..." (after the comma)
   static String _rawBase64(String dataUrlOrBase64) {
-    if (dataUrlOrBase64.contains(',')) {
-      return dataUrlOrBase64.split(',').last;
-    }
+    if (dataUrlOrBase64.contains(',')) return dataUrlOrBase64.split(',').last;
     return dataUrlOrBase64;
   }
 
-  // ── Load profile from Firestore ───────────────────────────────────
+  // ── Load profile ──────────────────────────────────────────────────
   Future<void> _loadUserData() async {
     setState(() { _isLoading = true; _errorMessage = null; });
     try {
       final authUser = FirebaseAuth.instance.currentUser;
       if (authUser == null) throw Exception('Not logged in');
 
-      final doc = await FirebaseFirestore.instance
+      final docSnap = await FirebaseFirestore.instance
           .collection('registration')
           .doc(authUser.uid)
           .get();
 
       if (!mounted) return;
 
-      if (doc.exists && doc.data() != null) {
-        final data = doc.data()!;
-        _firstNameController.text   = (data['firstName']   ?? '').toString();
-        _lastNameController.text    = (data['lastName']    ?? '').toString();
+      if (docSnap.exists && docSnap.data() != null) {
+        final data = docSnap.data()!;
+
+        // ── Nickname: prefer 'nickname', fall back to firstName+lastName ──
+        final nickname = (data['nickname'] ?? '').toString().trim();
+        if (nickname.isNotEmpty) {
+          _nicknameController.text = nickname;
+        } else {
+          final first = (data['firstName'] ?? '').toString().trim();
+          final last  = (data['lastName']  ?? '').toString().trim();
+          _nicknameController.text = [first, last].where((s) => s.isNotEmpty).join(' ');
+        }
+
         _addressController.text     = (data['address']     ?? '').toString();
         _descriptionController.text = (data['description'] ?? '').toString();
-        // Store the full value from Firestore (may be data URL or raw base64)
         _profileImgDataUrl = (data['profile_img'] as String?)
             ?.isNotEmpty == true ? data['profile_img'] as String : null;
       } else {
-        final parts = (authUser.displayName ?? '').trim().split(' ');
-        _firstNameController.text = parts.isNotEmpty ? parts.first : '';
-        _lastNameController.text  = parts.length > 1 ? parts.sublist(1).join(' ') : '';
+        _nicknameController.text = authUser.displayName ?? '';
       }
     } catch (e) {
       if (mounted) setState(() => _errorMessage = 'Failed to load profile.');
@@ -114,7 +109,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
     }
   }
 
-  // ── Pick image from device ────────────────────────────────────────
+  // ── Pick image ────────────────────────────────────────────────────
   Future<void> _pickImage() async {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
@@ -140,8 +135,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                   decoration: BoxDecoration(
                       color: AppColors.primary.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12)),
-                  child: const Icon(Icons.photo_library_rounded,
-                      color: AppColors.primary),
+                  child: const Icon(Icons.photo_library_rounded, color: AppColors.primary),
                 ),
                 title: const Text('Choose from Gallery',
                     style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
@@ -155,8 +149,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                   decoration: BoxDecoration(
                       color: AppColors.primary.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12)),
-                  child: const Icon(Icons.camera_alt_rounded,
-                      color: AppColors.primary),
+                  child: const Icon(Icons.camera_alt_rounded, color: AppColors.primary),
                 ),
                 title: const Text('Take a Photo',
                     style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
@@ -172,37 +165,26 @@ class _EditProfileScreenState extends State<EditProfileScreen>
     );
 
     if (source == null) return;
-
     setState(() => _isPickingImg = true);
     try {
       final picker = ImagePicker();
       final picked = await picker.pickImage(
-        source: source,
-        maxWidth: 800,
-        maxHeight: 800,
-        imageQuality: 85,
-      );
-
+          source: source, maxWidth: 800, maxHeight: 800, imageQuality: 85);
       if (picked == null || !mounted) return;
 
-      final file  = File(picked.path);
-      final bytes = await file.readAsBytes();
-
+      final bytes   = await File(picked.path).readAsBytes();
       final decoded = img.decodeImage(bytes);
       if (decoded == null) return;
 
       final resized = img.copyResize(decoded,
           width:  decoded.width  > decoded.height ? 400 : -1,
           height: decoded.height > decoded.width  ? 400 : -1);
-
       final compressed = img.encodeJpg(resized, quality: 85);
-
-      // Save as raw base64 (Flutter-picked images don't need the data URL prefix)
-      final base64Str = base64Encode(compressed);
+      final base64Str  = base64Encode(compressed);
 
       setState(() {
-        _pickedImageFile   = file;       // local preview
-        _profileImgDataUrl = base64Str;  // raw base64, no prefix needed
+        _pickedImageFile   = File(picked.path);
+        _profileImgDataUrl = base64Str;
       });
     } catch (e) {
       if (mounted) {
@@ -217,7 +199,9 @@ class _EditProfileScreenState extends State<EditProfileScreen>
     }
   }
 
-  // ── Save profile to Firestore ─────────────────────────────────────
+  // ── Save profile ──────────────────────────────────────────────────
+  // Writes to 'registration/{uid}' using 'nickname' field — same as web app.
+  // Also clears legacy firstName/lastName fields for consistency.
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isSaving = true);
@@ -226,21 +210,20 @@ class _EditProfileScreenState extends State<EditProfileScreen>
       final authUser = FirebaseAuth.instance.currentUser;
       if (authUser == null) throw Exception('Not logged in');
 
-      final firstName = _firstNameController.text.trim();
-      final lastName  = _lastNameController.text.trim();
+      final nickname = _nicknameController.text.trim();
 
       await FirebaseFirestore.instance
           .collection('registration')
           .doc(authUser.uid)
           .set({
-        'firstName':   firstName,
-        'lastName':    lastName,
+        'nickname':    nickname,
         'address':     _addressController.text.trim(),
         'description': _descriptionController.text.trim(),
         'profile_img': _profileImgDataUrl ?? '',
       }, SetOptions(merge: true));
 
-      await authUser.updateDisplayName('$firstName $lastName');
+      // Keep Firebase Auth displayName in sync
+      await authUser.updateDisplayName(nickname);
 
       if (mounted) {
         _showSnackBar(
@@ -264,9 +247,9 @@ class _EditProfileScreenState extends State<EditProfileScreen>
   }
 
   void _showSnackBar({
-    required String message,
+    required String  message,
     required IconData icon,
-    required bool isError,
+    required bool    isError,
   }) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Row(children: [
@@ -282,24 +265,19 @@ class _EditProfileScreenState extends State<EditProfileScreen>
     ));
   }
 
-  // ── Build avatar ──────────────────────────────────────────────────
+  // ── Avatar ────────────────────────────────────────────────────────
   Widget _buildAvatar() {
     ImageProvider? imageProvider;
 
     if (_pickedImageFile != null) {
-      // Freshly picked from device — use FileImage directly
       imageProvider = FileImage(_pickedImageFile!);
     } else if (_profileImgDataUrl != null && _profileImgDataUrl!.isNotEmpty) {
-      // From Firestore — may be a data URL ("data:image/jpeg;base64,...")
-      // OR raw base64 (saved by Flutter). Strip prefix if present.
       try {
-        final raw = _rawBase64(_profileImgDataUrl!);
-        imageProvider = MemoryImage(base64Decode(raw));
+        imageProvider = MemoryImage(base64Decode(_rawBase64(_profileImgDataUrl!)));
       } catch (_) {
-        imageProvider = null; // fall through to placeholder
+        imageProvider = null;
       }
     } else {
-      // Fall back to Google/Firebase Auth photoURL
       final photoURL = FirebaseAuth.instance.currentUser?.photoURL;
       if (photoURL != null) imageProvider = NetworkImage(photoURL);
     }
@@ -322,20 +300,15 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                   ? Container(
                   color: AppColors.primary.withOpacity(0.2),
                   child: const Center(
-                      child: SizedBox(
-                        width: 26, height: 26,
-                        child: CircularProgressIndicator(
-                            color: Colors.white, strokeWidth: 2.5),
-                      )))
+                      child: SizedBox(width: 26, height: 26,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2.5))))
                   : imageProvider != null
-                  ? Image(
-                  image: imageProvider,
-                  fit: BoxFit.cover,
+                  ? Image(image: imageProvider, fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => _avatarPlaceholder())
                   : _avatarPlaceholder(),
             ),
           ),
-          // Camera badge
           Positioned(
             bottom: 0, right: 0,
             child: Container(
@@ -348,8 +321,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                     color: Colors.black.withOpacity(0.12),
                     blurRadius: 4, offset: const Offset(0, 2))],
               ),
-              child: const Icon(Icons.camera_alt_rounded,
-                  size: 14, color: AppColors.primary),
+              child: const Icon(Icons.camera_alt_rounded, size: 14, color: AppColors.primary),
             ),
           ),
         ],
@@ -383,54 +355,49 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                     fontWeight: FontWeight.w600, fontSize: 18,
                     letterSpacing: 0.3)),
             flexibleSpace: FlexibleSpaceBar(
-              background: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          AppColors.primary.withOpacity(0.85),
-                          AppColors.primary,
-                          AppColors.primary.withOpacity(0.7),
-                        ],
-                      ),
-                    ),
-                  ),
-                  Positioned(top: -40, right: -30,
-                      child: Container(width: 170, height: 170,
-                          decoration: BoxDecoration(shape: BoxShape.circle,
-                              color: Colors.white.withOpacity(0.06)))),
-                  Positioned(bottom: -20, left: -20,
-                      child: Container(width: 120, height: 120,
-                          decoration: BoxDecoration(shape: BoxShape.circle,
-                              color: Colors.white.withOpacity(0.05)))),
-                  Positioned(
-                    bottom: 18, left: 0, right: 0,
-                    child: Column(
-                      children: [
-                        _buildAvatar(),
-                        const SizedBox(height: 8),
-                        GestureDetector(
-                          onTap: _isPickingImg ? null : _pickImage,
-                          child: Text(
-                            _isPickingImg ? 'Loading...' : 'Edit picture',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.white.withOpacity(0.88),
-                              fontWeight: FontWeight.w600,
-                              decoration: TextDecoration.underline,
-                              decorationColor: Colors.white.withOpacity(0.88),
-                            ),
-                          ),
-                        ),
+              background: Stack(fit: StackFit.expand, children: [
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        AppColors.primary.withOpacity(0.85),
+                        AppColors.primary,
+                        AppColors.primary.withOpacity(0.7),
                       ],
                     ),
                   ),
-                ],
-              ),
+                ),
+                Positioned(top: -40, right: -30,
+                    child: Container(width: 170, height: 170,
+                        decoration: BoxDecoration(shape: BoxShape.circle,
+                            color: Colors.white.withOpacity(0.06)))),
+                Positioned(bottom: -20, left: -20,
+                    child: Container(width: 120, height: 120,
+                        decoration: BoxDecoration(shape: BoxShape.circle,
+                            color: Colors.white.withOpacity(0.05)))),
+                Positioned(
+                  bottom: 18, left: 0, right: 0,
+                  child: Column(children: [
+                    _buildAvatar(),
+                    const SizedBox(height: 8),
+                    GestureDetector(
+                      onTap: _isPickingImg ? null : _pickImage,
+                      child: Text(
+                        _isPickingImg ? 'Loading...' : 'Edit picture',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.white.withOpacity(0.88),
+                          fontWeight: FontWeight.w600,
+                          decoration: TextDecoration.underline,
+                          decorationColor: Colors.white.withOpacity(0.88),
+                        ),
+                      ),
+                    ),
+                  ]),
+                ),
+              ]),
             ),
           ),
 
@@ -449,8 +416,7 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                 ? Padding(
               padding: const EdgeInsets.all(32),
               child: Column(children: [
-                Icon(Icons.error_outline,
-                    color: Colors.red.shade400, size: 40),
+                Icon(Icons.error_outline, color: Colors.red.shade400, size: 40),
                 const SizedBox(height: 12),
                 Text(_errorMessage!,
                     textAlign: TextAlign.center,
@@ -479,32 +445,27 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+
+                        // ── Personal Info ──────────────────────────
                         const _SectionHeader(label: 'Personal Info'),
                         const SizedBox(height: 12),
                         _FieldCard(children: [
                           _FormField(
-                            controller: _firstNameController,
-                            label: 'First Name',
+                            controller: _nicknameController,
+                            label: 'Nickname / Username',
+                            hint: 'e.g. PickleMaster',
                             icon: Icons.badge_outlined,
-                            validator: (v) =>
-                            v == null || v.trim().isEmpty
-                                ? 'First name is required'
-                                : null,
-                          ),
-                          _FieldDivider(),
-                          _FormField(
-                            controller: _lastNameController,
-                            label: 'Last Name',
-                            icon: Icons.badge_rounded,
                             isLast: true,
                             validator: (v) =>
                             v == null || v.trim().isEmpty
-                                ? 'Last name is required'
+                                ? 'Nickname / Username is required'
                                 : null,
                           ),
                         ]),
 
                         const SizedBox(height: 20),
+
+                        // ── Location ───────────────────────────────
                         const _SectionHeader(label: 'Location'),
                         const SizedBox(height: 12),
                         _FieldCard(children: [
@@ -518,6 +479,8 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                         ]),
 
                         const SizedBox(height: 20),
+
+                        // ── About You ──────────────────────────────
                         const _SectionHeader(label: 'About You'),
                         const SizedBox(height: 12),
                         _FieldCard(children: [
@@ -538,23 +501,19 @@ class _EditProfileScreenState extends State<EditProfileScreen>
                           height: 54,
                           child: ElevatedButton(
                             onPressed: (_isSaving || _isPickingImg)
-                                ? null
-                                : _saveProfile,
+                                ? null : _saveProfile,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.primary,
                               disabledBackgroundColor:
                               AppColors.primary.withOpacity(0.6),
                               elevation: 0,
                               shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                  BorderRadius.circular(14)),
+                                  borderRadius: BorderRadius.circular(14)),
                             ),
                             child: _isSaving
-                                ? const SizedBox(
-                                width: 22, height: 22,
+                                ? const SizedBox(width: 22, height: 22,
                                 child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 2.5))
+                                    color: Colors.white, strokeWidth: 2.5))
                                 : const Text('Save Changes',
                                 style: TextStyle(
                                     fontSize: 16,
@@ -596,24 +555,14 @@ class _FieldCard extends StatelessWidget {
   );
 }
 
-class _FieldDivider extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) => Divider(
-      height: 1, thickness: 1, indent: 56,
-      color: AppColors.primary.withOpacity(0.08));
-}
-
 class _SectionHeader extends StatelessWidget {
   final String label;
   const _SectionHeader({required this.label});
   @override
   Widget build(BuildContext context) => Row(children: [
-    Container(
-      width: 4, height: 18,
-      decoration: BoxDecoration(
-          color: AppColors.primary,
-          borderRadius: BorderRadius.circular(2)),
-    ),
+    Container(width: 4, height: 18,
+        decoration: BoxDecoration(
+            color: AppColors.primary, borderRadius: BorderRadius.circular(2))),
     const SizedBox(width: 8),
     Text(label, style: const TextStyle(
         fontSize: 15, fontWeight: FontWeight.w800,

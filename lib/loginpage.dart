@@ -18,53 +18,40 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _auth = FirebaseAuth.instance;
   bool showSpinner = false;
-  String email = '';
+  String email    = '';
   String password = '';
 
-  // ── Capitalize first letter, lowercase the rest ───────────────────────
-  String _capitalize(String s) =>
-      s.isEmpty ? s : s[0].toUpperCase() + s.substring(1).toLowerCase();
-
-  // ── Ensure Google user has a complete registration doc ────────────────
+  // ── Ensure SSO users have a registration doc using 'nickname' ─────
+  // Matches the web app's ensureRegistrationDoc which writes 'nickname'
+  // (not firstName/lastName) to the registration collection.
   Future<void> _ensureRegistrationDoc(User user) async {
     try {
       final docRef = FirebaseFirestore.instance
           .collection('registration')
           .doc(user.uid);
-      final doc = await docRef.get();
-      final data = doc.data() ?? {};
+      final docSnap = await docRef.get();
+      final data    = docSnap.data() ?? {};
 
-      if (!doc.exists || (data['firstName'] ?? '').toString().isEmpty) {
-        final displayName = (user.displayName ?? '').trim();
-        final parts = displayName.split(' ');
-
-        final firstName =
-        parts.isNotEmpty ? _capitalize(parts.first) : '';
-        final lastName = parts.length > 1
-            ? parts.sublist(1).map(_capitalize).join(' ')
-            : '';
-
-        // Determine the provider from the user's providerData
+      if (!docSnap.exists ||
+          ((data['nickname'] ?? '').toString().isEmpty &&
+              (data['firstName'] ?? '').toString().isEmpty)) {
+        final nickname = (user.displayName ?? '').trim();
         final provider = user.providerData.isNotEmpty
             ? user.providerData.first.providerId
             : 'password';
 
         await docRef.set({
-          'firstName': firstName,
-          'lastName': lastName,
-          'email': user.email ?? '',
-          'uid': user.uid,
-          'address': data['address'] ?? '',
+          'nickname':    nickname,
+          'email':       user.email ?? '',
+          'uid':         user.uid,
+          'address':     data['address']     ?? '',
           'description': data['description'] ?? '',
-          // Preserve existing provider if already set, otherwise write new one
-          'provider': data['provider']?.toString().isNotEmpty == true
+          'provider':    data['provider']?.toString().isNotEmpty == true
               ? data['provider']
               : provider,
-          'createdAt':
-          data['createdAt'] ?? FieldValue.serverTimestamp(),
+          'createdAt':   data['createdAt'] ?? FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
       } else if ((data['provider'] ?? '').toString().isEmpty) {
-        // Doc exists but has no provider field — backfill it
         final provider = user.providerData.isNotEmpty
             ? user.providerData.first.providerId
             : 'password';
@@ -98,9 +85,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       onChanged: (v) => email = v,
                       keyboardType: TextInputType.emailAddress,
                       style: const TextStyle(
-                        color: Colors.black,
-                        fontWeight: FontWeight.bold,
-                      ),
+                          color: Colors.black, fontWeight: FontWeight.bold),
                       decoration: _inputDecoration('Email'),
                     ),
 
@@ -111,9 +96,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       obscureText: true,
                       onChanged: (v) => password = v,
                       style: const TextStyle(
-                        color: Colors.black,
-                        fontWeight: FontWeight.bold,
-                      ),
+                          color: Colors.black, fontWeight: FontWeight.bold),
                       decoration: _inputDecoration('Password'),
                     ),
 
@@ -124,19 +107,13 @@ class _LoginScreenState extends State<LoginScreen> {
                       alignment: Alignment.centerRight,
                       child: TextButton(
                         onPressed: () => showResetPasswordDialog(
-                          context,
-                          prefillEmail: email.trim(),
-                        ),
+                            context, prefillEmail: email.trim()),
                         style: TextButton.styleFrom(
-                          padding: EdgeInsets.zero,
-                          tapTargetSize:
-                          MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        child: const Text(
-                          'Forgot Password?',
-                          style: TextStyle(
-                              color: Colors.black54, fontSize: 13),
-                        ),
+                            padding: EdgeInsets.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                        child: const Text('Forgot Password?',
+                            style:
+                            TextStyle(color: Colors.black54, fontSize: 13)),
                       ),
                     ),
 
@@ -150,16 +127,13 @@ class _LoginScreenState extends State<LoginScreen> {
                           setState(() => showSpinner = true);
                           try {
                             await _auth.signInWithEmailAndPassword(
-                              email: email.trim(),
-                              password: password,
-                            );
+                                email: email.trim(), password: password);
                             setState(() => showSpinner = false);
                             if (!mounted) return;
                             Navigator.pushReplacement(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => const MainNavigation(),
-                              ),
+                                  builder: (_) => const MainNavigation()),
                             );
                           } on FirebaseAuthException catch (e) {
                             setState(() => showSpinner = false);
@@ -168,154 +142,122 @@ class _LoginScreenState extends State<LoginScreen> {
                               case 'invalid-credential':
                               case 'wrong-password':
                               case 'user-not-found':
-                                msg =
-                                'Incorrect email or password. Please try again.';
+                                msg = 'Incorrect email or password. Please try again.';
                                 break;
                               case 'invalid-email':
-                                msg =
-                                'Please enter a valid email address.';
+                                msg = 'Please enter a valid email address.';
                                 break;
                               case 'user-disabled':
                                 msg = 'This account has been disabled.';
                                 break;
                               case 'too-many-requests':
-                                msg =
-                                'Too many attempts. Please try again later.';
+                                msg = 'Too many attempts. Please try again later.';
                                 break;
                               default:
                                 msg = 'Login failed. Please try again.';
                             }
                             if (!mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text(msg)),
-                            );
+                                SnackBar(content: Text(msg)));
                           } catch (e) {
                             setState(() => showSpinner = false);
                             if (!mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                  content: Text('Error: ${e.toString()}')),
-                            );
+                                SnackBar(
+                                    content:
+                                    Text('Error: ${e.toString()}')));
                           }
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primary,
                           elevation: 0,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
+                              borderRadius: BorderRadius.circular(10)),
                         ),
-                        child: const Text(
-                          'Sign In',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white,
-                          ),
-                        ),
+                        child: const Text('Sign In',
+                            style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white)),
                       ),
                     ),
 
                     const SizedBox(height: 28),
 
                     // ── Divider ───────────────────────────────────
-                    const Row(
-                      children: [
-                        Expanded(child: Divider()),
-                        Padding(
-                          padding:
-                          EdgeInsets.symmetric(horizontal: 12),
-                          child: Text(
-                            'Or Sign In With',
-                            style: TextStyle(
-                                fontSize: 12, color: Colors.black45),
-                          ),
-                        ),
-                        Expanded(child: Divider()),
-                      ],
-                    ),
+                    const Row(children: [
+                      Expanded(child: Divider()),
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12),
+                        child: Text('Or Sign In With',
+                            style:
+                            TextStyle(fontSize: 12, color: Colors.black45)),
+                      ),
+                      Expanded(child: Divider()),
+                    ]),
 
                     const SizedBox(height: 20),
 
-                    // ── Google + Apple buttons ────────────────────
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _pillButton(
-                            onPressed: () async {
-                              setState(() => showSpinner = true);
-                              final result =
-                              await AuthService.signInWithGoogle();
-                              setState(() => showSpinner = false);
-
-                              if (result != null) {
-                                await result.user!.getIdToken(true);
-                                await _ensureRegistrationDoc(
-                                    result.user!);
-                                if (!mounted) return;
-                                Navigator.pushReplacement(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) =>
-                                    const MainNavigation(),
-                                  ),
-                                );
-                              } else {
-                                if (!mounted) return;
-                                ScaffoldMessenger.of(context)
-                                    .showSnackBar(
+                    // ── Google + Apple ────────────────────────────
+                    Row(children: [
+                      Expanded(
+                        child: _pillButton(
+                          onPressed: () async {
+                            setState(() => showSpinner = true);
+                            final result = await AuthService.signInWithGoogle();
+                            setState(() => showSpinner = false);
+                            if (result != null) {
+                              await result.user!.getIdToken(true);
+                              await _ensureRegistrationDoc(result.user!);
+                              if (!mounted) return;
+                              Navigator.pushReplacement(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (_) => const MainNavigation()),
+                              );
+                            } else {
+                              if (!mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
                                   const SnackBar(
-                                    content:
-                                    Text('Google sign-in failed'),
-                                  ),
-                                );
-                              }
-                            },
-                            child: Row(
-                              mainAxisAlignment:
-                              MainAxisAlignment.center,
-                              children: [
-                                _googleIcon(),
-                                const SizedBox(width: 8),
-                                Text(
-                                  'Google',
+                                      content:
+                                      Text('Google sign-in failed')));
+                            }
+                          },
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _googleIcon(),
+                              const SizedBox(width: 8),
+                              Text('Google',
                                   style: TextStyle(
-                                    color: AppColors.primary,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
-                            ),
+                                      color: AppColors.primary,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14)),
+                            ],
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _pillButton(
-                            onPressed: () {
-                              // TODO: Apple sign-in
-                            },
-                            child: const Row(
-                              mainAxisAlignment:
-                              MainAxisAlignment.center,
-                              children: [
-                                Icon(Icons.apple,
-                                    color: Colors.black87, size: 22),
-                                SizedBox(width: 6),
-                                Text(
-                                  'Apple',
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _pillButton(
+                          onPressed: () {
+                            // TODO: Apple sign-in
+                          },
+                          child: const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.apple, color: Colors.black87, size: 22),
+                              SizedBox(width: 6),
+                              Text('Apple',
                                   style: TextStyle(
-                                    color: Colors.black87,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                              ],
-                            ),
+                                      color: Colors.black87,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14)),
+                            ],
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ]),
 
                     const SizedBox(height: 28),
 
@@ -323,26 +265,20 @@ class _LoginScreenState extends State<LoginScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Text(
-                          "Don't have an account yet? ",
-                          style: TextStyle(
-                              fontSize: 13, color: Colors.black54),
-                        ),
+                        const Text("Don't have an account yet? ",
+                            style: TextStyle(
+                                fontSize: 13, color: Colors.black54)),
                         GestureDetector(
                           onTap: () => Navigator.pushReplacement(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => const RegisterPage(),
-                            ),
+                                builder: (_) => const RegisterPage()),
                           ),
-                          child: Text(
-                            'Sign Up',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: AppColors.primary,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
+                          child: Text('Sign Up',
+                              style: TextStyle(
+                                  fontSize: 13,
+                                  color: AppColors.primary,
+                                  fontWeight: FontWeight.bold)),
                         ),
                       ],
                     ),
@@ -358,68 +294,50 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  // ── Header ──────────────────────────────────────────────────────────────
   Widget _buildHeader(BuildContext context) {
     final w = MediaQuery.of(context).size.width;
     return SizedBox(
       height: 300,
-      child: Stack(
-        children: [
-          Container(color: Colors.white),
-          Positioned(
-            top: -80,
-            left: -80,
-            child: Container(
-              width: w * 0.75,
-              height: w * 0.75,
-              decoration: BoxDecoration(
+      child: Stack(children: [
+        Container(color: Colors.white),
+        Positioned(
+          top: -80, left: -80,
+          child: Container(
+            width: w * 0.75, height: w * 0.75,
+            decoration: BoxDecoration(
                 color: AppColors.primary.withOpacity(0.85),
-                shape: BoxShape.circle,
-              ),
-            ),
+                shape: BoxShape.circle),
           ),
-          Positioned(
-            top: -100,
-            right: -80,
-            child: Container(
-              width: w * 0.70,
-              height: w * 0.70,
-              decoration: BoxDecoration(
+        ),
+        Positioned(
+          top: -100, right: -80,
+          child: Container(
+            width: w * 0.70, height: w * 0.70,
+            decoration: BoxDecoration(
                 color: AppColors.primary.withOpacity(0.50),
-                shape: BoxShape.circle,
-              ),
-            ),
+                shape: BoxShape.circle),
           ),
-          const Positioned(
-            top: 68,
-            left: 28,
-            child: Text(
-              'Sign In',
+        ),
+        const Positioned(
+          top: 68, left: 28,
+          child: Text('Sign In',
               style: TextStyle(
-                color: Colors.white,
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.3,
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: Image.asset(
-              'assets/pikuru_full_logo.png',
-              height: 160,
-              fit: BoxFit.contain,
-            ),
-          ),
-        ],
-      ),
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.3)),
+        ),
+        Positioned(
+          bottom: 0, left: 0, right: 0,
+          child: Image.asset('assets/pikuru_full_logo.png',
+              height: 160, fit: BoxFit.contain),
+        ),
+      ]),
     );
   }
 }
 
-// ── Input decoration ─────────────────────────────────────────────────────
+// ── Input decoration ─────────────────────────────────────────────────────────
 InputDecoration _inputDecoration(String hint) {
   return InputDecoration(
     hintText: hint,
@@ -427,34 +345,25 @@ InputDecoration _inputDecoration(String hint) {
         color: Colors.black, fontWeight: FontWeight.bold),
     filled: true,
     fillColor: Colors.white,
-    contentPadding:
-    const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+    contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
     enabledBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(10),
-      borderSide: BorderSide(
-          color: AppColors.primary.withOpacity(0.6), width: 1.4),
-    ),
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(
+            color: AppColors.primary.withOpacity(0.6), width: 1.4)),
     focusedBorder: OutlineInputBorder(
-      borderRadius: BorderRadius.circular(10),
-      borderSide:
-      const BorderSide(color: AppColors.primary, width: 2.0),
-    ),
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: AppColors.primary, width: 2.0)),
   );
 }
 
-// ── Pill-shaped social button ─────────────────────────────────────────────
-Widget _pillButton({
-  required VoidCallback onPressed,
-  required Widget child,
-}) {
+Widget _pillButton({required VoidCallback onPressed, required Widget child}) {
   return SizedBox(
     height: 48,
     child: OutlinedButton(
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
         side: const BorderSide(color: Color(0xFFDDDDDD)),
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(30)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
         backgroundColor: Colors.white,
         padding: EdgeInsets.zero,
       ),
@@ -463,61 +372,48 @@ Widget _pillButton({
   );
 }
 
-// ── Google coloured G icon ────────────────────────────────────────────────
 Widget _googleIcon() {
   return SizedBox(
-    width: 20,
-    height: 20,
-    child: CustomPaint(painter: _GoogleGPainter()),
-  );
+      width: 20,
+      height: 20,
+      child: CustomPaint(painter: _GoogleGPainter()));
 }
 
 class _GoogleGPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final rect = Rect.fromLTWH(0, 0, size.width, size.height);
-    final center = rect.center;
+    final center = Rect.fromLTWH(0, 0, size.width, size.height).center;
     final radius = size.width / 2;
-
     const sweeps = [
       [0.0, 90.0, Color(0xFF4285F4)],
       [90.0, 90.0, Color(0xFF34A853)],
       [180.0, 90.0, Color(0xFFFBBC05)],
       [270.0, 90.0, Color(0xFFEA4335)],
     ];
-
     final paint = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = size.width * 0.28;
-
     for (final s in sweeps) {
       paint.color = s[2] as Color;
       canvas.drawArc(
         Rect.fromCircle(center: center, radius: radius * 0.72),
         (s[0] as double) * 3.14159 / 180,
         (s[1] as double) * 3.14159 / 180,
-        false,
-        paint,
+        false, paint,
       );
     }
-
-    final whitePaint = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.fill;
+    final whitePaint = Paint()..color = Colors.white..style = PaintingStyle.fill;
     canvas.drawRect(
-      Rect.fromLTWH(center.dx, center.dy - size.height * 0.15,
-          size.width * 0.55, size.height * 0.30),
-      whitePaint,
-    );
-
+        Rect.fromLTWH(center.dx, center.dy - size.height * 0.15,
+            size.width * 0.55, size.height * 0.30),
+        whitePaint);
     final bluePaint = Paint()
       ..color = const Color(0xFF4285F4)
       ..style = PaintingStyle.fill;
     canvas.drawRect(
-      Rect.fromLTWH(center.dx, center.dy - size.height * 0.10,
-          size.width * 0.50, size.height * 0.20),
-      bluePaint,
-    );
+        Rect.fromLTWH(center.dx, center.dy - size.height * 0.10,
+            size.width * 0.50, size.height * 0.20),
+        bluePaint);
   }
 
   @override

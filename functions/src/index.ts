@@ -8,17 +8,24 @@ if (admin.apps.length === 0) {
   admin.initializeApp();
 }
 
-const gmailEmail = defineString("GMAIL_EMAIL");
+const gmailEmail    = defineString("GMAIL_EMAIL");
 const gmailPassword = defineString("GMAIL_PASSWORD");
 
-// ── Send OTP ─────────────────────────────────────────────────────────
+// ── Send OTP ──────────────────────────────────────────────────────────────────
+// Accepts either 'nickname' (new) or 'firstName' (legacy) for the greeting.
+// Both Flutter and web callers pass one of these; we prefer nickname so the
+// email feels natural for users who chose a username-style display name.
 export const sendOtp = onCall(async (request) => {
-  const data = request.data;
-  const email = data.email as string;
-  const firstName = data.firstName as string;
-  const otp = data.otp as string;
+  const data      = request.data;
+  const email     = data.email     as string;
+  const otp       = data.otp       as string;
 
-  if (!email || !firstName || !otp) {
+  // ── Greeting resolution: prefer nickname, fall back to firstName ──────────
+  const nickname  = (data.nickname  ?? "").toString().trim();
+  const firstName = (data.firstName ?? "").toString().trim();
+  const greeting  = nickname || firstName || "there";
+
+  if (!email || !otp) {
     throw new HttpsError("invalid-argument", "Missing required fields");
   }
 
@@ -37,7 +44,7 @@ export const sendOtp = onCall(async (request) => {
     "<h1 style=\"color:white;margin:0\">Pikuru</h1>" +
     "</div>" +
     "<div style=\"background:#f9f9f9;padding:32px\">" +
-    "<p>Hi <strong>" + firstName + "</strong>,</p>" +
+    "<p>Hi <strong>" + greeting + "</strong>,</p>" +
     "<p>Use the code below to complete registration.</p>" +
     "<div style=\"text-align:center;padding:24px;" +
     "border:2px solid #3BB273;border-radius:12px\">" +
@@ -50,8 +57,8 @@ export const sendOtp = onCall(async (request) => {
     "</div></div>";
 
   const mailOptions = {
-    from: "\"Pikuru App\" <" + gmailEmail.value() + ">",
-    to: email,
+    from:    "\"Pikuru App\" <" + gmailEmail.value() + ">",
+    to:      email,
     subject: "Your Pikuru Verification Code",
     html,
   };
@@ -68,7 +75,7 @@ export const sendOtp = onCall(async (request) => {
   }
 });
 
-// ── Update User Email ─────────────────────────────────────────────────
+// ── Update User Email ─────────────────────────────────────────────────────────
 // Called after OTP is verified on the client. Uses Admin SDK to update
 // the email in Firebase Auth directly, bypassing client-side restrictions.
 export const updateUserEmail = onCall(async (request) => {
@@ -77,7 +84,7 @@ export const updateUserEmail = onCall(async (request) => {
     throw new HttpsError("unauthenticated", "You must be logged in.");
   }
 
-  const uid = request.auth.uid;
+  const uid      = request.auth.uid;
   const newEmail = request.data.newEmail as string;
 
   if (!newEmail) {
@@ -91,7 +98,7 @@ export const updateUserEmail = onCall(async (request) => {
   }
 
   try {
-    // ✅ Admin SDK updates Auth email directly — no confirmation link needed
+    // Admin SDK updates Auth email directly — no confirmation link needed
     await admin.auth().updateUser(uid, {email: newEmail});
     console.log(`Email updated for uid=${uid} → ${newEmail}`);
     return {success: true};
