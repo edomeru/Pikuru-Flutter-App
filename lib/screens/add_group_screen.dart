@@ -346,7 +346,7 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
         _buildPageHeader(
             'Basic Details', 'Name, type & description', Icons.groups_outlined),
         _buildTextField(
-          label: 'Group / Org Name (EN) *',
+          label: 'Group / Org Name *',
           controller: _nameController,
           hint: 'e.g. Tokyo Pickleball Club',
         ),
@@ -436,7 +436,7 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
         Row(children: [
           Expanded(
             child: _buildTextField(
-              label: 'City (EN)',
+              label: 'City',
               controller: _cityController,
               hint: 'e.g. Shinjuku',
             ),
@@ -444,7 +444,7 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
           const SizedBox(width: 12),
           Expanded(
             child: _buildTextField(
-              label: 'Prefecture (EN)',
+              label: 'Prefecture',
               controller: _prefController,
               hint: 'e.g. Tokyo',
             ),

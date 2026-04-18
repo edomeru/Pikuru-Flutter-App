@@ -7,6 +7,11 @@ import 'package:pikuru/modal/group_filter_modal.dart';
 import 'package:pikuru/screens/add_group_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Lang type
+// ─────────────────────────────────────────────────────────────────────────────
+typedef Lang = String; // 'en' | 'ja'
+
+// ─────────────────────────────────────────────────────────────────────────────
 // buildLocMap
 // ─────────────────────────────────────────────────────────────────────────────
 Map<String, Map<String, dynamic>> buildLocMap(
@@ -14,7 +19,7 @@ Map<String, Map<String, dynamic>> buildLocMap(
   final map = <String, Map<String, dynamic>>{};
   for (final d in locations) {
     final docId = (d['_doc_id'] ?? '').toString();
-    final locId = (d['loc_id'] ?? '').toString();
+    final locId = (d['loc_id']  ?? '').toString();
     if (docId.isNotEmpty) map[docId] = d;
     if (locId.isNotEmpty) map[locId] = d;
   }
@@ -23,43 +28,149 @@ Map<String, Map<String, dynamic>> buildLocMap(
 
 // ─────────────────────────────────────────────────────────────────────────────
 // resolveLocation
+// EN: loc_city_en → loc_city → org_city
+// JP: loc_city    → org_city_jp → org_city
 // ─────────────────────────────────────────────────────────────────────────────
 String resolveLocation(
-    Map<String, dynamic> g, Map<String, Map<String, dynamic>> locMap) {
+    Map<String, dynamic> g,
+    Map<String, Map<String, dynamic>> locMap,
+    Lang lang,
+    ) {
   String cityEn = '', city = '', prefEn = '', pref = '', country = '';
 
   final locId = (g['org_loc_id'] ?? '').toString();
   if (locId.isNotEmpty && locMap.containsKey(locId)) {
     final d = locMap[locId]!;
-    cityEn  = (d['loc_city_en']       ?? '').toString().trim();
-    city    = (d['loc_city']           ?? '').toString().trim();
-    prefEn  = (d['loc_prefecture_en']  ?? '').toString().trim();
-    pref    = (d['loc_prefecture']     ?? '').toString().trim();
-    country = (d['loc_country']        ?? '').toString().trim();
+    cityEn  = (d['loc_city_en']      ?? '').toString().trim();
+    city    = (d['loc_city']          ?? '').toString().trim();
+    prefEn  = (d['loc_prefecture_en'] ?? '').toString().trim();
+    pref    = (d['loc_prefecture']    ?? '').toString().trim();
+    country = (d['loc_country']       ?? '').toString().trim();
   }
 
-  if (prefEn.isEmpty)  prefEn  = (g['org_prefecture'] ?? '').toString().trim();
-  if (pref.isEmpty)    pref    = (g['org_prefecture'] ?? '').toString().trim();
-  if (cityEn.isEmpty)  cityEn  = (g['org_city']       ?? '').toString().trim();
-  if (city.isEmpty)    city    = (g['org_city']        ?? '').toString().trim();
-  if (country.isEmpty) country = (g['org_country']     ?? '').toString().trim();
+  if (lang == 'ja') {
+    if (prefEn.isEmpty && pref.isEmpty)
+      pref = (g['org_prefecture_jp'] ?? g['org_prefecture'] ?? '').toString().trim();
+    if (cityEn.isEmpty && city.isEmpty)
+      city = (g['org_city_jp'] ?? g['org_city'] ?? '').toString().trim();
+  } else {
+    if (prefEn.isEmpty) prefEn = (g['org_prefecture'] ?? '').toString().trim();
+    if (cityEn.isEmpty) cityEn = (g['org_city']       ?? '').toString().trim();
+  }
+  if (country.isEmpty) country = (g['org_country'] ?? '').toString().trim();
 
-  final c = cityEn.isNotEmpty ? cityEn : city;
-  final p = prefEn.isNotEmpty ? prefEn : pref;
+  final c = lang == 'ja'
+      ? (city.isNotEmpty   ? city   : cityEn)
+      : (cityEn.isNotEmpty ? cityEn : city);
+  final p = lang == 'ja'
+      ? (pref.isNotEmpty   ? pref   : prefEn)
+      : (prefEn.isNotEmpty ? prefEn : pref);
 
   String loc;
-  if (c.isNotEmpty && p.isNotEmpty) {
-    loc = '$c, $p';
-  } else if (c.isNotEmpty && country.isNotEmpty) {
-    loc = '$c, $country';
-  } else {
-    loc = c.isNotEmpty ? c : (p.isNotEmpty ? p : country);
-  }
+  if (c.isNotEmpty && p.isNotEmpty)            loc = '$c, $p';
+  else if (c.isNotEmpty && country.isNotEmpty) loc = '$c, $country';
+  else                                         loc = c.isNotEmpty ? c : (p.isNotEmpty ? p : country);
 
   final venue = (g['org_venue_loc_name'] ?? '').toString().trim();
   if (venue.isNotEmpty && loc.isNotEmpty) return '$venue - $loc';
-  if (venue.isNotEmpty) return venue;
+  if (venue.isNotEmpty)                   return venue;
   return loc;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// resolveCity — always EN, used only for sorting
+// ─────────────────────────────────────────────────────────────────────────────
+String resolveCity(
+    Map<String, dynamic> g, Map<String, Map<String, dynamic>> locMap) {
+  final locId = (g['org_loc_id'] ?? '').toString();
+  if (locId.isNotEmpty && locMap.containsKey(locId)) {
+    final d  = locMap[locId]!;
+    final en = (d['loc_city_en'] ?? '').toString().trim();
+    final ja = (d['loc_city']    ?? '').toString().trim();
+    if (en.isNotEmpty) return en;
+    if (ja.isNotEmpty) return ja;
+  }
+  return (g['org_city'] ?? '').toString().trim();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// resolveGroupName
+// EN: org_name  |  JP: org_name_jp → org_name fallback
+// ─────────────────────────────────────────────────────────────────────────────
+String resolveGroupName(Map<String, dynamic> g, Lang lang) {
+  if (lang == 'ja') {
+    final jp = (g['org_name_jp'] ?? '').toString().trim();
+    if (jp.isNotEmpty) return jp;
+  }
+  return (g['org_name'] ?? '').toString().trim();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Localised strings
+// ─────────────────────────────────────────────────────────────────────────────
+class _T {
+  final String searchHint;
+  final String title;
+  final String noResults;
+  final String noMatch;
+  final String noMatchSub;
+  final String addGroup;
+  final String langEn;
+  final String langJa;
+  final bool isJa;
+
+  const _T({
+    required this.searchHint,
+    required this.title,
+    required this.noResults,
+    required this.noMatch,
+    required this.noMatchSub,
+    required this.addGroup,
+    required this.langEn,
+    required this.langJa,
+    required this.isJa,
+  });
+
+  static const en = _T(
+    searchHint: 'Search local groups...',
+    title:      'Groups',
+    noResults:  'No groups found.',
+    noMatch:    'No groups match your search or filters.',
+    noMatchSub: 'Try adjusting your filters.',
+    addGroup:   'Add a Group',
+    langEn:     'EN',
+    langJa:     '日本語',
+    isJa:       false,
+  );
+
+  static const ja = _T(
+    searchHint: '地元のグループを検索...',
+    title:      'グループ',
+    noResults:  'グループが見つかりませんでした。',
+    noMatch:    '検索やフィルターに一致するグループがありません。',
+    noMatchSub: 'フィルターを調整してみてください。',
+    addGroup:   'グループ作成',
+    langEn:     'EN',
+    langJa:     '日本語',
+    isJa:       true,
+  );
+
+  static _T of(Lang lang) => lang == 'ja' ? ja : en;
+
+  // Localised chip label helpers
+  String get chipBeginner     => isJa ? '初級'       : 'Beginner';
+  String get chipIntermediate => isJa ? '中級'       : 'Intermediate';
+  String get chipAdvanced     => isJa ? '上級'       : 'Advanced';
+  String get chipJuniors      => isJa ? 'ジュニア'   : 'Juniors';
+  String get chipStudents     => isJa ? '学生'       : 'Students';
+  String get chipAdults       => isJa ? '大人'       : 'Adults';
+  String get chipSeniors      => isJa ? 'シニア'     : 'Seniors';
+  String get chipMornings     => isJa ? '午前'       : 'Mornings';
+  String get chipAfternoons   => isJa ? '午後'       : 'Afternoons';
+  String get chipEvenings     => isJa ? '夜間'       : 'Evenings';
+  List<String> get chipDays   => isJa
+      ? ['日','月','火','水','木','金','土']
+      : ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -76,6 +187,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
     with AutomaticKeepAliveClientMixin {
   final TextEditingController _searchController = TextEditingController();
   GroupFilter _filter = const GroupFilter(orgCountry: 'Japan');
+  Lang _lang = 'en';
 
   @override
   bool get wantKeepAlive => false;
@@ -96,6 +208,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
 
   bool get _hasActiveFilter => !_filter.isDefault;
 
+  // ── Open filter modal — always passes current _lang ────────────────────────
   Future<void> _openFilter({
     required List<Map<String, dynamic>> allGroups,
     required Map<String, Map<String, dynamic>> locMap,
@@ -106,120 +219,95 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
       backgroundColor: Colors.transparent,
       builder: (_) => GroupFilterModal(
         currentFilter: _filter,
-        allGroups: allGroups,
-        locMap: locMap,
+        allGroups:     allGroups,
+        locMap:        locMap,
+        lang:          _lang,    // ← sync modal language with screen language
       ),
     );
     if (result != null && mounted) setState(() => _filter = result);
   }
 
   // ── Active filter chips ────────────────────────────────────────────────────
-  List<_Chip> _activeChips() {
+  List<_Chip> _activeChips(_T t) {
     final chips = <_Chip>[];
-
     void add(String label, VoidCallback remove) =>
         chips.add(_Chip(label: label, onRemove: remove));
 
-    if (_filter.orgPrefecture != null) {
-      add(
-        _filter.orgPrefecture!,
-            () => setState(() =>
-        _filter = _filter.copyWith(orgPrefecture: null, orgCity: null)),
-      );
+    // Location chips — stored as EN keys; display as-is (always EN strings)
+    if (_filter.orgPrefecture != null)
+      add(_filter.orgPrefecture!,
+              () => setState(() => _filter = _filter.copyWith(orgPrefecture: null, orgCity: null)));
+    if (_filter.orgCity != null)
+      add(_filter.orgCity!,
+              () => setState(() => _filter = _filter.copyWith(orgCity: null)));
+
+    // Skill
+    if (_filter.orgSkillBeginner)
+      add(t.chipBeginner,     () => setState(() => _filter = _filter.copyWith(orgSkillBeginner: false)));
+    if (_filter.orgSkillIntermediate)
+      add(t.chipIntermediate, () => setState(() => _filter = _filter.copyWith(orgSkillIntermediate: false)));
+    if (_filter.orgSkillAdvance)
+      add(t.chipAdvanced,     () => setState(() => _filter = _filter.copyWith(orgSkillAdvance: false)));
+
+    // Age
+    if (_filter.orgAgeJuniors)
+      add(t.chipJuniors,  () => setState(() => _filter = _filter.copyWith(orgAgeJuniors: false)));
+    if (_filter.orgAgeStudents)
+      add(t.chipStudents, () => setState(() => _filter = _filter.copyWith(orgAgeStudents: false)));
+    if (_filter.orgAgeAdult)
+      add(t.chipAdults,   () => setState(() => _filter = _filter.copyWith(orgAgeAdult: false)));
+    if (_filter.orgAgeSeniors)
+      add(t.chipSeniors,  () => setState(() => _filter = _filter.copyWith(orgAgeSeniors: false)));
+
+    // Days — parallel lists for getter / setter / label
+    final days    = t.chipDays;
+    final getters = [
+      _filter.orgMeetupSun,  _filter.orgMeetupMon,  _filter.orgMeetupTues,
+      _filter.orgMeetupWeds, _filter.orgMeetupThurs, _filter.orgMeetupFri,
+      _filter.orgMeetupSat,
+    ];
+    final setters = <VoidCallback>[
+          () => setState(() => _filter = _filter.copyWith(orgMeetupSun:   false)),
+          () => setState(() => _filter = _filter.copyWith(orgMeetupMon:   false)),
+          () => setState(() => _filter = _filter.copyWith(orgMeetupTues:  false)),
+          () => setState(() => _filter = _filter.copyWith(orgMeetupWeds:  false)),
+          () => setState(() => _filter = _filter.copyWith(orgMeetupThurs: false)),
+          () => setState(() => _filter = _filter.copyWith(orgMeetupFri:   false)),
+          () => setState(() => _filter = _filter.copyWith(orgMeetupSat:   false)),
+    ];
+    for (var i = 0; i < 7; i++) {
+      if (getters[i]) add(days[i], setters[i]);
     }
-    if (_filter.orgCity != null) {
-      add(
-        _filter.orgCity!,
-            () => setState(() => _filter = _filter.copyWith(orgCity: null)),
-      );
-    }
-    if (_filter.orgSkillBeginner) {
-      add('Beginner',
-              () => setState(() => _filter = _filter.copyWith(orgSkillBeginner: false)));
-    }
-    if (_filter.orgSkillIntermediate) {
-      add('Intermediate',
-              () => setState(() => _filter = _filter.copyWith(orgSkillIntermediate: false)));
-    }
-    if (_filter.orgSkillAdvance) {
-      add('Advanced',
-              () => setState(() => _filter = _filter.copyWith(orgSkillAdvance: false)));
-    }
-    if (_filter.orgAgeJuniors) {
-      add('Juniors',
-              () => setState(() => _filter = _filter.copyWith(orgAgeJuniors: false)));
-    }
-    if (_filter.orgAgeStudents) {
-      add('Students',
-              () => setState(() => _filter = _filter.copyWith(orgAgeStudents: false)));
-    }
-    if (_filter.orgAgeAdult) {
-      add('Adults',
-              () => setState(() => _filter = _filter.copyWith(orgAgeAdult: false)));
-    }
-    if (_filter.orgAgeSeniors) {
-      add('Seniors',
-              () => setState(() => _filter = _filter.copyWith(orgAgeSeniors: false)));
-    }
-    if (_filter.orgMeetupSun) {
-      add('Sun',
-              () => setState(() => _filter = _filter.copyWith(orgMeetupSun: false)));
-    }
-    if (_filter.orgMeetupMon) {
-      add('Mon',
-              () => setState(() => _filter = _filter.copyWith(orgMeetupMon: false)));
-    }
-    if (_filter.orgMeetupTues) {
-      add('Tue',
-              () => setState(() => _filter = _filter.copyWith(orgMeetupTues: false)));
-    }
-    if (_filter.orgMeetupWeds) {
-      add('Wed',
-              () => setState(() => _filter = _filter.copyWith(orgMeetupWeds: false)));
-    }
-    if (_filter.orgMeetupThurs) {
-      add('Thu',
-              () => setState(() => _filter = _filter.copyWith(orgMeetupThurs: false)));
-    }
-    if (_filter.orgMeetupFri) {
-      add('Fri',
-              () => setState(() => _filter = _filter.copyWith(orgMeetupFri: false)));
-    }
-    if (_filter.orgMeetupSat) {
-      add('Sat',
-              () => setState(() => _filter = _filter.copyWith(orgMeetupSat: false)));
-    }
-    if (_filter.orgMeetupTimeMornings) {
-      add('Mornings',
-              () => setState(() => _filter = _filter.copyWith(orgMeetupTimeMornings: false)));
-    }
-    if (_filter.orgMeetupTimeAfternoons) {
-      add('Afternoons',
-              () => setState(() => _filter = _filter.copyWith(orgMeetupTimeAfternoons: false)));
-    }
-    if (_filter.orgMeetupTimeEvenings) {
-      add('Evenings',
-              () => setState(() => _filter = _filter.copyWith(orgMeetupTimeEvenings: false)));
-    }
+
+    // Times
+    if (_filter.orgMeetupTimeMornings)
+      add(t.chipMornings,   () => setState(() => _filter = _filter.copyWith(orgMeetupTimeMornings: false)));
+    if (_filter.orgMeetupTimeAfternoons)
+      add(t.chipAfternoons, () => setState(() => _filter = _filter.copyWith(orgMeetupTimeAfternoons: false)));
+    if (_filter.orgMeetupTimeEvenings)
+      add(t.chipEvenings,   () => setState(() => _filter = _filter.copyWith(orgMeetupTimeEvenings: false)));
 
     return chips;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
+  // Build
+  // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     super.build(context);
-    final showAddButton   = ref.watch(showAddGroupButtonProvider);
-    final groupsAsync     = ref.watch(organizationsProvider);
-    final locationsAsync  = ref.watch(locationsProvider);
+    final t              = _T.of(_lang);
+    final showAddButton  = ref.watch(showAddGroupButtonProvider);
+    final groupsAsync    = ref.watch(organizationsProvider);
+    final locationsAsync = ref.watch(locationsProvider);
 
     final locMap    = buildLocMap(locationsAsync.asData?.value ?? []);
     final allGroups = groupsAsync.asData?.value ?? [];
 
     final validGroups = allGroups.where((g) {
-      if (g['org_type'] != 'Local Group') return false;
-      if (g['org_public'] != true) return false;
-      if (g['org_pending_review'] == true) return false;
+      if (g['org_type']           != 'Local Group') return false;
+      if (g['org_public']         != true)          return false;
+      if (g['org_pending_review'] == true)          return false;
       return true;
     }).toList()
       ..sort((a, b) {
@@ -233,19 +321,14 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
       body: SafeArea(
         child: Stack(
           children: [
-            Column(
-              children: [
-                _buildHeader(allGroups: validGroups, locMap: locMap),
-                Expanded(
-                    child: _buildGroupsList(groupsAsync, validGroups, locMap)),
-              ],
-            ),
+            Column(children: [
+              _buildHeader(t: t, allGroups: validGroups, locMap: locMap),
+              Expanded(child: _buildGroupsList(t, groupsAsync, validGroups, locMap)),
+            ]),
             if (showAddButton)
               Positioned(
-                bottom: 24,
-                left: 0,
-                right: 0,
-                child: Center(child: _buildAddGroupButton()),
+                bottom: 24, left: 0, right: 0,
+                child: Center(child: _buildAddGroupButton(t)),
               ),
           ],
         ),
@@ -255,34 +338,35 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
 
   // ── Header ─────────────────────────────────────────────────────────────────
   Widget _buildHeader({
+    required _T t,
     required List<Map<String, dynamic>> allGroups,
     required Map<String, Map<String, dynamic>> locMap,
   }) {
-    final chips = _activeChips();
+    final chips = _activeChips(t);
 
     return Container(
-      color: Colors.white,
+      color:   Colors.white,
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Groups',
-                      style: TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF0D0D0D),
-                          letterSpacing: -0.5)),
-                  if (_filter.orgPrefecture != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Row(
-                        children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(t.title,
+                        style: const TextStyle(
+                            fontSize:     28,
+                            fontWeight:   FontWeight.w800,
+                            color:        Color(0xFF0D0D0D),
+                            letterSpacing: -0.5)),
+                    if (_filter.orgPrefecture != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Row(children: [
                           Icon(Icons.location_on_rounded,
                               size: 12, color: AppColors.primary),
                           const SizedBox(width: 3),
@@ -292,100 +376,117 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
                               if (_filter.orgCity != null) _filter.orgCity,
                             ].whereType<String>().join(', '),
                             style: TextStyle(
-                                fontSize: 12,
+                                fontSize:   12,
                                 fontWeight: FontWeight.w600,
-                                color: AppColors.primary),
+                                color:      AppColors.primary),
                           ),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-              GestureDetector(
-                onTap: () => _openFilter(allGroups: allGroups, locMap: locMap),
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      width: 42,
-                      height: 42,
-                      decoration: BoxDecoration(
-                        color: _hasActiveFilter
-                            ? AppColors.primary
-                            : AppColors.primary.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(Icons.tune_rounded,
-                          color: _hasActiveFilter
-                              ? Colors.white
-                              : AppColors.primary,
-                          size: 20),
-                    ),
-                    if (_hasActiveFilter)
-                      Positioned(
-                        top: -3,
-                        right: -3,
-                        child: Container(
-                          width: 10,
-                          height: 10,
-                          decoration: const BoxDecoration(
-                            color: Colors.orangeAccent,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
+                        ]),
                       ),
                   ],
                 ),
               ),
+
+              // Filter btn + EN/JP toggle
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                GestureDetector(
+                  onTap: () => _openFilter(allGroups: allGroups, locMap: locMap),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: 42, height: 42,
+                        decoration: BoxDecoration(
+                          color: _hasActiveFilter
+                              ? AppColors.primary
+                              : AppColors.primary.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(Icons.tune_rounded,
+                            color: _hasActiveFilter
+                                ? Colors.white
+                                : AppColors.primary,
+                            size: 20),
+                      ),
+                      if (_hasActiveFilter)
+                        Positioned(
+                          top: -3, right: -3,
+                          child: Container(
+                            width: 10, height: 10,
+                            decoration: const BoxDecoration(
+                                color: Colors.orangeAccent,
+                                shape: BoxShape.circle),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                // EN / JP pill
+                Container(
+                  decoration: BoxDecoration(
+                    color:        AppColors.primary.withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: AppColors.primary.withOpacity(0.18)),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    _LangButton(
+                      label:    t.langEn,
+                      selected: _lang == 'en',
+                      onTap:    () => setState(() => _lang = 'en'),
+                    ),
+                    _LangButton(
+                      label:    t.langJa,
+                      selected: _lang == 'ja',
+                      onTap:    () => setState(() => _lang = 'ja'),
+                    ),
+                  ]),
+                ),
+              ]),
             ],
           ),
           const SizedBox(height: 14),
 
-          // Search bar
+          // Search
           Container(
             height: 48,
             decoration: BoxDecoration(
-              color: const Color(0xFFF2F3F5),
+              color:        const Color(0xFFF2F3F5),
               borderRadius: BorderRadius.circular(14),
             ),
             child: TextField(
               controller: _searchController,
-              onChanged: (_) => setState(() {}),
+              onChanged:  (_) => setState(() {}),
               style: const TextStyle(fontSize: 15, color: Color(0xFF0D0D0D)),
               decoration: InputDecoration(
-                hintText: 'Search local groups...',
+                hintText: t.searchHint,
                 hintStyle: TextStyle(
-                    color: Colors.black.withOpacity(0.35),
-                    fontSize: 15,
+                    color:      Colors.black.withOpacity(0.35),
+                    fontSize:   15,
                     fontWeight: FontWeight.w400),
                 prefixIcon: Icon(Icons.search_rounded,
                     color: Colors.black.withOpacity(0.35), size: 22),
                 suffixIcon: _searchController.text.isNotEmpty
                     ? GestureDetector(
-                    onTap: () =>
-                        setState(() => _searchController.clear()),
+                    onTap: () => setState(() => _searchController.clear()),
                     child: Icon(Icons.close_rounded,
                         color: Colors.black.withOpacity(0.35), size: 20))
                     : null,
-                border: InputBorder.none,
-                contentPadding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                border:         InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
               ),
             ),
           ),
-
           const SizedBox(height: 10),
 
+          // Filter chips
           if (chips.isNotEmpty) ...[
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
-              child: Row(
-                children: [
-                  ...chips.map((c) => _buildFilterChip(c)),
-                  const SizedBox(width: 4),
-                ],
-              ),
+              child: Row(children: [
+                ...chips.map((c) => _buildFilterChip(c)),
+                const SizedBox(width: 4),
+              ]),
             ),
             const SizedBox(height: 10),
           ],
@@ -398,76 +499,67 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
 
   Widget _buildFilterChip(_Chip chip) {
     return Container(
-      margin: const EdgeInsets.only(right: 8),
+      margin:  const EdgeInsets.only(right: 8),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: AppColors.primary.withOpacity(0.08),
+        color:        AppColors.primary.withOpacity(0.08),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.primary.withOpacity(0.3)),
+        border:       Border.all(color: AppColors.primary.withOpacity(0.3)),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(chip.label,
-              style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.primary)),
-          const SizedBox(width: 4),
-          GestureDetector(
-            onTap: chip.onRemove,
-            child: Icon(Icons.close_rounded,
-                size: 13, color: AppColors.primary),
-          ),
-        ],
-      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Text(chip.label,
+            style: TextStyle(
+                fontSize:   12,
+                fontWeight: FontWeight.w600,
+                color:      AppColors.primary)),
+        const SizedBox(width: 4),
+        GestureDetector(
+          onTap: chip.onRemove,
+          child: Icon(Icons.close_rounded, size: 13, color: AppColors.primary),
+        ),
+      ]),
     );
   }
 
   // ── Groups list ─────────────────────────────────────────────────────────────
   Widget _buildGroupsList(
+      _T t,
       AsyncValue<List<Map<String, dynamic>>> groupsAsync,
       List<Map<String, dynamic>> validGroups,
       Map<String, Map<String, dynamic>> locMap,
       ) {
     return groupsAsync.when(
       data: (_) {
-        if (validGroups.isEmpty) {
-          return _empty(Icons.group_off_rounded, 'No groups found.');
-        }
+        if (validGroups.isEmpty) return _empty(Icons.group_off_rounded, t.noResults);
 
         final query = _searchController.text.toLowerCase().trim();
-
         var filtered = query.isEmpty
             ? validGroups
-            : validGroups
-            .where((g) => (g['org_name'] ?? '')
-            .toString()
-            .toLowerCase()
-            .contains(query))
-            .toList();
+            : validGroups.where((g) {
+          final nameEn = (g['org_name']    ?? '').toString().toLowerCase();
+          final nameJp = (g['org_name_jp'] ?? '').toString().toLowerCase();
+          return nameEn.contains(query) || nameJp.contains(query);
+        }).toList();
 
-        filtered =
-            filtered.where((g) => _filter.matches(g, locMap)).toList();
+        filtered = filtered.where((g) => _filter.matches(g, locMap)).toList();
 
         if (filtered.isEmpty) {
           return _empty(
             Icons.search_off_rounded,
-            query.isNotEmpty
-                ? 'No groups match "$query".'
-                : 'No groups match the selected filters.',
-            sub: 'Try adjusting your filters.',
+            query.isNotEmpty ? 'No groups match "$query".' : t.noMatch,
+            sub: t.noMatchSub,
           );
         }
 
-        final enriched = filtered.map((g) {
-          final loc = resolveLocation(g, locMap);
-          return {...g, '_resolved_location': loc};
+        final enriched = filtered.map((g) => {
+          ...g,
+          '_resolved_location': resolveLocation(g, locMap, _lang),
+          '_resolved_name':     resolveGroupName(g, _lang),
         }).toList();
 
         return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 110),
-          itemCount: enriched.length,
+          padding:     const EdgeInsets.fromLTRB(20, 20, 20, 110),
+          itemCount:   enriched.length,
           itemBuilder: (context, i) => GroupCardList(group: enriched[i]),
         );
       },
@@ -487,87 +579,75 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
 
   Widget _empty(IconData icon, String msg, {String? sub}) {
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 52, color: Colors.black.withOpacity(0.1)),
-          const SizedBox(height: 14),
-          Text(msg,
-              style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.black.withOpacity(0.35),
-                  fontWeight: FontWeight.w500),
-              textAlign: TextAlign.center),
-          if (sub != null) ...[
-            const SizedBox(height: 6),
-            Text(sub,
-                style: TextStyle(
-                    fontSize: 13, color: Colors.black.withOpacity(0.25))),
-          ],
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 52, color: Colors.black.withOpacity(0.1)),
+        const SizedBox(height: 14),
+        Text(msg,
+            style: TextStyle(
+                fontSize:   16,
+                color:      Colors.black.withOpacity(0.35),
+                fontWeight: FontWeight.w500),
+            textAlign: TextAlign.center),
+        if (sub != null) ...[
+          const SizedBox(height: 6),
+          Text(sub,
+              style: TextStyle(fontSize: 13, color: Colors.black.withOpacity(0.25))),
         ],
-      ),
+      ]),
     );
   }
 
-  // ── Add group button ────────────────────────────────────────────────────────
-  Widget _buildAddGroupButton() {
+  // ── Add group FAB ───────────────────────────────────────────────────────────
+  Widget _buildAddGroupButton(_T t) {
     return Stack(
       clipBehavior: Clip.none,
       children: [
         GestureDetector(
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const AddGroupScreen()),
-            );
-          },
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AddGroupScreen()),
+          ),
           child: Container(
-            height: 54,
+            height:  54,
             padding: const EdgeInsets.symmetric(horizontal: 36),
             decoration: BoxDecoration(
-              color: const Color(0xFF0D0D0D),
+              color:        const Color(0xFF0D0D0D),
               borderRadius: BorderRadius.circular(30),
               boxShadow: [
                 BoxShadow(
-                    color: Colors.black.withOpacity(0.22),
+                    color:      Colors.black.withOpacity(0.22),
                     blurRadius: 20,
-                    offset: const Offset(0, 8)),
+                    offset:     const Offset(0, 8)),
               ],
             ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.add_rounded, color: Colors.white, size: 20),
-                SizedBox(width: 8),
-                Text('Add a Group',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 0.2)),
-              ],
-            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(Icons.add_rounded, color: Colors.white, size: 20),
+              const SizedBox(width: 8),
+              Text(t.addGroup,
+                  style: const TextStyle(
+                      color:        Colors.white,
+                      fontSize:     15,
+                      fontWeight:   FontWeight.w700,
+                      letterSpacing: 0.2)),
+            ]),
           ),
         ),
         Positioned(
-          top: -8,
-          right: -8,
+          top: -8, right: -8,
           child: GestureDetector(
             onTap: () =>
             ref.read(showAddGroupButtonProvider.notifier).state = false,
             child: Container(
-              width: 28,
-              height: 28,
+              width: 28, height: 28,
               decoration: BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
-                border: Border.all(
-                    color: const Color(0xFF0D0D0D), width: 1.5),
+                color:  Colors.white,
+                shape:  BoxShape.circle,
+                border: Border.all(color: const Color(0xFF0D0D0D), width: 1.5),
                 boxShadow: [
                   BoxShadow(
-                      color: Colors.black.withOpacity(0.12),
+                      color:      Colors.black.withOpacity(0.12),
                       blurRadius: 6,
-                      offset: const Offset(0, 2)),
+                      offset:     const Offset(0, 2)),
                 ],
               ),
               child: const Icon(Icons.close_rounded,
@@ -581,21 +661,38 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Helpers
+// _LangButton
 // ─────────────────────────────────────────────────────────────────────────────
-String resolveCity(
-    Map<String, dynamic> g, Map<String, Map<String, dynamic>> locMap) {
-  final locId = (g['org_loc_id'] ?? '').toString();
-  if (locId.isNotEmpty && locMap.containsKey(locId)) {
-    final d = locMap[locId]!;
-    final en = (d['loc_city_en'] ?? '').toString().trim();
-    final ja = (d['loc_city']    ?? '').toString().trim();
-    if (en.isNotEmpty) return en;
-    if (ja.isNotEmpty) return ja;
+class _LangButton extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _LangButton({required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding:  const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color:        selected ? AppColors.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Text(label,
+            style: TextStyle(
+                fontSize:   11,
+                fontWeight: FontWeight.w700,
+                color:      selected ? Colors.white : AppColors.primary.withOpacity(0.6))),
+      ),
+    );
   }
-  return (g['org_city'] ?? '').toString().trim();
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// _Chip
+// ─────────────────────────────────────────────────────────────────────────────
 class _Chip {
   final String label;
   final VoidCallback onRemove;

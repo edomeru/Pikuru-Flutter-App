@@ -77,6 +77,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
       final List<_ChatItem> items = [];
 
       for (final doc in snap.docs) {
+        // Check if user is a participant
         final participantDoc = await FirebaseFirestore.instance
             .collection('group_chats')
             .doc(doc.id)
@@ -94,20 +95,35 @@ class _ChatsScreenState extends State<ChatsScreen> {
             (data['last_message_by'] ?? '') != me.uid &&
             (data['last_message'] ?? '').toString().isNotEmpty;
 
-        final orgId = (data['org_id'] ?? '').toString();
+        final orgId = (data['org_id'] ?? doc.id).toString();
         String name = 'Group Chat';
         String avatarUrl = '';
+
         if (orgId.isNotEmpty) {
           try {
-            final orgSnap = await FirebaseFirestore.instance
+            // ── STEP 1: Try document ID directly (matches web app's first attempt) ──
+            final orgDoc = await FirebaseFirestore.instance
                 .collection('organizations')
-                .where('org_id', isEqualTo: orgId)
-                .limit(1)
+                .doc(orgId)
                 .get();
-            if (orgSnap.docs.isNotEmpty) {
-              final org = orgSnap.docs.first.data();
+
+            if (orgDoc.exists) {
+              final org = orgDoc.data()!;
               name = (org['org_name'] ?? 'Group Chat').toString();
               avatarUrl = (org['org_image'] ?? '').toString();
+            } else {
+              // ── STEP 2: Fallback — query by org_id field ──
+              final orgSnap = await FirebaseFirestore.instance
+                  .collection('organizations')
+                  .where('org_id', isEqualTo: orgId)
+                  .limit(1)
+                  .get();
+
+              if (orgSnap.docs.isNotEmpty) {
+                final org = orgSnap.docs.first.data();
+                name = (org['org_name'] ?? 'Group Chat').toString();
+                avatarUrl = (org['org_image'] ?? '').toString();
+              }
             }
           } catch (_) {}
         }
@@ -158,11 +174,10 @@ class _ChatsScreenState extends State<ChatsScreen> {
         if (otherId.isEmpty) continue;
 
         final names = Map<String, dynamic>.from(data['participant_names'] ?? {});
-        final avatars = Map<String, dynamic>.from(data['participant_avatars'] ?? {});
+        final avatars =
+        Map<String, dynamic>.from(data['participant_avatars'] ?? {});
         final lastMsgAt = (data['last_message_at'] as Timestamp?)?.toDate();
 
-        // ── KEY FIX: use last_read map instead of just last_message_by ────
-        // last_read.{myUid} is written by markAsRead() when you open the chat
         final lastReadMap = data['last_read'] as Map<String, dynamic>?;
         final myLastRead = lastReadMap != null
             ? (lastReadMap[me.uid] as Timestamp?)?.toDate()
@@ -206,7 +221,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
     if (_filter == 'Unread') all = [..._individualItems, ..._groupItems];
 
     if (_searchQuery.isNotEmpty) {
-      all = all.where((c) => c.name.toLowerCase().contains(_searchQuery)).toList();
+      all = all
+          .where((c) => c.name.toLowerCase().contains(_searchQuery))
+          .toList();
     }
 
     if (_filter == 'Unread') {
@@ -249,7 +266,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
         children: [
           GestureDetector(
             onTap: () => Navigator.pop(context),
-            child: const Icon(Icons.arrow_back, color: AppColors.primary, size: 26),
+            child:
+            const Icon(Icons.arrow_back, color: AppColors.primary, size: 26),
           ),
           const SizedBox(width: 14),
           const Text('chats',
@@ -277,10 +295,13 @@ class _ChatsScreenState extends State<ChatsScreen> {
           style: const TextStyle(fontSize: 15, color: Color(0xFF1C1C1E)),
           decoration: InputDecoration(
             hintText: 'Search',
-            hintStyle: TextStyle(color: Colors.black.withOpacity(0.35), fontSize: 15),
-            suffixIcon: Icon(Icons.search, color: Colors.black.withOpacity(0.35), size: 20),
+            hintStyle:
+            TextStyle(color: Colors.black.withOpacity(0.35), fontSize: 15),
+            suffixIcon: Icon(Icons.search,
+                color: Colors.black.withOpacity(0.35), size: 20),
             border: InputBorder.none,
-            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+            contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
           ),
         ),
       ),
@@ -299,16 +320,20 @@ class _ChatsScreenState extends State<ChatsScreen> {
               onTap: () => setState(() => _filter = label),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
-                padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 9),
+                padding:
+                const EdgeInsets.symmetric(horizontal: 22, vertical: 9),
                 decoration: BoxDecoration(
-                  color: selected ? AppColors.primary : const Color(0xFFF0F4F0),
+                  color:
+                  selected ? AppColors.primary : const Color(0xFFF0F4F0),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(label,
                     style: TextStyle(
                         fontSize: 13.5,
                         fontWeight: FontWeight.w600,
-                        color: selected ? Colors.white : Colors.black.withOpacity(0.45))),
+                        color: selected
+                            ? Colors.white
+                            : Colors.black.withOpacity(0.45))),
               ),
             ),
           );
@@ -320,7 +345,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
   Widget _buildBody() {
     if (_loading) {
       return Center(
-          child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2.5));
+          child: CircularProgressIndicator(
+              color: AppColors.primary, strokeWidth: 2.5));
     }
 
     final items = _mergedItems;
@@ -330,7 +356,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.chat_bubble_outline, size: 52, color: Colors.black.withOpacity(0.12)),
+            Icon(Icons.chat_bubble_outline,
+                size: 52, color: Colors.black.withOpacity(0.12)),
             const SizedBox(height: 14),
             Text(
               _filter == 'Unread'
@@ -356,7 +383,11 @@ class _ChatsScreenState extends State<ChatsScreen> {
           children: [
             _buildChatTile(item),
             if (index < items.length - 1)
-              const Divider(height: 1, indent: 76, endIndent: 20, color: Color(0xFFF0F0F0)),
+              const Divider(
+                  height: 1,
+                  indent: 76,
+                  endIndent: 20,
+                  color: Color(0xFFF0F0F0)),
           ],
         );
       },
@@ -377,24 +408,34 @@ class _ChatsScreenState extends State<ChatsScreen> {
                 CircleAvatar(
                   radius: 28,
                   backgroundColor: AppColors.primary.withOpacity(0.1),
-                  backgroundImage: item.avatarUrl.isNotEmpty ? NetworkImage(item.avatarUrl) : null,
+                  backgroundImage: item.avatarUrl.isNotEmpty
+                      ? NetworkImage(item.avatarUrl)
+                      : null,
                   child: item.avatarUrl.isEmpty
                       ? Text(
-                    item.name.isNotEmpty ? item.name[0].toUpperCase() : '?',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppColors.primary),
+                    item.name.isNotEmpty
+                        ? item.name[0].toUpperCase()
+                        : '?',
+                    style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primary),
                   )
                       : null,
                 ),
                 if (item.isGroup)
                   Positioned(
-                    right: 0, bottom: 0,
+                    right: 0,
+                    bottom: 0,
                     child: Container(
-                      width: 18, height: 18,
+                      width: 18,
+                      height: 18,
                       decoration: BoxDecoration(
                           color: AppColors.primary,
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.white, width: 2)),
-                      child: const Icon(Icons.group, size: 10, color: Colors.white),
+                      child:
+                      const Icon(Icons.group, size: 10, color: Colors.white),
                     ),
                   ),
               ],
@@ -407,18 +448,26 @@ class _ChatsScreenState extends State<ChatsScreen> {
                   Text(item.name,
                       style: TextStyle(
                           fontSize: 15,
-                          fontWeight: item.hasUnread ? FontWeight.w700 : FontWeight.w600,
+                          fontWeight: item.hasUnread
+                              ? FontWeight.w700
+                              : FontWeight.w600,
                           color: const Color(0xFF1C1C1E),
                           letterSpacing: -0.2),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis),
                   const SizedBox(height: 3),
                   Text(
-                    item.lastMessage.isEmpty ? 'No messages yet' : item.lastMessage,
+                    item.lastMessage.isEmpty
+                        ? 'No messages yet'
+                        : item.lastMessage,
                     style: TextStyle(
                         fontSize: 13.5,
-                        color: item.hasUnread ? const Color(0xFF1C1C1E) : Colors.black.withOpacity(0.38),
-                        fontWeight: item.hasUnread ? FontWeight.w600 : FontWeight.normal),
+                        color: item.hasUnread
+                            ? const Color(0xFF1C1C1E)
+                            : Colors.black.withOpacity(0.38),
+                        fontWeight: item.hasUnread
+                            ? FontWeight.w600
+                            : FontWeight.normal),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -433,13 +482,19 @@ class _ChatsScreenState extends State<ChatsScreen> {
                 Text(_formatTime(item.lastMessageAt),
                     style: TextStyle(
                         fontSize: 12,
-                        color: item.hasUnread ? AppColors.primary : Colors.black.withOpacity(0.35),
-                        fontWeight: item.hasUnread ? FontWeight.w600 : FontWeight.normal)),
+                        color: item.hasUnread
+                            ? AppColors.primary
+                            : Colors.black.withOpacity(0.35),
+                        fontWeight: item.hasUnread
+                            ? FontWeight.w600
+                            : FontWeight.normal)),
                 if (item.hasUnread) ...[
                   const SizedBox(height: 6),
                   Container(
-                      width: 9, height: 9,
-                      decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle)),
+                      width: 9,
+                      height: 9,
+                      decoration: const BoxDecoration(
+                          color: AppColors.primary, shape: BoxShape.circle)),
                 ],
               ],
             ),
@@ -454,7 +509,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
       Navigator.push(context,
           MaterialPageRoute(builder: (_) => GroupChatScreen(group: item.raw)));
     } else {
-      Navigator.push(context,
+      Navigator.push(
+          context,
           MaterialPageRoute(
               builder: (_) => IndividualChatScreen(
                 otherUserId: item.raw['_other_user_id'] ?? '',
@@ -471,7 +527,11 @@ class _ChatsScreenState extends State<ChatsScreen> {
         .difference(DateTime(dt.year, dt.month, dt.day))
         .inDays;
     if (diff == 0) {
-      final h = dt.hour > 12 ? dt.hour - 12 : dt.hour == 0 ? 12 : dt.hour;
+      final h = dt.hour > 12
+          ? dt.hour - 12
+          : dt.hour == 0
+          ? 12
+          : dt.hour;
       final m = dt.minute.toString().padLeft(2, '0');
       final p = dt.hour >= 12 ? 'pm' : 'am';
       return '$h:$m $p';
@@ -481,7 +541,10 @@ class _ChatsScreenState extends State<ChatsScreen> {
       const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
       return days[dt.weekday - 1];
     } else {
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const months = [
+        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+      ];
       return '${months[dt.month - 1]} ${dt.day}';
     }
   }

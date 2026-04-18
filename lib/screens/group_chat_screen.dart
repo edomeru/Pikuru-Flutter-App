@@ -27,8 +27,8 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   String? _chatId;
   bool _isLoading = true;
   bool _isTyping = false;
+  bool _isSilenced = false;
 
-  // Holds the full Firestore group document fetched on init
   Map<String, dynamic>? _groupData;
 
   AnimationController? _sendBtnController;
@@ -51,9 +51,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
       final typing = _messageController.text.trim().isNotEmpty;
       if (typing != _isTyping) {
         setState(() => _isTyping = typing);
-        typing
-            ? _sendBtnController?.forward()
-            : _sendBtnController?.reverse();
+        typing ? _sendBtnController?.forward() : _sendBtnController?.reverse();
       }
     });
 
@@ -71,7 +69,8 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   }
 
   Future<void> _initChat() async {
-    final orgId = widget.group['doc_id'] ??
+    final orgId = widget.group['_doc_id'] ??
+        widget.group['doc_id'] ??
         widget.group['org_id'] ??
         widget.group['org_handle_name'] ??
         '';
@@ -80,11 +79,41 @@ class _GroupChatScreenState extends State<GroupChatScreen>
       return;
     }
 
-    // Fetch the full group document from Firestore in parallel with chat init
     _fetchGroupData(orgId);
 
     final chatId = await ChatService.getOrCreateChatId(orgId);
-    await ChatService.joinChat(chatId);
+
+    // ── Join chat & read silence preference ──────────────────────────
+    final user = currentUser;
+    if (user != null) {
+      final participantRef = FirebaseFirestore.instance
+          .collection('group_chats')
+          .doc(chatId)
+          .collection('participants')
+          .doc(user.uid);
+
+      final pDoc = await participantRef.get();
+      if (!pDoc.exists) {
+        await participantRef.set({
+          'user_id': user.uid,
+          'display_name': user.displayName ?? 'Anonymous',
+          'avatar_url': user.photoURL ?? '',
+          'joined_at': FieldValue.serverTimestamp(),
+          'last_read_at': FieldValue.serverTimestamp(),
+          'is_silenced': false,
+        });
+        if (mounted) setState(() => _isSilenced = false);
+      } else {
+        await participantRef.set(
+          {'last_read_at': FieldValue.serverTimestamp()},
+          SetOptions(merge: true),
+        );
+        if (mounted) {
+          setState(() => _isSilenced = pDoc.data()?['is_silenced'] == true);
+        }
+      }
+    }
+
     await ChatService.markAsRead(chatId);
     if (mounted) {
       setState(() {
@@ -94,43 +123,94 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     }
   }
 
-  /// Fetches the organisation document from Firestore and caches it in
-  /// [_groupData]. Falls back to [widget.group] if nothing is found so the
-  /// detail screen always has something to show.
   Future<void> _fetchGroupData(String orgId) async {
     try {
-      // 1️⃣  Try querying by the org_id field
+      // 1️⃣ Try document ID directly (matches web app logic)
+      final orgDoc = await FirebaseFirestore.instance
+          .collection('organizations')
+          .doc(orgId)
+          .get();
+      if (orgDoc.exists) {
+        final data = orgDoc.data()!;
+        data['_doc_id'] = orgDoc.id;
+        if (mounted) setState(() => _groupData = data);
+        return;
+      }
+
+      // 2️⃣ Fallback: query by org_id field
       final q = await FirebaseFirestore.instance
           .collection('organizations')
           .where('org_id', isEqualTo: orgId)
           .limit(1)
           .get();
-
       if (q.docs.isNotEmpty) {
         final data = q.docs.first.data();
         data['_doc_id'] = q.docs.first.id;
         if (mounted) setState(() => _groupData = data);
         return;
       }
-
-      // 2️⃣  Try fetching by document ID
-      final doc = await FirebaseFirestore.instance
-          .collection('organizations')
-          .doc(orgId)
-          .get();
-
-      if (doc.exists) {
-        final data = doc.data()!;
-        data['_doc_id'] = doc.id;
-        if (mounted) setState(() => _groupData = data);
-        return;
-      }
     } catch (e) {
       debugPrint('[GroupChatScreen] _fetchGroupData error: $e');
     }
-
-    // Fallback: use whatever was passed in via widget.group
     if (mounted) setState(() => _groupData = widget.group);
+  }
+
+  // ── Toggle silence ───────────────────────────────────────────────────
+  Future<void> _toggleSilence() async {
+    if (_chatId == null || currentUser == null) return;
+
+    final newValue = !_isSilenced;
+    HapticFeedback.lightImpact();
+
+    // Optimistic update
+    setState(() => _isSilenced = newValue);
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('group_chats')
+          .doc(_chatId!)
+          .collection('participants')
+          .doc(currentUser!.uid)
+          .set({'is_silenced': newValue}, SetOptions(merge: true));
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                Icon(
+                  newValue ? Icons.notifications_off_rounded : Icons.notifications_rounded,
+                  color: Colors.white,
+                  size: 18,
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  newValue
+                      ? 'Notifications silenced'
+                      : 'Notifications enabled',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: newValue
+                ? const Color(0xFF3A3A3C)
+                : AppColors.primary,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      // Revert on failure
+      if (mounted) setState(() => _isSilenced = !newValue);
+      debugPrint('[GroupChatScreen] _toggleSilence error: $e');
+    }
   }
 
   Future<void> _sendMessage() async {
@@ -157,35 +237,30 @@ class _GroupChatScreenState extends State<GroupChatScreen>
 
   void _openMembersScreen() {
     if (_chatId == null) return;
-    final orgName = widget.group['org_name'] ?? 'Group Chat';
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => ChatMembersScreen(
           chatId: _chatId!,
-          groupName: orgName,
+          groupName: (_groupData ?? widget.group)['org_name'] ?? 'Group Chat',
         ),
       ),
     );
   }
 
-  /// Navigate to GroupDetailScreen using the Firestore-fetched data.
-  /// While the data is still loading we use widget.group as a fallback
-  /// so the tap is never a dead end.
   void _openGroupDetail() {
-    final data = _groupData ?? widget.group;
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => GroupDetailScreen(group: data),
+        builder: (_) => GroupDetailScreen(group: _groupData ?? widget.group),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final orgName = widget.group['org_name'] ?? 'Group Chat';
-    final orgImage = widget.group['org_image'] ?? '';
+    final orgName = (_groupData ?? widget.group)['org_name'] ?? 'Group Chat';
+    final orgImage = (_groupData ?? widget.group)['org_image'] ?? '';
 
     return Scaffold(
       resizeToAvoidBottomInset: true,
@@ -203,10 +278,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                   : _buildMessageList(),
             ),
           ),
-          SafeArea(
-            top: false,
-            child: _buildInputBar(),
-          ),
+          SafeArea(top: false, child: _buildInputBar()),
         ],
       ),
     );
@@ -218,11 +290,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
       decoration: const BoxDecoration(
         color: Colors.white,
         boxShadow: [
-          BoxShadow(
-            color: Color(0x0F000000),
-            blurRadius: 24,
-            offset: Offset(0, 6),
-          ),
+          BoxShadow(color: Color(0x0F000000), blurRadius: 24, offset: Offset(0, 6)),
         ],
       ),
       child: SafeArea(
@@ -231,6 +299,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
           padding: const EdgeInsets.fromLTRB(8, 8, 12, 12),
           child: Row(
             children: [
+              // Back button
               IconButton(
                 onPressed: () => Navigator.pop(context),
                 icon: const Icon(
@@ -240,14 +309,13 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                 ),
               ),
 
-              // ── Tappable avatar + title ──────────────────────────────
+              // Tappable avatar + name + member count
               Expanded(
                 child: GestureDetector(
                   onTap: _openGroupDetail,
                   behavior: HitTestBehavior.opaque,
                   child: Row(
                     children: [
-                      // Avatar with online dot
                       Stack(
                         children: [
                           Container(
@@ -283,11 +351,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                                 ),
                               ),
                             )
-                                : const Icon(
-                              Icons.group_rounded,
-                              color: Colors.white,
-                              size: 22,
-                            ),
+                                : const Icon(Icons.group_rounded, color: Colors.white, size: 22),
                           ),
                           Positioned(
                             right: 1,
@@ -298,17 +362,13 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                               decoration: BoxDecoration(
                                 color: const Color(0xFF34C759),
                                 shape: BoxShape.circle,
-                                border:
-                                Border.all(color: Colors.white, width: 2),
+                                border: Border.all(color: Colors.white, width: 2),
                               ),
                             ),
                           ),
                         ],
                       ),
-
                       const SizedBox(width: 12),
-
-                      // Name + member count
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -327,8 +387,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                             const SizedBox(height: 1),
                             if (_chatId != null)
                               StreamBuilder<int>(
-                                stream:
-                                ChatService.memberCountStream(_chatId!),
+                                stream: ChatService.memberCountStream(_chatId!),
                                 builder: (context, snapshot) {
                                   final count = snapshot.data ?? 0;
                                   return Row(
@@ -362,7 +421,15 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                 ),
               ),
 
-              // Members button (unchanged)
+              // ── Silence / mute bell button ───────────────────────────
+              _SilenceButton(
+                isSilenced: _isSilenced,
+                onTap: _toggleSilence,
+              ),
+
+              const SizedBox(width: 8),
+
+              // Members button
               GestureDetector(
                 onTap: _openMembersScreen,
                 child: Container(
@@ -372,11 +439,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                     color: AppColors.primary.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(
-                    Icons.people_alt_rounded,
-                    size: 19,
-                    color: AppColors.primary,
-                  ),
+                  child: Icon(Icons.people_alt_rounded, size: 19, color: AppColors.primary),
                 ),
               ),
             ],
@@ -405,12 +468,10 @@ class _GroupChatScreenState extends State<GroupChatScreen>
             final isMe = msg['sender_id'] == currentUser?.uid;
 
             final prevSenderId = index > 0
-                ? (messages[index - 1].data()
-            as Map<String, dynamic>)['sender_id']
+                ? (messages[index - 1].data() as Map<String, dynamic>)['sender_id']
                 : null;
             final nextSenderId = index < messages.length - 1
-                ? (messages[index + 1].data()
-            as Map<String, dynamic>)['sender_id']
+                ? (messages[index + 1].data() as Map<String, dynamic>)['sender_id']
                 : null;
 
             final isFirstInGroup = prevSenderId != msg['sender_id'];
@@ -418,16 +479,14 @@ class _GroupChatScreenState extends State<GroupChatScreen>
 
             final showDate = index == 0 ||
                 _isDifferentDay(
-                  (messages[index - 1].data()
-                  as Map<String, dynamic>)['sent_at'],
+                  (messages[index - 1].data() as Map<String, dynamic>)['sent_at'],
                   msg['sent_at'],
                 );
 
             return Column(
               children: [
                 if (showDate) _buildDateDivider(msg['sent_at']),
-                _buildMessageBubble(
-                    msg, isMe, isFirstInGroup, isLastInGroup),
+                _buildMessageBubble(msg, isMe, isFirstInGroup, isLastInGroup),
               ],
             );
           },
@@ -458,15 +517,12 @@ class _GroupChatScreenState extends State<GroupChatScreen>
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Container(
-              padding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
-                  BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 8),
+                  BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8),
                 ],
               ),
               child: Text(
@@ -496,13 +552,10 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     final time = sentAt != null ? _formatTime(sentAt.toDate()) : '';
 
     if ((msg['type'] ?? '') == 'group_share') {
-      return _buildGroupShareBubble(
-          msg, isMe, isFirstInGroup, isLastInGroup, time);
+      return _buildGroupShareBubble(msg, isMe, isFirstInGroup, isLastInGroup, time);
     }
-
     if ((msg['type'] ?? '') == 'event_share') {
-      return _buildEventShareBubble(
-          msg, isMe, isFirstInGroup, isLastInGroup, time);
+      return _buildEventShareBubble(msg, isMe, isFirstInGroup, isLastInGroup, time);
     }
 
     final text = msg['text'] ?? '';
@@ -519,8 +572,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     return Padding(
       padding: EdgeInsets.only(bottom: isLastInGroup ? 10 : 2),
       child: Row(
-        mainAxisAlignment:
-        isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
+        mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (!isMe) ...[
@@ -529,16 +581,11 @@ class _GroupChatScreenState extends State<GroupChatScreen>
               child: isLastInGroup
                   ? CircleAvatar(
                 radius: 17,
-                backgroundColor:
-                AppColors.primary.withOpacity(0.12),
-                backgroundImage: avatarUrl.isNotEmpty
-                    ? NetworkImage(avatarUrl)
-                    : null,
+                backgroundColor: AppColors.primary.withOpacity(0.12),
+                backgroundImage: avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
                 child: avatarUrl.isEmpty
                     ? Text(
-                  senderName.isNotEmpty
-                      ? senderName[0].toUpperCase()
-                      : '?',
+                  senderName.isNotEmpty ? senderName[0].toUpperCase() : '?',
                   style: TextStyle(
                     fontSize: 13,
                     color: AppColors.primary,
@@ -551,11 +598,9 @@ class _GroupChatScreenState extends State<GroupChatScreen>
             ),
             const SizedBox(width: 8),
           ],
-
           Flexible(
             child: Column(
-              crossAxisAlignment:
-              isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
               children: [
                 if (!isMe && isFirstInGroup)
                   Padding(
@@ -570,7 +615,6 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                       ),
                     ),
                   ),
-
                 Container(
                   constraints: BoxConstraints(
                     maxWidth: MediaQuery.of(context).size.width * 0.66,
@@ -580,8 +624,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                         ? LinearGradient(
                       colors: [
                         AppColors.primary,
-                        Color.lerp(AppColors.primary,
-                            const Color(0xFF1A6B4A), 0.4)!,
+                        Color.lerp(AppColors.primary, const Color(0xFF1A6B4A), 0.4)!,
                       ],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
@@ -599,24 +642,20 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                       ),
                     ],
                   ),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   child: Text(
                     text,
                     style: TextStyle(
                       fontSize: 15,
-                      color:
-                      isMe ? Colors.white : const Color(0xFF1C1C1E),
+                      color: isMe ? Colors.white : const Color(0xFF1C1C1E),
                       height: 1.45,
                       letterSpacing: -0.1,
                     ),
                   ),
                 ),
-
                 if (isLastInGroup)
                   Padding(
-                    padding: const EdgeInsets.only(
-                        top: 5, left: 4, right: 4),
+                    padding: const EdgeInsets.only(top: 5, left: 4, right: 4),
                     child: Text(
                       time,
                       style: const TextStyle(
@@ -630,7 +669,6 @@ class _GroupChatScreenState extends State<GroupChatScreen>
               ],
             ),
           ),
-
           if (isMe) const SizedBox(width: 4),
         ],
       ),
@@ -651,8 +689,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     final senderName = (msg['sender_name'] ?? '').toString();
     final avatarUrl = (msg['sender_avatar'] ?? '').toString();
 
-    final groupData =
-    Map<String, dynamic>.from(msg['group_data'] as Map? ?? {});
+    final groupData = Map<String, dynamic>.from(msg['group_data'] as Map? ?? {});
     if (groupData.isEmpty) {
       groupData['org_name'] = groupName;
       groupData['org_image'] = groupImage;
@@ -667,8 +704,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
         right: isMe ? 4 : 60,
       ),
       child: Column(
-        crossAxisAlignment:
-        isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
           if (!isMe && isFirstInGroup)
             Padding(
@@ -679,72 +715,40 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                   CircleAvatar(
                     radius: 10,
                     backgroundColor: AppColors.primary.withOpacity(0.12),
-                    backgroundImage: avatarUrl.isNotEmpty
-                        ? NetworkImage(avatarUrl)
-                        : null,
+                    backgroundImage: avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
                     child: avatarUrl.isEmpty
                         ? Text(
-                      senderName.isNotEmpty
-                          ? senderName[0].toUpperCase()
-                          : '?',
-                      style: TextStyle(
-                          fontSize: 8,
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.bold),
+                      senderName.isNotEmpty ? senderName[0].toUpperCase() : '?',
+                      style: TextStyle(fontSize: 8, color: AppColors.primary, fontWeight: FontWeight.bold),
                     )
                         : null,
                   ),
                   const SizedBox(width: 5),
                   Text(
                     senderName,
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.primary,
-                      letterSpacing: 0.1,
-                    ),
+                    style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: AppColors.primary, letterSpacing: 0.1),
                   ),
                 ],
               ),
             ),
-
           GestureDetector(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => GroupDetailScreen(group: groupData),
-              ),
-            ),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => GroupDetailScreen(group: groupData))),
             child: Container(
               width: MediaQuery.of(context).size.width * 0.66,
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                    color: AppColors.primary.withOpacity(0.15), width: 1),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.07),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
+                border: Border.all(color: AppColors.primary.withOpacity(0.15), width: 1),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.07), blurRadius: 12, offset: const Offset(0, 4))],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   ClipRRect(
-                    borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(15)),
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
                     child: groupImage.isNotEmpty
-                        ? Image.network(
-                      groupImage,
-                      height: 110,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          _groupSharePlaceholder(),
-                    )
+                        ? Image.network(groupImage, height: 110, width: double.infinity, fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => _groupSharePlaceholder())
                         : _groupSharePlaceholder(),
                   ),
                   Padding(
@@ -757,82 +761,36 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                             children: [
                               if (groupType.isNotEmpty)
                                 Container(
-                                  margin:
-                                  const EdgeInsets.only(bottom: 4),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary
-                                        .withOpacity(0.1),
-                                    borderRadius:
-                                    BorderRadius.circular(20),
-                                  ),
-                                  child: Text(
-                                    groupType,
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.primary,
-                                    ),
-                                  ),
+                                  margin: const EdgeInsets.only(bottom: 4),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
+                                  child: Text(groupType, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.primary)),
                                 ),
-                              Text(
-                                groupName,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF1A1A1A),
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                              Text(groupName, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1A1A1A)), maxLines: 2, overflow: TextOverflow.ellipsis),
                             ],
                           ),
                         ),
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.all(7),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(9),
-                          ),
-                          child: const Icon(Icons.arrow_forward_rounded,
-                              color: Colors.white, size: 13),
+                          decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(9)),
+                          child: const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 13),
                         ),
                       ],
                     ),
                   ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                    child: Text(
-                      'Tap to view group',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: AppColors.primary.withOpacity(0.6),
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
+                    child: Text('Tap to view group', style: TextStyle(fontSize: 11, color: AppColors.primary.withOpacity(0.6), fontWeight: FontWeight.w500)),
                   ),
                 ],
               ),
             ),
           ),
-
           if (isLastInGroup)
             Padding(
-              padding: EdgeInsets.only(
-                  top: 5,
-                  left: isMe ? 0 : 4,
-                  right: isMe ? 4 : 0),
-              child: Text(
-                time,
-                style: const TextStyle(
-                  fontSize: 10.5,
-                  color: Color(0xFFAEAEB2),
-                  fontWeight: FontWeight.w400,
-                  letterSpacing: 0.1,
-                ),
-              ),
+              padding: EdgeInsets.only(top: 5, left: isMe ? 0 : 4, right: isMe ? 4 : 0),
+              child: Text(time, style: const TextStyle(fontSize: 10.5, color: Color(0xFFAEAEB2), fontWeight: FontWeight.w400, letterSpacing: 0.1)),
             ),
         ],
       ),
@@ -842,10 +800,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   Widget _groupSharePlaceholder() => Container(
     height: 110,
     color: AppColors.primary.withOpacity(0.08),
-    child: Center(
-      child: Icon(Icons.group_rounded,
-          size: 40, color: AppColors.primary.withOpacity(0.4)),
-    ),
+    child: Center(child: Icon(Icons.group_rounded, size: 40, color: AppColors.primary.withOpacity(0.4))),
   );
 
   // ── Event share card bubble ────────────────────────────────────────────
@@ -863,8 +818,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     final senderName = (msg['sender_name'] ?? '').toString();
     final avatarUrl = (msg['sender_avatar'] ?? '').toString();
 
-    final eventData =
-    Map<String, dynamic>.from(msg['event_data'] as Map? ?? {});
+    final eventData = Map<String, dynamic>.from(msg['event_data'] as Map? ?? {});
     if (eventData.isEmpty) {
       eventData['event_title'] = eventTitle;
       eventData['event_pic'] = eventImage;
@@ -879,8 +833,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
         right: isMe ? 4 : 60,
       ),
       child: Column(
-        crossAxisAlignment:
-        isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        crossAxisAlignment: isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
           if (!isMe && isFirstInGroup)
             Padding(
@@ -891,72 +844,35 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                   CircleAvatar(
                     radius: 10,
                     backgroundColor: AppColors.primary.withOpacity(0.12),
-                    backgroundImage: avatarUrl.isNotEmpty
-                        ? NetworkImage(avatarUrl)
-                        : null,
+                    backgroundImage: avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
                     child: avatarUrl.isEmpty
-                        ? Text(
-                      senderName.isNotEmpty
-                          ? senderName[0].toUpperCase()
-                          : '?',
-                      style: TextStyle(
-                          fontSize: 8,
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.bold),
-                    )
+                        ? Text(senderName.isNotEmpty ? senderName[0].toUpperCase() : '?',
+                        style: TextStyle(fontSize: 8, color: AppColors.primary, fontWeight: FontWeight.bold))
                         : null,
                   ),
                   const SizedBox(width: 5),
-                  Text(
-                    senderName,
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.primary,
-                      letterSpacing: 0.1,
-                    ),
-                  ),
+                  Text(senderName, style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: AppColors.primary, letterSpacing: 0.1)),
                 ],
               ),
             ),
-
           GestureDetector(
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => EventDetailScreen(event: eventData),
-              ),
-            ),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => EventDetailScreen(event: eventData))),
             child: Container(
               width: MediaQuery.of(context).size.width * 0.66,
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                    color: AppColors.primary.withOpacity(0.15), width: 1),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.07),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
+                border: Border.all(color: AppColors.primary.withOpacity(0.15), width: 1),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.07), blurRadius: 12, offset: const Offset(0, 4))],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   ClipRRect(
-                    borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(15)),
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
                     child: eventImage.isNotEmpty
-                        ? Image.network(
-                      eventImage,
-                      height: 110,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          _eventSharePlaceholder(),
-                    )
+                        ? Image.network(eventImage, height: 110, width: double.infinity, fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => _eventSharePlaceholder())
                         : _eventSharePlaceholder(),
                   ),
                   Padding(
@@ -969,54 +885,20 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                             children: [
                               if (eventType.isNotEmpty)
                                 Container(
-                                  margin:
-                                  const EdgeInsets.only(bottom: 4),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary
-                                        .withOpacity(0.1),
-                                    borderRadius:
-                                    BorderRadius.circular(20),
-                                  ),
-                                  child: Text(
-                                    eventType,
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.primary,
-                                    ),
-                                  ),
+                                  margin: const EdgeInsets.only(bottom: 4),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
+                                  child: Text(eventType, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.primary)),
                                 ),
-                              Text(
-                                eventTitle,
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF1A1A1A),
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
+                              Text(eventTitle, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1A1A1A)), maxLines: 2, overflow: TextOverflow.ellipsis),
                               if (eventDate.isNotEmpty)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 3),
                                   child: Row(
                                     children: [
-                                      Icon(Icons.calendar_today_rounded,
-                                          size: 11,
-                                          color: AppColors.primary
-                                              .withOpacity(0.7)),
+                                      Icon(Icons.calendar_today_rounded, size: 11, color: AppColors.primary.withOpacity(0.7)),
                                       const SizedBox(width: 3),
-                                      Text(
-                                        eventDate,
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: AppColors.primary
-                                              .withOpacity(0.8),
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
+                                      Text(eventDate, style: TextStyle(fontSize: 11, color: AppColors.primary.withOpacity(0.8), fontWeight: FontWeight.w500)),
                                     ],
                                   ),
                                 ),
@@ -1026,47 +908,24 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.all(7),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(9),
-                          ),
-                          child: const Icon(Icons.arrow_forward_rounded,
-                              color: Colors.white, size: 13),
+                          decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(9)),
+                          child: const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 13),
                         ),
                       ],
                     ),
                   ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                    child: Text(
-                      'Tap to view event',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: AppColors.primary.withOpacity(0.6),
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
+                    child: Text('Tap to view event', style: TextStyle(fontSize: 11, color: AppColors.primary.withOpacity(0.6), fontWeight: FontWeight.w500)),
                   ),
                 ],
               ),
             ),
           ),
-
           if (isLastInGroup)
             Padding(
-              padding: EdgeInsets.only(
-                  top: 5,
-                  left: isMe ? 0 : 4,
-                  right: isMe ? 4 : 0),
-              child: Text(
-                time,
-                style: const TextStyle(
-                  fontSize: 10.5,
-                  color: Color(0xFFAEAEB2),
-                  fontWeight: FontWeight.w400,
-                  letterSpacing: 0.1,
-                ),
-              ),
+              padding: EdgeInsets.only(top: 5, left: isMe ? 0 : 4, right: isMe ? 4 : 0),
+              child: Text(time, style: const TextStyle(fontSize: 10.5, color: Color(0xFFAEAEB2), fontWeight: FontWeight.w400, letterSpacing: 0.1)),
             ),
         ],
       ),
@@ -1076,10 +935,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   Widget _eventSharePlaceholder() => Container(
     height: 110,
     color: AppColors.primary.withOpacity(0.08),
-    child: Center(
-      child: Icon(Icons.event_rounded,
-          size: 40, color: AppColors.primary.withOpacity(0.4)),
-    ),
+    child: Center(child: Icon(Icons.event_rounded, size: 40, color: AppColors.primary.withOpacity(0.4))),
   );
 
   // ── Input Bar ──────────────────────────────────────────────────────────
@@ -1087,13 +943,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Color(0x0D000000),
-            blurRadius: 24,
-            offset: Offset(0, -6),
-          ),
-        ],
+        boxShadow: [BoxShadow(color: Color(0x0D000000), blurRadius: 24, offset: Offset(0, -6))],
       ),
       padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
       child: Row(
@@ -1106,9 +956,7 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                 color: const Color(0xFFF2F2F7),
                 borderRadius: BorderRadius.circular(26),
                 border: Border.all(
-                  color: _focusNode.hasFocus
-                      ? AppColors.primary.withOpacity(0.35)
-                      : Colors.transparent,
+                  color: _focusNode.hasFocus ? AppColors.primary.withOpacity(0.35) : Colors.transparent,
                   width: 1.5,
                 ),
               ),
@@ -1120,27 +968,17 @@ class _GroupChatScreenState extends State<GroupChatScreen>
                 textCapitalization: TextCapitalization.sentences,
                 minLines: 1,
                 maxLines: 5,
-                style: const TextStyle(
-                  fontSize: 15,
-                  color: Color(0xFF1C1C1E),
-                  height: 1.4,
-                ),
+                style: const TextStyle(fontSize: 15, color: Color(0xFF1C1C1E), height: 1.4),
                 decoration: const InputDecoration(
                   hintText: 'Message...',
-                  hintStyle: TextStyle(
-                    color: Color(0xFFAEAEB2),
-                    fontSize: 15,
-                  ),
+                  hintStyle: TextStyle(color: Color(0xFFAEAEB2), fontSize: 15),
                   border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 12),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 ),
               ),
             ),
           ),
-
           const SizedBox(width: 10),
-
           GestureDetector(
             onTap: _sendMessage,
             child: AnimatedContainer(
@@ -1150,31 +988,17 @@ class _GroupChatScreenState extends State<GroupChatScreen>
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: _isTyping
-                      ? [
-                    AppColors.primary,
-                    Color.lerp(AppColors.primary,
-                        const Color(0xFF1A6B4A), 0.35)!,
-                  ]
+                      ? [AppColors.primary, Color.lerp(AppColors.primary, const Color(0xFF1A6B4A), 0.35)!]
                       : const [Color(0xFFD1D1D6), Color(0xFFD1D1D6)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
                 shape: BoxShape.circle,
                 boxShadow: _isTyping
-                    ? [
-                  BoxShadow(
-                    color: AppColors.primary.withOpacity(0.38),
-                    blurRadius: 14,
-                    offset: const Offset(0, 5),
-                  ),
-                ]
+                    ? [BoxShadow(color: AppColors.primary.withOpacity(0.38), blurRadius: 14, offset: const Offset(0, 5))]
                     : [],
               ),
-              child: const Icon(
-                Icons.arrow_upward_rounded,
-                color: Colors.white,
-                size: 22,
-              ),
+              child: const Icon(Icons.arrow_upward_rounded, color: Colors.white, size: 22),
             ),
           ),
         ],
@@ -1183,15 +1007,9 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────
-  Widget _buildLoader() => Center(
-    child: CircularProgressIndicator(
-        color: AppColors.primary, strokeWidth: 2.5),
-  );
+  Widget _buildLoader() => Center(child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2.5));
 
-  Widget _buildError() => const Center(
-    child: Text('Could not load chat',
-        style: TextStyle(color: Color(0xFFAEAEB2))),
-  );
+  Widget _buildError() => const Center(child: Text('Could not load chat', style: TextStyle(color: Color(0xFFAEAEB2))));
 
   Widget _buildEmptyState() => Center(
     child: Column(
@@ -1200,28 +1018,13 @@ class _GroupChatScreenState extends State<GroupChatScreen>
         Container(
           width: 76,
           height: 76,
-          decoration: BoxDecoration(
-            color: AppColors.primary.withOpacity(0.08),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(Icons.chat_bubble_outline_rounded,
-              size: 34, color: AppColors.primary),
+          decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.08), shape: BoxShape.circle),
+          child: Icon(Icons.chat_bubble_outline_rounded, size: 34, color: AppColors.primary),
         ),
         const SizedBox(height: 18),
-        const Text(
-          'No messages yet',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF1C1C1E),
-            letterSpacing: -0.3,
-          ),
-        ),
+        const Text('No messages yet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Color(0xFF1C1C1E), letterSpacing: -0.3)),
         const SizedBox(height: 6),
-        const Text(
-          'Be the first to say hello! 👋',
-          style: TextStyle(fontSize: 14, color: Color(0xFFAEAEB2)),
-        ),
+        const Text('Be the first to say hello! 👋', style: TextStyle(fontSize: 14, color: Color(0xFFAEAEB2))),
       ],
     ),
   );
@@ -1234,13 +1037,89 @@ class _GroupChatScreenState extends State<GroupChatScreen>
   }
 
   String _formatTime(DateTime dt) {
-    final hour = dt.hour > 12
-        ? dt.hour - 12
-        : dt.hour == 0
-        ? 12
-        : dt.hour;
+    final hour = dt.hour > 12 ? dt.hour - 12 : dt.hour == 0 ? 12 : dt.hour;
     final minute = dt.minute.toString().padLeft(2, '0');
     final period = dt.hour >= 12 ? 'PM' : 'AM';
     return '$hour:$minute $period';
+  }
+}
+
+// ── Silence Button Widget ──────────────────────────────────────────────────────
+// Animated bell icon that toggles between active and silenced states.
+// Stores `is_silenced` on the participant doc — same field the web app uses.
+class _SilenceButton extends StatefulWidget {
+  final bool isSilenced;
+  final VoidCallback onTap;
+
+  const _SilenceButton({required this.isSilenced, required this.onTap});
+
+  @override
+  State<_SilenceButton> createState() => _SilenceButtonState();
+}
+
+class _SilenceButtonState extends State<_SilenceButton> with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _scaleAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 180));
+    _scaleAnim = Tween<double>(begin: 1.0, end: 0.82).animate(
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleTap() async {
+    await _controller.forward();
+    await _controller.reverse();
+    widget.onTap();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: _handleTap,
+      child: ScaleTransition(
+        scale: _scaleAnim,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 250),
+          width: 38,
+          height: 38,
+          decoration: BoxDecoration(
+            color: widget.isSilenced
+                ? AppColors.primary.withOpacity(0.12)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: widget.isSilenced
+                  ? AppColors.primary.withOpacity(0.3)
+                  : Colors.transparent,
+              width: 1.5,
+            ),
+          ),
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            transitionBuilder: (child, animation) => ScaleTransition(scale: animation, child: child),
+            child: Icon(
+              widget.isSilenced
+                  ? Icons.notifications_off_rounded
+                  : Icons.notifications_rounded,
+              key: ValueKey(widget.isSilenced),
+              size: 19,
+              color: widget.isSilenced
+                  ? AppColors.primary
+                  : const Color(0xFF8E8E93),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
