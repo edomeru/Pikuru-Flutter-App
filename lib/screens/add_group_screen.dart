@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +7,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:http/http.dart' as http;
 
 class AddGroupScreen extends ConsumerStatefulWidget {
   const AddGroupScreen({Key? key}) : super(key: key);
@@ -65,6 +67,26 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
   File? _imageFile;
   bool _isLoading = false;
 
+  // ── Language Toggle ───────────────────────────────────────────────────────
+  bool _isJpMode = false;
+
+  // Cached JP translations — populated when submit resolves fields,
+  // and also pre-fetched when the user switches to JP on the Review page.
+  String _nameJp = '';
+  String _prefJp = '';
+  String _cityJp = '';
+  String _descJp = '';
+
+  // Whether a background preview-translation is running
+  bool _isPreviewTranslating = false;
+
+  // Convenience: pick EN or JP string based on current mode
+  String _s(String en, String jp) => _isJpMode && jp.isNotEmpty ? jp : en;
+
+  List<String> get _stepLabelsLoc => _isJpMode
+      ? ['基本情報', '場所', 'スケジュール', 'メンバー', 'メディア', '確認']
+      : ['Basics', 'Location', 'Schedule', 'Members', 'Media', 'Review'];
+
   @override
   void initState() {
     super.initState();
@@ -93,6 +115,107 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
       c.dispose();
     }
     super.dispose();
+  }
+
+  // ── Language Detection ────────────────────────────────────────────────────
+  /// Returns true if the string contains Japanese characters
+  bool _isJapanese(String text) {
+    if (text.trim().isEmpty) return false;
+    // Check for Hiragana, Katakana, or CJK Unified Ideographs (Kanji)
+    final japaneseRegex = RegExp(
+      r'[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FFF\u3400-\u4DBF]',
+    );
+    return japaneseRegex.hasMatch(text);
+  }
+
+  // ── Free Translation via Google Translate (unofficial endpoint) ───────────
+  // Uses the same free endpoint that Google Translate web uses.
+  // No API key or billing required. Free & unlimited for small volumes.
+  // Language codes: 'en' = English, 'ja' = Japanese
+  Future<String> _translate(String text, String targetLangCode) async {
+    if (text.trim().isEmpty) return '';
+    try {
+      debugPrint('🌐 Translating to $targetLangCode: "$text"');
+
+      final uri = Uri.parse(
+        'https://translate.googleapis.com/translate_a/single'
+            '?client=gtx'
+            '&sl=auto'
+            '&tl=$targetLangCode'
+            '&dt=t'
+            '&q=${Uri.encodeComponent(text)}',
+      );
+
+      final response = await http.get(uri).timeout(const Duration(seconds: 15));
+
+      debugPrint('📡 Translation HTTP status: ${response.statusCode}');
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        // Response format: [[["translated","original",null,null,1],...],...]
+        final buffer = StringBuffer();
+        for (final part in decoded[0] as List) {
+          if (part[0] != null) buffer.write(part[0] as String);
+        }
+        final translated = buffer.toString().trim();
+        debugPrint('✅ "$text" → "$translated"');
+        return translated;
+      } else {
+        debugPrint('❌ Translation error ${response.statusCode}: ${response.body}');
+        return text; // fallback: return original
+      }
+    } catch (e) {
+      debugPrint('❌ Translation exception: $e');
+      return text; // fallback: return original
+    }
+  }
+
+  // ── Bilingual Field Resolution ────────────────────────────────────────────
+  /// Given a field value, returns a map with EN and JP variants.
+  /// If the value is Japanese, translates to EN; if EN, translates to JP.
+  Future<Map<String, String>> _resolveField(String value) async {
+    if (value.trim().isEmpty) return {'en': '', 'jp': ''};
+
+    if (_isJapanese(value)) {
+      // Input is JP → translate to EN
+      final en = await _translate(value, 'en');
+      return {'en': en, 'jp': value};
+    } else {
+      // Input is EN → translate to JP
+      final jp = await _translate(value, 'ja');
+      return {'en': value, 'jp': jp};
+    }
+  }
+
+  // ── Preview Translation (triggered when user toggles JP on Review page) ───
+  Future<void> _previewTranslations() async {
+    if (_isPreviewTranslating) return;
+    setState(() => _isPreviewTranslating = true);
+    try {
+      final nameRaw = _nameController.text.trim();
+      final prefRaw = _prefController.text.trim();
+      final cityRaw = _cityController.text.trim();
+      final descRaw = _descController.text.trim();
+
+      final results = await Future.wait([
+        _resolveField(nameRaw),
+        _resolveField(prefRaw),
+        _resolveField(cityRaw),
+        _resolveField(descRaw),
+      ]);
+
+      if (mounted) {
+        setState(() {
+          _nameJp = results[0]['jp'] ?? '';
+          _prefJp = results[1]['jp'] ?? '';
+          _cityJp = results[2]['jp'] ?? '';
+          _descJp = results[3]['jp'] ?? '';
+          _isPreviewTranslating = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _isPreviewTranslating = false);
+    }
   }
 
   // ── Image Picker ──────────────────────────────────────────────────────────
@@ -142,6 +265,42 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
     setState(() => _isLoading = true);
 
     try {
+      // ── Translate bilingual fields ──────────────────────────────────────
+      // Show a more informative snack while translating
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Translating fields…'),
+          duration: Duration(seconds: 60),
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+
+      final nameRaw   = _nameController.text.trim();
+      final prefRaw   = _prefController.text.trim();
+      final cityRaw   = _cityController.text.trim();
+      final descRaw   = _descController.text.trim();
+
+      // Resolve all four fields concurrently
+      final results = await Future.wait([
+        _resolveField(nameRaw),
+        _resolveField(prefRaw),
+        _resolveField(cityRaw),
+        _resolveField(descRaw),
+      ]);
+
+      final nameMap = results[0];
+      final prefMap = results[1];
+      final cityMap = results[2];
+      final descMap = results[3];
+
+      // Cache for review preview
+      _nameJp = nameMap['jp'] ?? '';
+      _prefJp = prefMap['jp'] ?? '';
+      _cityJp = cityMap['jp'] ?? '';
+      _descJp = descMap['jp'] ?? '';
+
+      if (mounted) ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
       // ── Image upload ────────────────────────────────────────────────────
       String imageUrl = '';
       if (_imageFile != null) {
@@ -173,7 +332,10 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
 
       final orgId = await _generateOrgId();
 
-      // ── Firestore document — fields match web app exactly ───────────────
+      // ── Firestore document ───────────────────────────────────────────────
+      // EN fields are stored in the primary field names (org_name, org_prefecture,
+      // org_city, org_description) and JP translations in the _jp variants,
+      // mirroring the web app's data structure exactly.
       await FirebaseFirestore.instance.collection('organizations').add({
         'org_id':              orgId,
         'org_active':          false,
@@ -185,11 +347,19 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
         'org_age_juniors':     _ageJuniors,
         'org_age_seniors':     _ageSeniors,
         'org_age_students':    _ageStudents,
-        'org_city':            _cityController.text.trim(),
+
+        // ── Bilingual: city ──────────────────────────────────────────────
+        'org_city':            cityMap['en'],
+        'org_city_jp':         cityMap['jp'],
+
         'org_contact_email':   _emailController.text.trim(),
         'org_country':         _countryController.text.trim(),
         'org_created_at':      FieldValue.serverTimestamp(),
-        'org_description':     _descController.text.trim(),
+
+        // ── Bilingual: description ───────────────────────────────────────
+        'org_description':     descMap['en'],
+        'org_description_jp':  descMap['jp'],
+
         'org_handle_name':     _handleController.text.trim(),
         'org_image':           imageUrl,
         'org_loc_id':          '',
@@ -204,8 +374,15 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
         'org_meetup_time_mornings':   _mornings,
         'org_meetup_tues':     _tue,
         'org_meetup_weds':     _wed,
-        'org_name':            _nameController.text.trim(),
-        'org_prefecture':      _prefController.text.trim(),
+
+        // ── Bilingual: name ──────────────────────────────────────────────
+        'org_name':            nameMap['en'],
+        'org_name_jp':         nameMap['jp'],
+
+        // ── Bilingual: prefecture ────────────────────────────────────────
+        'org_prefecture':      prefMap['en'],
+        'org_prefecture_jp':   prefMap['jp'],
+
         'org_public':          false,
         'org_skill_advance':   _skillAdvance,
         'org_skill_beginner':  _skillBeginner,
@@ -269,9 +446,9 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Column(children: [
-          const Text(
-            'Add a Group',
-            style: TextStyle(
+          Text(
+            _s('Add a Group', 'グループを追加'),
+            style: const TextStyle(
               color: _textDark,
               fontWeight: FontWeight.w800,
               fontSize: 18,
@@ -279,7 +456,7 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
             ),
           ),
           Text(
-            _stepLabels[_currentPage],
+            _stepLabelsLoc[_currentPage],
             style: const TextStyle(
               color: _accent,
               fontWeight: FontWeight.w500,
@@ -288,6 +465,53 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
           ),
         ]),
         centerTitle: true,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: GestureDetector(
+              onTap: () {
+                setState(() => _isJpMode = !_isJpMode);
+                // If user switches to JP on the review page, auto-fetch translations
+                if (_isJpMode && _currentPage == 5 && _nameJp.isEmpty) {
+                  _previewTranslations();
+                }
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: _isJpMode ? _primary : _surface,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: _isJpMode ? _primary : _border,
+                    width: 1.5,
+                  ),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Text(
+                    'EN',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: !_isJpMode ? _primary : Colors.white.withOpacity(0.6),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Text('|', style: TextStyle(fontSize: 10, color: _isJpMode ? Colors.white.withOpacity(0.4) : _border)),
+                  const SizedBox(width: 4),
+                  Text(
+                    'JP',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: _isJpMode ? Colors.white : _textLight,
+                    ),
+                  ),
+                ]),
+              ),
+            ),
+          ),
+        ],
       ),
       body: Column(children: [
         _buildStepIndicator(),
@@ -316,7 +540,7 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       child: Row(
-        children: List.generate(_stepLabels.length, (i) {
+        children: List.generate(_stepLabelsLoc.length, (i) {
           final active = i <= _currentPage;
           return Expanded(
             child: Row(children: [
@@ -330,7 +554,7 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
                   ),
                 ),
               ),
-              if (i < _stepLabels.length - 1) const SizedBox(width: 4),
+              if (i < _stepLabelsLoc.length - 1) const SizedBox(width: 4),
             ]),
           );
         }),
@@ -344,28 +568,52 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         _buildPageHeader(
-            'Basic Details', 'Name, type & description', Icons.groups_outlined),
+            _s('Basic Details', '基本情報'), _s('Name, type & description', '名前・種類・説明'), Icons.groups_outlined),
         _buildTextField(
-          label: 'Group / Org Name *',
+          label: _s('Group / Org Name *', 'グループ名 *'),
           controller: _nameController,
-          hint: 'e.g. Tokyo Pickleball Club',
+          hint: _s('e.g. Tokyo Pickleball Club', '例: 東京ピックルボールクラブ'),
         ),
         const SizedBox(height: 14),
         _buildTextField(
-          label: 'Handle / Short Name *',
+          label: _s('Handle / Short Name *', 'ハンドル名 *'),
           controller: _handleController,
-          hint: 'e.g. tokyo_pickleball',
+          hint: _s('e.g. tokyo_pickleball', '例: tokyo_pickleball'),
         ),
         const SizedBox(height: 14),
-        _buildLabel('Group Type'),
+        _buildLabel(_s('Group Type', 'グループタイプ')),
         const SizedBox(height: 8),
         _buildSegmentedType(),
         const SizedBox(height: 20),
         _buildTextField(
-          label: 'Description',
+          label: _s('Description', '説明'),
           controller: _descController,
-          hint: 'Tell people about this group...',
+          hint: _s('Tell people about this group...', 'このグループについて教えてください...'),
           maxLines: 3,
+        ),
+        const SizedBox(height: 8),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: _accentSoft,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: _accent.withOpacity(0.3)),
+          ),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Icon(Icons.translate_rounded, size: 16, color: _primary),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: Text(
+                'You can enter Name, Description, City and Prefecture in English or Japanese — we\'ll auto-translate the other language for you.',
+                style: TextStyle(
+                  color: _textMid,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ]),
         ),
       ]),
     );
@@ -425,54 +673,56 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _buildPageHeader('Location & Contact',
-            'Where does this group meet?', Icons.place_outlined),
+        _buildPageHeader(
+            _s('Location & Contact', '場所・連絡先'),
+            _s('Where does this group meet?', 'このグループはどこで活動しますか？'),
+            Icons.place_outlined),
         _buildTextField(
-          label: 'Home Court / Primary Location',
+          label: _s('Home Court / Primary Location', 'ホームコート・主な活動場所'),
           controller: _locNameController,
-          hint: 'e.g. Yoyogi Park Court 3',
+          hint: _s('e.g. Yoyogi Park Court 3', '例: 代々木公園コート3'),
         ),
         const SizedBox(height: 14),
         Row(children: [
           Expanded(
             child: _buildTextField(
-              label: 'City',
+              label: _s('City', '市区町村'),
               controller: _cityController,
-              hint: 'e.g. Shinjuku',
+              hint: _s('e.g. Shinjuku / 新宿', '例: 新宿'),
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: _buildTextField(
-              label: 'Prefecture',
+              label: _s('Prefecture', '都道府県'),
               controller: _prefController,
-              hint: 'e.g. Tokyo',
+              hint: _s('e.g. Tokyo / 東京', '例: 東京'),
             ),
           ),
         ]),
         const SizedBox(height: 14),
         _buildTextField(
-          label: 'Country',
+          label: _s('Country', '国'),
           controller: _countryController,
           hint: 'Japan',
         ),
         const SizedBox(height: 20),
         _buildTextField(
-          label: 'Contact Email',
+          label: _s('Contact Email', '連絡先メール'),
           controller: _emailController,
           hint: 'info@group.com',
           keyboardType: TextInputType.emailAddress,
         ),
         const SizedBox(height: 14),
         _buildTextField(
-          label: 'Website',
+          label: _s('Website', 'ウェブサイト'),
           controller: _websiteController,
           hint: 'https://example.com',
           keyboardType: TextInputType.url,
         ),
         const SizedBox(height: 14),
         _buildTextField(
-          label: 'Social Media Link (e.g. Instagram)',
+          label: _s('Social Media Link (e.g. Instagram)', 'SNSリンク（例: Instagram）'),
           controller: _socialController,
           hint: 'https://instagram.com/...',
           keyboardType: TextInputType.url,
@@ -501,10 +751,11 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _buildPageHeader('Meetup Schedule',
-            'When does this group typically meet?',
+        _buildPageHeader(
+            _s('Meetup Schedule', '活動スケジュール'),
+            _s('When does this group typically meet?', 'このグループはいつ活動しますか？'),
             Icons.calendar_today_outlined),
-        _buildLabel('Typical Meetup Days'),
+        _buildLabel(_s('Typical Meetup Days', '活動日')),
         const SizedBox(height: 10),
         Wrap(
           spacing: 10,
@@ -549,7 +800,7 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
           }).toList(),
         ),
         const SizedBox(height: 24),
-        _buildLabel('Typical Times'),
+        _buildLabel(_s('Typical Times', '活動時間帯')),
         const SizedBox(height: 10),
         Row(
           children: times.map((t) {
@@ -603,39 +854,41 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         _buildPageHeader(
-            'Demographics', 'Who is this group for?', Icons.people_outline),
-        _buildLabel('Target Skill Levels'),
+            _s('Demographics', 'メンバー情報'),
+            _s('Who is this group for?', 'このグループは誰向けですか？'),
+            Icons.people_outline),
+        _buildLabel(_s('Target Skill Levels', 'スキルレベル')),
         const SizedBox(height: 10),
         Row(children: [
           Expanded(
-            child: _buildSkillChip('Beginner', _skillBeginner,
+            child: _buildSkillChip(_s('Beginner', '初心者'), _skillBeginner,
                     (v) => setState(() => _skillBeginner = v)),
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: _buildSkillChip('Intermediate', _skillIntermediate,
+            child: _buildSkillChip(_s('Intermediate', '中級'), _skillIntermediate,
                     (v) => setState(() => _skillIntermediate = v)),
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: _buildSkillChip('Advanced', _skillAdvance,
+            child: _buildSkillChip(_s('Advanced', '上級'), _skillAdvance,
                     (v) => setState(() => _skillAdvance = v)),
           ),
         ]),
         const SizedBox(height: 24),
-        _buildLabel('Age Groups'),
+        _buildLabel(_s('Age Groups', '年齢層')),
         const SizedBox(height: 10),
         _buildSectionCard(children: [
-          _buildCategoryRow('Juniors', _ageJuniors,
+          _buildCategoryRow(_s('Juniors', 'ジュニア'), _ageJuniors,
                   (v) => setState(() => _ageJuniors = v),
               Icons.child_care_outlined),
-          _buildCategoryRow('Students', _ageStudents,
+          _buildCategoryRow(_s('Students', '学生'), _ageStudents,
                   (v) => setState(() => _ageStudents = v),
               Icons.school_outlined),
-          _buildCategoryRow('Adults', _ageAdult,
+          _buildCategoryRow(_s('Adults', '大人'), _ageAdult,
                   (v) => setState(() => _ageAdult = v),
               Icons.person_outline),
-          _buildCategoryRow('Seniors', _ageSeniors,
+          _buildCategoryRow(_s('Seniors', 'シニア'), _ageSeniors,
                   (v) => setState(() => _ageSeniors = v),
               Icons.elderly_outlined),
         ]),
@@ -648,9 +901,11 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _buildPageHeader('Profile Image', 'Cover image for your group',
+        _buildPageHeader(
+            _s('Profile Image', 'プロフィール画像'),
+            _s('Cover image for your group', 'グループのカバー画像'),
             Icons.image_outlined),
-        _buildLabel('Profile / Cover Picture'),
+        _buildLabel(_s('Profile / Cover Picture', 'プロフィール・カバー画像')),
         const SizedBox(height: 8),
         GestureDetector(
           onTap: _pickImage,
@@ -711,15 +966,15 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
                       size: 26),
                 ),
                 const SizedBox(height: 10),
-                const Text('Select Group Image',
-                    style: TextStyle(
+                Text(_s('Select Group Image', 'グループ画像を選択'),
+                    style: const TextStyle(
                       color: _textMid,
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
                     )),
                 const SizedBox(height: 2),
-                const Text(
-                    "We'll use this for your group's avatar and listings",
+                Text(
+                    _s("We'll use this for your group's avatar and listings", 'グループのアバターやリストに使用されます'),
                     style: TextStyle(
                         color: _textLight, fontSize: 11)),
               ],
@@ -732,73 +987,144 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
 
   // ── Page 6 — Review ───────────────────────────────────────────────────────
   Widget _buildReviewPage() {
+    // Days — use JP labels when in JP mode
     final selectedDays = [
-      if (_mon) 'Mon', if (_tue) 'Tue', if (_wed) 'Wed', if (_thu) 'Thu',
-      if (_fri) 'Fri', if (_sat) 'Sat', if (_sun) 'Sun',
+      if (_mon) _s('Mon', '月'),
+      if (_tue) _s('Tue', '火'),
+      if (_wed) _s('Wed', '水'),
+      if (_thu) _s('Thu', '木'),
+      if (_fri) _s('Fri', '金'),
+      if (_sat) _s('Sat', '土'),
+      if (_sun) _s('Sun', '日'),
     ];
     final selectedTimes = [
-      if (_mornings) 'Mornings',
-      if (_afternoons) 'Afternoons',
-      if (_evenings) 'Evenings',
+      if (_mornings)   _s('Mornings', '午前'),
+      if (_afternoons) _s('Afternoons', '午後'),
+      if (_evenings)   _s('Evenings', '夜'),
     ];
     final selectedSkills = [
-      if (_skillBeginner) 'Beginner',
-      if (_skillIntermediate) 'Intermediate',
-      if (_skillAdvance) 'Advanced',
+      if (_skillBeginner)     _s('Beginner', '初心者'),
+      if (_skillIntermediate) _s('Intermediate', '中級'),
+      if (_skillAdvance)      _s('Advanced', '上級'),
     ];
     final selectedAges = [
-      if (_ageJuniors) 'Juniors',
-      if (_ageStudents) 'Students',
-      if (_ageAdult) 'Adults',
-      if (_ageSeniors) 'Seniors',
+      if (_ageJuniors)  _s('Juniors', 'ジュニア'),
+      if (_ageStudents) _s('Students', '学生'),
+      if (_ageAdult)    _s('Adults', '大人'),
+      if (_ageSeniors)  _s('Seniors', 'シニア'),
     ];
+
+    // Show JP translated values in review when JP mode is active
+    final reviewName = _isJpMode
+        ? (_nameJp.isNotEmpty ? _nameJp : _nameController.text.trim())
+        : _nameController.text.trim();
+    final reviewDesc = _isJpMode
+        ? (_descJp.isNotEmpty ? _descJp : _descController.text.trim())
+        : _descController.text.trim();
+    final reviewCity = _isJpMode
+        ? (_cityJp.isNotEmpty ? _cityJp : _cityController.text.trim())
+        : _cityController.text.trim();
+    final reviewPref = _isJpMode
+        ? (_prefJp.isNotEmpty ? _prefJp : _prefController.text.trim())
+        : _prefController.text.trim();
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _buildPageHeader('Review & Submit',
-            'Double-check before submitting', Icons.checklist_outlined),
+        _buildPageHeader(
+            _s('Review & Submit', '確認・送信'),
+            _s('Double-check before submitting', '送信前にご確認ください'),
+            Icons.checklist_outlined),
 
-        _buildReviewSection('Basic Details', Icons.groups_outlined, [
-          _buildReviewRow('Name', _nameController.text.trim()),
-          _buildReviewRow('Handle', _handleController.text.trim()),
-          _buildReviewRow('Type', _orgType),
-          _buildReviewRow('Description', _descController.text.trim()),
+        // JP preview loading indicator
+        if (_isJpMode && _isPreviewTranslating)
+          Container(
+            margin: const EdgeInsets.only(bottom: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFE8F4FF),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFF90CAF9).withOpacity(0.5)),
+            ),
+            child: const Row(children: [
+              SizedBox(
+                width: 14, height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF1976D2)),
+              ),
+              SizedBox(width: 10),
+              Text('日本語に翻訳中…', style: TextStyle(fontSize: 12, color: Color(0xFF1565C0), fontWeight: FontWeight.w500)),
+            ]),
+          ),
+
+        _buildReviewSection(_s('Basic Details', '基本情報'), Icons.groups_outlined, [
+          _buildReviewRow(_s('Name', '名前'), reviewName),
+          _buildReviewRow(_s('Handle', 'ハンドル名'), _handleController.text.trim()),
+          _buildReviewRow(_s('Type', 'タイプ'), _orgType),
+          _buildReviewRow(_s('Description', '説明'), reviewDesc),
         ]),
         const SizedBox(height: 14),
 
-        _buildReviewSection('Location & Contact', Icons.place_outlined, [
-          _buildReviewRow('Location', _locNameController.text.trim()),
-          _buildReviewRow('City', _cityController.text.trim()),
-          _buildReviewRow('Prefecture', _prefController.text.trim()),
-          _buildReviewRow('Country', _countryController.text.trim()),
-          _buildReviewRow('Email', _emailController.text.trim()),
-          _buildReviewRow('Website', _websiteController.text.trim()),
-          _buildReviewRow('Social', _socialController.text.trim()),
+        _buildReviewSection(_s('Location & Contact', '場所・連絡先'), Icons.place_outlined, [
+          _buildReviewRow(_s('Location', '場所'), _locNameController.text.trim()),
+          _buildReviewRow(_s('City', '市区町村'), reviewCity),
+          _buildReviewRow(_s('Prefecture', '都道府県'), reviewPref),
+          _buildReviewRow(_s('Country', '国'), _countryController.text.trim()),
+          _buildReviewRow(_s('Email', 'メール'), _emailController.text.trim()),
+          _buildReviewRow(_s('Website', 'ウェブサイト'), _websiteController.text.trim()),
+          _buildReviewRow(_s('Social', 'SNS'), _socialController.text.trim()),
         ]),
         const SizedBox(height: 14),
 
-        _buildReviewSection('Schedule', Icons.calendar_today_outlined, [
-          _buildReviewRow('Days',
+        _buildReviewSection(_s('Schedule', 'スケジュール'), Icons.calendar_today_outlined, [
+          _buildReviewRow(_s('Days', '活動日'),
               selectedDays.isEmpty ? '—' : selectedDays.join(', ')),
-          _buildReviewRow('Times',
+          _buildReviewRow(_s('Times', '活動時間帯'),
               selectedTimes.isEmpty ? '—' : selectedTimes.join(', ')),
         ]),
         const SizedBox(height: 14),
 
-        _buildReviewSection('Demographics', Icons.people_outline, [
-          _buildReviewRow('Skills',
+        _buildReviewSection(_s('Demographics', 'メンバー情報'), Icons.people_outline, [
+          _buildReviewRow(_s('Skills', 'スキル'),
               selectedSkills.isEmpty ? '—' : selectedSkills.join(', ')),
-          _buildReviewRow(
-              'Ages', selectedAges.isEmpty ? '—' : selectedAges.join(', ')),
+          _buildReviewRow(_s('Ages', '年齢層'),
+              selectedAges.isEmpty ? '—' : selectedAges.join(', ')),
         ]),
         const SizedBox(height: 14),
 
-        _buildReviewSection('Media', Icons.image_outlined, [
+        _buildReviewSection(_s('Media', 'メディア'), Icons.image_outlined, [
           _buildReviewRow(
-              'Image', _imageFile != null ? 'Selected ✓' : 'None'),
+              _s('Image', '画像'), _imageFile != null ? _s('Selected ✓', '選択済み ✓') : _s('None', 'なし')),
         ]),
-        const SizedBox(height: 20),
+        const SizedBox(height: 14),
+
+        // Translation notice
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFE8F4FF),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFF90CAF9).withOpacity(0.6)),
+          ),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            const Icon(Icons.translate_rounded, size: 18, color: Color(0xFF1976D2)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _s(
+                  'Name, Description, City and Prefecture will be automatically translated to both English and Japanese before saving.',
+                  '名前・説明・市区町村・都道府県は英語と日本語の両方に自動翻訳されて保存されます。',
+                ),
+                style: const TextStyle(
+                  color: Color(0xFF1565C0),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  height: 1.4,
+                ),
+              ),
+            ),
+          ]),
+        ),
+        const SizedBox(height: 14),
 
         Container(
           padding: const EdgeInsets.all(14),
@@ -811,10 +1137,13 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
             const Icon(Icons.info_outline_rounded,
                 size: 18, color: _primary),
             const SizedBox(width: 10),
-            const Expanded(
+            Expanded(
               child: Text(
-                'Your group will be submitted for review. Once approved, it will appear publicly.',
-                style: TextStyle(
+                _s(
+                  'Your group will be submitted for review. Once approved, it will appear publicly.',
+                  'グループは審査に送信されます。承認後、公開されます。',
+                ),
+                style: const TextStyle(
                   color: _textMid,
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
@@ -918,8 +1247,8 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14)),
               ),
-              child: const Text('Back',
-                  style: TextStyle(
+              child: Text(_s('Back', '戻る'),
+                  style: const TextStyle(
                     color: _textMid,
                     fontWeight: FontWeight.w600,
                     fontSize: 15,
@@ -941,6 +1270,10 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
                   duration: const Duration(milliseconds: 300),
                   curve: Curves.easeInOut,
                 );
+                // Pre-fetch JP translations when arriving at Review page
+                if (_currentPage == 4 && _isJpMode && _nameJp.isEmpty) {
+                  Future.delayed(const Duration(milliseconds: 350), _previewTranslations);
+                }
               }
             },
             style: ElevatedButton.styleFrom(
@@ -962,7 +1295,7 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
               ),
             )
                 : Text(
-              isLast ? 'Submit for Review' : 'Continue',
+              isLast ? _s('Submit for Review', '審査に送信') : _s('Continue', '次へ'),
               style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.w700,

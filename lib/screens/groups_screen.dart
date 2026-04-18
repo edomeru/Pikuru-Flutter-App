@@ -157,7 +157,6 @@ class _T {
 
   static _T of(Lang lang) => lang == 'ja' ? ja : en;
 
-  // Localised chip label helpers
   String get chipBeginner     => isJa ? '初級'       : 'Beginner';
   String get chipIntermediate => isJa ? '中級'       : 'Intermediate';
   String get chipAdvanced     => isJa ? '上級'       : 'Advanced';
@@ -208,7 +207,6 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
 
   bool get _hasActiveFilter => !_filter.isDefault;
 
-  // ── Open filter modal — always passes current _lang ────────────────────────
   Future<void> _openFilter({
     required List<Map<String, dynamic>> allGroups,
     required Map<String, Map<String, dynamic>> locMap,
@@ -221,19 +219,17 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
         currentFilter: _filter,
         allGroups:     allGroups,
         locMap:        locMap,
-        lang:          _lang,    // ← sync modal language with screen language
+        lang:          _lang,
       ),
     );
     if (result != null && mounted) setState(() => _filter = result);
   }
 
-  // ── Active filter chips ────────────────────────────────────────────────────
   List<_Chip> _activeChips(_T t) {
     final chips = <_Chip>[];
     void add(String label, VoidCallback remove) =>
         chips.add(_Chip(label: label, onRemove: remove));
 
-    // Location chips — stored as EN keys; display as-is (always EN strings)
     if (_filter.orgPrefecture != null)
       add(_filter.orgPrefecture!,
               () => setState(() => _filter = _filter.copyWith(orgPrefecture: null, orgCity: null)));
@@ -241,7 +237,6 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
       add(_filter.orgCity!,
               () => setState(() => _filter = _filter.copyWith(orgCity: null)));
 
-    // Skill
     if (_filter.orgSkillBeginner)
       add(t.chipBeginner,     () => setState(() => _filter = _filter.copyWith(orgSkillBeginner: false)));
     if (_filter.orgSkillIntermediate)
@@ -249,7 +244,6 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
     if (_filter.orgSkillAdvance)
       add(t.chipAdvanced,     () => setState(() => _filter = _filter.copyWith(orgSkillAdvance: false)));
 
-    // Age
     if (_filter.orgAgeJuniors)
       add(t.chipJuniors,  () => setState(() => _filter = _filter.copyWith(orgAgeJuniors: false)));
     if (_filter.orgAgeStudents)
@@ -259,7 +253,6 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
     if (_filter.orgAgeSeniors)
       add(t.chipSeniors,  () => setState(() => _filter = _filter.copyWith(orgAgeSeniors: false)));
 
-    // Days — parallel lists for getter / setter / label
     final days    = t.chipDays;
     final getters = [
       _filter.orgMeetupSun,  _filter.orgMeetupMon,  _filter.orgMeetupTues,
@@ -279,7 +272,6 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
       if (getters[i]) add(days[i], setters[i]);
     }
 
-    // Times
     if (_filter.orgMeetupTimeMornings)
       add(t.chipMornings,   () => setState(() => _filter = _filter.copyWith(orgMeetupTimeMornings: false)));
     if (_filter.orgMeetupTimeAfternoons)
@@ -323,7 +315,15 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
           children: [
             Column(children: [
               _buildHeader(t: t, allGroups: validGroups, locMap: locMap),
-              Expanded(child: _buildGroupsList(t, groupsAsync, validGroups, locMap)),
+              Expanded(
+                child: _buildGroupsList(
+                  t,
+                  groupsAsync,
+                  validGroups,
+                  locMap,
+                  _lang,
+                ),
+              ),
             ]),
             if (showAddButton)
               Positioned(
@@ -527,6 +527,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
       AsyncValue<List<Map<String, dynamic>>> groupsAsync,
       List<Map<String, dynamic>> validGroups,
       Map<String, Map<String, dynamic>> locMap,
+      Lang lang,
       ) {
     return groupsAsync.when(
       data: (_) {
@@ -551,13 +552,18 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
           );
         }
 
+        // Enrich each group map with resolved display values + lang key.
+        // GroupCardList reads these to render the correct language without
+        // needing its own lang parameter — everything flows through the map.
         final enriched = filtered.map((g) => {
           ...g,
-          '_resolved_location': resolveLocation(g, locMap, _lang),
-          '_resolved_name':     resolveGroupName(g, _lang),
+          '_resolved_name':     resolveGroupName(g, lang),     // org_name_jp when ja
+          '_resolved_location': resolveLocation(g, locMap, lang), // JP city/pref when ja
+          '_lang':              lang,  // lets GroupCardList localise skill/schedule/age labels
         }).toList();
 
         return ListView.builder(
+          key:         ValueKey(lang), // force full rebuild on lang switch
           padding:     const EdgeInsets.fromLTRB(20, 20, 20, 110),
           itemCount:   enriched.length,
           itemBuilder: (context, i) => GroupCardList(group: enriched[i]),
