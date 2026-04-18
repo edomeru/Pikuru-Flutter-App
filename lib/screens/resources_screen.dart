@@ -2,10 +2,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:pikuru/theme/material.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// ResourcesScreen
-// ─────────────────────────────────────────────────────────────────────────────
-
 class ResourcesScreen extends StatefulWidget {
   const ResourcesScreen({super.key});
 
@@ -19,7 +15,6 @@ class _ResourcesScreenState extends State<ResourcesScreen>
 
   bool _loading = true;
   List<Map<String, dynamic>> _learnItems = [];
-  List<Map<String, dynamic>> _toolsItems = [];
 
   late final AnimationController _fadeController;
   late final Animation<double>   _fadeAnim;
@@ -74,14 +69,12 @@ class _ResourcesScreenState extends State<ResourcesScreen>
     }
 
     final learn = <Map<String, dynamic>>[];
-    final tools = <Map<String, dynamic>>[];
 
     for (final doc in docs) {
       final data = Map<String, dynamic>.from(doc.data());
       data['_doc_id'] = doc.id;
       final category = (data['category'] ?? '').toString();
       if (category == 'learn') learn.add(data);
-      else if (category == 'tools') tools.add(data);
     }
 
     int order(Map<String, dynamic> d) {
@@ -92,12 +85,10 @@ class _ResourcesScreenState extends State<ResourcesScreen>
       return 999;
     }
     learn.sort((a, b) => order(a).compareTo(order(b)));
-    tools.sort((a, b) => order(a).compareTo(order(b)));
 
     if (mounted) {
       setState(() {
         _learnItems = learn;
-        _toolsItems = tools;
         _loading = false;
       });
     }
@@ -266,11 +257,9 @@ class _ResourcesScreenState extends State<ResourcesScreen>
 
                       const SizedBox(height: 28),
 
-                      if (_loading) ...[
-                        _SkeletonSection(),
-                        const SizedBox(height: 28),
-                        _SkeletonSection(),
-                      ] else ...[
+                      if (_loading)
+                        _SkeletonSection()
+                      else ...[
                         _SectionHeader(
                           label: _lang == 'ja'
                               ? 'ピックルボールを学ぶ'
@@ -280,19 +269,6 @@ class _ResourcesScreenState extends State<ResourcesScreen>
                         const SizedBox(height: 12),
                         _ResourceCard(
                           items: _learnItems,
-                          lang: _lang,
-                          tFn: _t,
-                          onTap: _openDetail,
-                        ),
-                        const SizedBox(height: 28),
-                        _SectionHeader(
-                          label:
-                          _lang == 'ja' ? '便利なツール' : 'Helpful Tools',
-                          icon: Icons.build_rounded,
-                        ),
-                        const SizedBox(height: 12),
-                        _ResourceCard(
-                          items: _toolsItems,
                           lang: _lang,
                           tFn: _t,
                           onTap: _openDetail,
@@ -849,7 +825,6 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
         ));
   }
 
-  // ── RENDERER 1 — sections grid ─────────────────────────────────────────────
   Widget _buildSectionsLayout(List sections) {
     return Column(
       children: sections.map<Widget>((sec) {
@@ -942,7 +917,6 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
     );
   }
 
-  // ── RENDERER 2 — About / What is Pikuru ────────────────────────────────────
   Widget _buildAboutLayout(Map<String, dynamic> t) {
     final origin = t['aboutOrigin'] is Map
         ? Map<String, dynamic>.from(t['aboutOrigin'] as Map)
@@ -1134,19 +1108,12 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
     );
   }
 
-  // ── RENDERER 3 — content block with diagram images ─────────────────────────
   Widget _buildContentBlock(Map<String, dynamic> t) {
     final content = (t['content'] ?? '').toString();
     final rawImages = t['images'] is List
         ? (t['images'] as List).map((e) => e.toString()).toList()
         : <String>[];
 
-    // ── KEY FIX: only keep entries that are valid absolute URLs ──────────────
-    // The web app stores images as relative paths like "/images/diagram1.png"
-    // which only work in Next.js (served from public/). Flutter's Image.network
-    // requires full https:// URLs. We filter them out here so the "Diagrams"
-    // section is hidden entirely when only relative/placeholder paths exist,
-    // instead of showing broken error cards.
     final images = rawImages
         .where((url) =>
     url.startsWith('http://') || url.startsWith('https://'))
@@ -1164,8 +1131,6 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-
-        // ── Description text ───────────────────────────────────────────────
         if (content.isNotEmpty)
           Container(
             padding: const EdgeInsets.all(20),
@@ -1183,10 +1148,6 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
             ),
           ),
 
-        // ── Diagram images ─────────────────────────────────────────────────
-        // Only rendered when valid https:// URLs exist in Firestore.
-        // Update your Firestore "diagrams" document to use Firebase Storage
-        // download URLs instead of relative paths like "/images/diagram1.png".
         if (images.isNotEmpty) ...[
           const SizedBox(height: 20),
           Padding(
@@ -1211,7 +1172,6 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
               _DiagramCard(url: entry.value, index: entry.key)),
         ],
 
-        // ── Great For points ───────────────────────────────────────────────
         if (greatForPts.isNotEmpty) ...[
           const SizedBox(height: 16),
           if (greatForTitle.isNotEmpty)
@@ -1245,7 +1205,6 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
           )),
         ],
 
-        // ── Keywords ──────────────────────────────────────────────────────
         if (keywords.isNotEmpty) ...[
           const SizedBox(height: 16),
           Container(
@@ -1302,7 +1261,6 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
     );
   }
 
-  // ── Shared helpers ─────────────────────────────────────────────────────────
   BoxDecoration _cardDecor() => BoxDecoration(
     color: Colors.white,
     borderRadius: BorderRadius.circular(16),
@@ -1317,33 +1275,22 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
 
   IconData _iconForKey(String key) {
     switch (key) {
-      case 'map-pin':
-        return Icons.place_rounded;
-      case 'calendar':
-        return Icons.calendar_month_rounded;
-      case 'search':
-        return Icons.search_rounded;
-      case 'news':
-        return Icons.newspaper_rounded;
-      case 'phone':
-        return Icons.smartphone_rounded;
-      default:
-        return Icons.circle_outlined;
+      case 'map-pin':   return Icons.place_rounded;
+      case 'calendar':  return Icons.calendar_month_rounded;
+      case 'search':    return Icons.search_rounded;
+      case 'news':      return Icons.newspaper_rounded;
+      case 'phone':     return Icons.smartphone_rounded;
+      default:          return Icons.circle_outlined;
     }
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // DiagramCard
-//
-// Only receives validated https:// URLs (filtered upstream in _buildContentBlock).
-// Shows a loading skeleton with progress, then the full-width natural-height
-// image once loaded. Falls back to a friendly error state on network failure.
 // ─────────────────────────────────────────────────────────────────────────────
 class _DiagramCard extends StatefulWidget {
   final String url;
   final int    index;
-
   const _DiagramCard({required this.url, required this.index});
 
   @override
@@ -1359,15 +1306,11 @@ class _DiagramCardState extends State<_DiagramCard> {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color:        Colors.white,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border:       Border.all(color: AppColors.primary.withOpacity(0.12)),
+        border: Border.all(color: AppColors.primary.withOpacity(0.12)),
         boxShadow: [
-          BoxShadow(
-            color:      Colors.black.withOpacity(0.06),
-            blurRadius: 16,
-            offset:     const Offset(0, 4),
-          ),
+          BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 16, offset: const Offset(0, 4)),
         ],
       ),
       clipBehavior: Clip.antiAlias,
@@ -1375,7 +1318,6 @@ class _DiagramCardState extends State<_DiagramCard> {
           ? _buildErrorState()
           : Stack(
         children: [
-          // ── Actual image (natural height, full width) ──────────────
           Image.network(
             widget.url,
             width: double.infinity,
@@ -1397,40 +1339,21 @@ class _DiagramCardState extends State<_DiagramCard> {
               return _buildErrorState();
             },
           ),
-
-          // ── Badge shown once image finishes loading ────────────────
           if (_loaded)
             Positioned(
               top: 12, left: 12,
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.92),
                   borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                        color: Colors.black.withOpacity(0.08),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2)),
-                  ],
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 6, offset: const Offset(0, 2))],
                 ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Container(
-                    width: 6, height: 6,
-                    decoration: BoxDecoration(
-                        color: AppColors.primary,
-                        shape: BoxShape.circle),
-                  ),
+                  Container(width: 6, height: 6, decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle)),
                   const SizedBox(width: 6),
-                  Text(
-                    'Diagram ${widget.index + 1}',
-                    style: const TextStyle(
-                        fontSize:   11,
-                        fontWeight: FontWeight.w700,
-                        color:      AppColors.primary,
-                        letterSpacing: 0.3),
-                  ),
+                  Text('Diagram ${widget.index + 1}',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.primary, letterSpacing: 0.3)),
                 ]),
               ),
             ),
@@ -1440,61 +1363,35 @@ class _DiagramCardState extends State<_DiagramCard> {
   }
 
   Widget _buildLoadingSkeleton(ImageChunkEvent? progress) {
-    final percent = (progress?.expectedTotalBytes != null &&
-        progress!.expectedTotalBytes! > 0)
+    final percent = (progress?.expectedTotalBytes != null && progress!.expectedTotalBytes! > 0)
         ? progress.cumulativeBytesLoaded / progress.expectedTotalBytes!
         : null;
-
     return Container(
       width: double.infinity,
       height: MediaQuery.of(context).size.width * 0.56,
       color: const Color(0xFFF2F3F5),
       child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: 36, height: 36,
-              child: CircularProgressIndicator(
-                strokeWidth: 3,
-                value: percent,
-                color: AppColors.primary,
-                backgroundColor: AppColors.primary.withOpacity(0.12),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              percent != null
-                  ? '${(percent * 100).toInt()}%'
-                  : 'Loading diagram…',
-              style: TextStyle(
-                  fontSize: 12,
-                  color:    Colors.grey.shade400,
-                  fontWeight: FontWeight.w500),
-            ),
-          ],
-        ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          SizedBox(width: 36, height: 36,
+              child: CircularProgressIndicator(strokeWidth: 3, value: percent, color: AppColors.primary, backgroundColor: AppColors.primary.withOpacity(0.12))),
+          const SizedBox(height: 12),
+          Text(percent != null ? '${(percent * 100).toInt()}%' : 'Loading diagram…',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade400, fontWeight: FontWeight.w500)),
+        ]),
       ),
     );
   }
 
   Widget _buildErrorState() {
     return Container(
-      width: double.infinity,
-      height: 160,
+      width: double.infinity, height: 160,
       color: AppColors.primary.withOpacity(0.05),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.broken_image_outlined,
-              size: 36, color: AppColors.primary.withOpacity(0.3)),
-          const SizedBox(height: 8),
-          Text('Could not load diagram ${widget.index + 1}',
-              style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey.shade400)),
-        ],
-      ),
+      child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+        Icon(Icons.broken_image_outlined, size: 36, color: AppColors.primary.withOpacity(0.3)),
+        const SizedBox(height: 8),
+        Text('Could not load diagram ${widget.index + 1}',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade400)),
+      ]),
     );
   }
 }
@@ -1509,20 +1406,11 @@ class _DetailSectionLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(children: [
-      Container(
-        width: 4, height: 20,
-        decoration: BoxDecoration(
-            color: AppColors.primary, borderRadius: BorderRadius.circular(2)),
-      ),
+      Container(width: 4, height: 20,
+          decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(2))),
       const SizedBox(width: 10),
-      Expanded(
-        child: Text(label,
-            style: const TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.w800,
-                color: Color(0xFF0D0D0D),
-                letterSpacing: -0.3)),
-      ),
+      Expanded(child: Text(label,
+          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF0D0D0D), letterSpacing: -0.3))),
     ]);
   }
 }
@@ -1533,9 +1421,7 @@ class _BodyText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(text,
-        style: const TextStyle(
-            fontSize: 14, height: 1.65, color: Color(0xFF444548)));
+    return Text(text, style: const TextStyle(fontSize: 14, height: 1.65, color: Color(0xFF444548)));
   }
 }
 
@@ -1549,9 +1435,7 @@ class _SocialBtn extends StatelessWidget {
     return Container(
       width:  label != null ? null : 48,
       height: 48,
-      padding: label != null
-          ? const EdgeInsets.symmetric(horizontal: 16)
-          : EdgeInsets.zero,
+      padding: label != null ? const EdgeInsets.symmetric(horizontal: 16) : EdgeInsets.zero,
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.15),
         borderRadius: BorderRadius.circular(14),
@@ -1559,11 +1443,7 @@ class _SocialBtn extends StatelessWidget {
       ),
       child: Center(
         child: label != null
-            ? Text(label!,
-            style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-                fontSize: 14))
+            ? Text(label!, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14))
             : Icon(icon, color: Colors.white, size: 22),
       ),
     );
