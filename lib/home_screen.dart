@@ -5,6 +5,7 @@ import 'package:pikuru/widgets/event_card.dart';
 import 'package:pikuru/widgets/group_card.dart';
 import 'package:pikuru/widgets/court_card.dart';
 import 'package:pikuru/providers/providers.dart';
+import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:pikuru/screens/chats_screen.dart';
 import 'package:pikuru/screens/what_is_pikuru_screen.dart';
 import 'package:pikuru/screens/about_pikuru_screen.dart';
@@ -14,6 +15,58 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Localised strings (mirrors the web app's T map)
+// ─────────────────────────────────────────────────────────────────────────────
+const _L = {
+  kLangEn: {
+    'upcomingEvents':    'Upcoming events',
+    'localGroups':       'Local groups',
+    'pickleballCourts':  'Pickleball courts',
+    'seeAll':            'See all',
+    'whatIsPickleball':  'What is Pickleball?',
+    'aboutPikuru':       'About Pikuru',
+    'findCourts':        'Find courts near you',
+    'browseEvents':      'Browse upcoming events',
+    'welcomeTitle':      'Welcome to\nPikuru!',
+    'welcomeSub':        'Find courts, join events, and connect\nwith players across Japan.',
+    'badgeLabel':        "Japan's #1 Pickleball App",
+    'noEvents':          'No events yet',
+    'noGroups':          'No groups yet',
+    'noCourts':          'No courts yet',
+    'unknownLocation':   'Unknown location',
+    'dateTbd':           'Date TBD',
+    'langEn':            'EN',
+    'langJa':            '日本語',
+  },
+  kLangJa: {
+    'upcomingEvents':    '開催予定のイベント',
+    'localGroups':       'ローカルグループ',
+    'pickleballCourts':  'ピックルボールコート',
+    'seeAll':            'すべて見る',
+    'whatIsPickleball':  'ピックルボールとは？',
+    'aboutPikuru':       'Pikuruについて',
+    'findCourts':        '近くのコートを探す',
+    'browseEvents':      '開催予定のイベントを見る',
+    'welcomeTitle':      'Pikuruへ\nようこそ！',
+    'welcomeSub':        '日本全国のコート、イベント、\nプレイヤーとつながろう。',
+    'badgeLabel':        '日本No.1ピックルボールアプリ',
+    'noEvents':          'イベントはまだありません',
+    'noGroups':          'グループはまだありません',
+    'noCourts':          'コートはまだありません',
+    'unknownLocation':   '場所不明',
+    'dateTbd':           '日時未定',
+    'langEn':            'EN',
+    'langJa':            '日本語',
+  },
+};
+
+String _t(String lang, String key) =>
+    _L[lang]?[key] ?? _L[kLangEn]![key]!;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HomeScreen
+// ─────────────────────────────────────────────────────────────────────────────
 class HomeScreen extends ConsumerStatefulWidget {
   final void Function(int tabIndex)? onNavigateToTab;
 
@@ -24,10 +77,10 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
-  // ── Unread count streams ───────────────────────────────────────────────
-  int _unreadCount = 0;
+  // ── Unread count streams ───────────────────────────────────────────────────
+  int _unreadCount     = 0;
   int _individualUnread = 0;
-  int _groupUnread = 0;
+  int _groupUnread     = 0;
 
   @override
   void initState() {
@@ -39,8 +92,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final me = FirebaseAuth.instance.currentUser;
     if (me == null) return;
 
-    // ── Individual chats: unread = last_message_by != me
-    // Uses last_read map stored on the doc: last_read.{uid} = timestamp
+    // ── Individual chats ──────────────────────────────────────────────────────
     FirebaseFirestore.instance
         .collection('individual_chats')
         .where('participants', arrayContains: me.uid)
@@ -52,14 +104,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         final lastMsg = (d['last_message'] ?? '').toString();
         if (lastMsg.isEmpty) continue;
         if ((d['last_message_by'] ?? '') == me.uid) continue;
-
-        // Check last_read map: last_read.{myUid} stores when I last read
         final lastReadMap = d['last_read'] as Map<String, dynamic>?;
-        final myLastRead = lastReadMap != null
+        final myLastRead  = lastReadMap != null
             ? (lastReadMap[me.uid] as Timestamp?)?.toDate()
             : null;
         final lastMsgAt = (d['last_message_at'] as Timestamp?)?.toDate();
-
         if (lastMsgAt != null &&
             (myLastRead == null || lastMsgAt.isAfter(myLastRead))) {
           count++;
@@ -73,7 +122,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
     });
 
-    // ── Group chats: check participants subcollection last_read_at
+    // ── Group chats ────────────────────────────────────────────────────────────
     FirebaseFirestore.instance
         .collection('group_chats')
         .snapshots()
@@ -111,26 +160,99 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
   }
 
-  String _formatEventDateTime(Map<String, dynamic> data) {
+  // ─────────────────────────────────────────────────────────────────────────
+  // Helpers (mirror web app logic)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /// Returns the localised event title (uses event_title_jp when lang == 'ja').
+  String _eventTitle(Map<String, dynamic> data, String lang) {
+    if (lang == kLangJa) {
+      final jp = (data['event_title_jp'] ?? '').toString().trim();
+      if (jp.isNotEmpty) return jp;
+    }
+    return (data['event_title'] ?? 'Untitled').toString();
+  }
+
+  /// Returns the localised group name (uses org_name_jp when lang == 'ja').
+  String _groupName(Map<String, dynamic> data, String lang) {
+    if (lang == kLangJa) {
+      final jp = (data['org_name_jp'] ?? '').toString().trim();
+      if (jp.isNotEmpty) return jp;
+    }
+    return (data['org_name'] ?? 'Unnamed Group').toString();
+  }
+
+  /// Returns the localised court name (uses loc_name_jp when lang == 'ja').
+  String _courtName(Map<String, dynamic> data, String lang) {
+    if (lang == kLangJa) {
+      final jp = (data['loc_name_jp'] ?? '').toString().trim();
+      if (jp.isNotEmpty) return jp;
+    }
+    return (data['loc_name'] ?? 'Unnamed Court').toString();
+  }
+
+  /// Builds a localised city / country string for courts
+  /// (mirrors CourtCard logic in web app).
+  String _courtLocation(Map<String, dynamic> data, String lang) {
+    final String city = lang == kLangJa
+        ? ((data['loc_city_jp'] ?? data['loc_city'] ?? '').toString().trim())
+        : ((data['loc_city_en'] ?? data['loc_city'] ?? '').toString().trim());
+    final String country = (data['loc_country'] ?? '').toString().trim();
+
+    if (city.isNotEmpty && country.isNotEmpty && lang != kLangJa) {
+      return '$city, $country';
+    }
+    if (city.isNotEmpty) return city;
+    return '';
+  }
+
+  /// Formats event date/time, respecting locale (mirrors web app formatDate).
+  /// Avoids DateFormat locale arguments (requires initializeDateFormatting)
+  /// by building the Japanese string manually from the DateTime fields.
+  String _formatEventDateTime(Map<String, dynamic> data, String lang) {
     final rawDate = data['event_date'];
     final rawTime = data['event_time'];
+
     String dateStr = '';
     if (rawDate is Timestamp) {
-      dateStr = DateFormat('EEE, MMM d').format(rawDate.toDate());
+      final d = rawDate.toDate();
+      if (lang == kLangJa) {
+        // Build JP date string without requiring locale initialisation
+        const jpWeekdays = ['日', '月', '火', '水', '木', '金', '土'];
+        final weekday = jpWeekdays[d.weekday % 7]; // DateTime.weekday: 1=Mon…7=Sun
+        dateStr = '${d.month}月${d.day}日($weekday)';
+      } else {
+        dateStr = DateFormat('EEE, MMM d').format(d);
+      }
     }
+
     String timeStr = '';
     if (rawTime is Timestamp) {
-      timeStr = DateFormat('h:mm a').format(rawTime.toDate());
+      final t = rawTime.toDate();
+      if (lang == kLangJa) {
+        // H:mm — no locale needed
+        timeStr = '${t.hour}:${t.minute.toString().padLeft(2, '0')}';
+      } else {
+        timeStr = DateFormat('h:mm a').format(t);
+      }
     } else if (rawTime is String && rawTime.isNotEmpty) {
       timeStr = rawTime;
     }
+
     if (dateStr.isNotEmpty && timeStr.isNotEmpty) return '$dateStr · $timeStr';
     if (dateStr.isNotEmpty) return dateStr;
-    return 'Date TBD';
+    return _t(lang, 'dateTbd');
   }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Build
+  // ─────────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
+    // ✅ Watch global lang provider — rebuilds whenever lang changes anywhere
+    final lang = ref.watch(appLangProvider);
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -142,6 +264,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ),
         centerTitle: true,
         actions: [
+          // ── EN / JP language toggle ─────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: Container(
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: AppColors.primary.withOpacity(0.18)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _LangButton(
+                    label: _t(lang, 'langEn'),
+                    selected: lang == kLangEn,
+                    onTap: () =>
+                        ref.read(appLangProvider.notifier).setLang(kLangEn),
+                  ),
+                  _LangButton(
+                    label: _t(lang, 'langJa'),
+                    selected: lang == kLangJa,
+                    onTap: () =>
+                        ref.read(appLangProvider.notifier).setLang(kLangJa),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // ── Chat icon with unread badge ─────────────────────────────────
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: GestureDetector(
@@ -149,14 +300,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 context,
                 MaterialPageRoute(builder: (_) => const ChatsScreen()),
               ).then((_) {
-                // Refresh badge count when returning from chat
                 if (mounted) _listenUnread();
               }),
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
                   Container(
-                    width: 42, height: 42,
+                    width: 42,
+                    height: 42,
                     decoration: BoxDecoration(
                       color: AppColors.primary.withOpacity(0.08),
                       borderRadius: BorderRadius.circular(12),
@@ -166,7 +317,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                   if (_unreadCount > 0)
                     Positioned(
-                      top: -4, right: -4,
+                      top: -4,
+                      right: -4,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 4, vertical: 1),
@@ -175,7 +327,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         decoration: BoxDecoration(
                           color: Colors.red.shade500,
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.white, width: 1.5),
+                          border:
+                          Border.all(color: Colors.white, width: 1.5),
                           boxShadow: [
                             BoxShadow(
                               color: Colors.red.withOpacity(0.4),
@@ -210,36 +363,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             children: [
               const SizedBox(height: 10),
 
-              // ── UPCOMING EVENTS ────────────────────────────────────────
-              _sectionHeader('Upcoming events',
-                  onSeeAll: () => widget.onNavigateToTab?.call(2)),
+              // ── UPCOMING EVENTS ──────────────────────────────────────────
+              _sectionHeader(
+                _t(lang, 'upcomingEvents'),
+                onSeeAll: () => widget.onNavigateToTab?.call(2),
+                lang: lang,
+              ),
               const SizedBox(height: 16),
-              SizedBox(height: 265, child: _buildEventsSection(ref)),
+              SizedBox(height: 265, child: _buildEventsSection(ref, lang)),
 
               const SizedBox(height: 30),
               _divider(),
               const SizedBox(height: 20),
 
-              // ── LOCAL GROUPS ───────────────────────────────────────────
-              _sectionHeader('Local groups',
-                  onSeeAll: () => widget.onNavigateToTab?.call(3)),
+              // ── LOCAL GROUPS ─────────────────────────────────────────────
+              _sectionHeader(
+                _t(lang, 'localGroups'),
+                onSeeAll: () => widget.onNavigateToTab?.call(3),
+                lang: lang,
+              ),
               const SizedBox(height: 16),
-              SizedBox(height: 235, child: _buildGroupsSection(ref)),
+              SizedBox(height: 235, child: _buildGroupsSection(ref, lang)),
 
               const SizedBox(height: 30),
               _divider(),
               const SizedBox(height: 20),
 
-              // ── PICKLEBALL COURTS ──────────────────────────────────────
-              _sectionHeader('Pickleball courts',
-                  onSeeAll: () => widget.onNavigateToTab?.call(1)),
+              // ── PICKLEBALL COURTS ────────────────────────────────────────
+              _sectionHeader(
+                _t(lang, 'pickleballCourts'),
+                onSeeAll: () => widget.onNavigateToTab?.call(1),
+                lang: lang,
+              ),
               const SizedBox(height: 16),
-              SizedBox(height: 240, child: _buildCourtsSection(ref)),
+              SizedBox(height: 240, child: _buildCourtsSection(ref, lang)),
 
               const SizedBox(height: 30),
 
-              // ── WELCOME CARD ───────────────────────────────────────────
-              _buildWelcomeCard(context),
+              // ── WELCOME CARD ─────────────────────────────────────────────
+              _buildWelcomeCard(context, lang),
 
               const SizedBox(height: 10),
             ],
@@ -249,8 +411,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  // ── Modern Welcome Card ───────────────────────────────────────────────────
-  Widget _buildWelcomeCard(BuildContext context) {
+  // ─────────────────────────────────────────────────────────────────────────
+  // Welcome card (localised)
+  // ─────────────────────────────────────────────────────────────────────────
+  Widget _buildWelcomeCard(BuildContext context, String lang) {
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
       decoration: BoxDecoration(
@@ -275,20 +439,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         children: [
           Positioned(
             right: -30, top: -30,
-            child: Container(width: 140, height: 140,
-                decoration: BoxDecoration(shape: BoxShape.circle,
+            child: Container(
+                width: 140, height: 140,
+                decoration: BoxDecoration(
+                    shape: BoxShape.circle,
                     color: Colors.white.withOpacity(0.06))),
           ),
           Positioned(
             right: 30, bottom: -20,
-            child: Container(width: 90, height: 90,
-                decoration: BoxDecoration(shape: BoxShape.circle,
+            child: Container(
+                width: 90, height: 90,
+                decoration: BoxDecoration(
+                    shape: BoxShape.circle,
                     color: Colors.white.withOpacity(0.05))),
           ),
           Positioned(
             left: -20, bottom: 20,
-            child: Container(width: 70, height: 70,
-                decoration: BoxDecoration(shape: BoxShape.circle,
+            child: Container(
+                width: 70, height: 70,
+                decoration: BoxDecoration(
+                    shape: BoxShape.circle,
                     color: Colors.white.withOpacity(0.04))),
           ),
           Padding(
@@ -296,53 +466,66 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Badge
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 5),
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
                         color: Colors.white.withOpacity(0.25), width: 1),
                   ),
-                  child: const Text('🎾  Japan\'s #1 Pickleball App',
-                      style: TextStyle(fontSize: 11.5, color: Colors.white,
-                          fontWeight: FontWeight.w600, letterSpacing: 0.3)),
+                  child: Text(
+                    '🎾  ${_t(lang, 'badgeLabel')}',
+                    style: const TextStyle(
+                        fontSize: 11.5,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.3),
+                  ),
                 ),
                 const SizedBox(height: 18),
-                const Text('Welcome to\nPikuru!',
-                    style: TextStyle(fontSize: 34, fontWeight: FontWeight.w800,
-                        color: Colors.white, height: 1.15,
-                        letterSpacing: -1.0)),
+                Text(
+                  _t(lang, 'welcomeTitle'),
+                  style: const TextStyle(
+                      fontSize: 34,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      height: 1.15,
+                      letterSpacing: -1.0),
+                ),
                 const SizedBox(height: 10),
                 Text(
-                  'Find courts, join events, and connect\nwith players across Japan.',
-                  style: TextStyle(fontSize: 14.5,
+                  _t(lang, 'welcomeSub'),
+                  style: TextStyle(
+                      fontSize: 14.5,
                       color: Colors.white.withOpacity(0.75),
-                      height: 1.55, letterSpacing: 0.1),
+                      height: 1.55,
+                      letterSpacing: 0.1),
                 ),
                 const SizedBox(height: 24),
 
-                // ── Quick action strips ──────────────────────────────────
+                // Quick-action strips
                 _quickActionStrip(
                   icon: Icons.location_on_rounded,
-                  label: 'Find courts near you',
-                  onTap: () => widget.onNavigateToTab?.call(1), // → Courts tab
+                  label: _t(lang, 'findCourts'),
+                  onTap: () => widget.onNavigateToTab?.call(1),
                 ),
                 const SizedBox(height: 10),
                 _quickActionStrip(
                   icon: Icons.event_rounded,
-                  label: 'Browse upcoming events',
-                  onTap: () => widget.onNavigateToTab?.call(2), // → Events tab
+                  label: _t(lang, 'browseEvents'),
+                  onTap: () => widget.onNavigateToTab?.call(2),
                 ),
                 const SizedBox(height: 20),
 
-                // ── Action buttons ───────────────────────────────────────
+                // Action buttons
                 Row(
                   children: [
                     Expanded(
                       child: _cardButton(
-                        label: 'What is Pickleball?',
+                        label: _t(lang, 'whatIsPickleball'),
                         isPrimary: true,
                         onTap: () => Navigator.push(
                           context,
@@ -354,7 +537,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: _cardButton(
-                        label: 'About Pikuru',
+                        label: _t(lang, 'aboutPikuru'),
                         isPrimary: false,
                         onTap: () => Navigator.push(
                           context,
@@ -381,18 +564,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding:
-        const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.12),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-              color: Colors.white.withOpacity(0.18), width: 1),
+          border:
+          Border.all(color: Colors.white.withOpacity(0.18), width: 1),
         ),
         child: Row(
           children: [
             Container(
-              width: 36, height: 36,
+              width: 36,
+              height: 36,
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.15),
                 borderRadius: BorderRadius.circular(10),
@@ -402,9 +585,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             const SizedBox(width: 14),
             Expanded(
               child: Text(label,
-                  style: const TextStyle(fontSize: 14,
+                  style: const TextStyle(
+                      fontSize: 14,
                       fontWeight: FontWeight.w600,
-                      color: Colors.white, letterSpacing: -0.2)),
+                      color: Colors.white,
+                      letterSpacing: -0.2)),
             ),
             Icon(Icons.arrow_forward_ios_rounded,
                 color: Colors.white.withOpacity(0.5), size: 14),
@@ -431,152 +616,211 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               : Border.all(
               color: Colors.white.withOpacity(0.3), width: 1.2),
           boxShadow: isPrimary
-              ? [BoxShadow(color: Colors.black.withOpacity(0.12),
-              blurRadius: 12, offset: const Offset(0, 4))]
+              ? [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.12),
+                blurRadius: 12,
+                offset: const Offset(0, 4))
+          ]
               : null,
         ),
         child: Text(label,
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
+            style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
                 color: isPrimary ? AppColors.primary : Colors.white,
                 letterSpacing: -0.2)),
       ),
     );
   }
 
-  // ── Events Section ─────────────────────────────────────────────────────────
-  Widget _buildEventsSection(WidgetRef ref) {
+  // ─────────────────────────────────────────────────────────────────────────
+  // Events section (localised)
+  // ─────────────────────────────────────────────────────────────────────────
+  Widget _buildEventsSection(WidgetRef ref, String lang) {
     final eventsAsync = ref.watch(eventsProvider);
     return eventsAsync.when(
       data: (events) {
-        if (events.isEmpty) return const Center(child: Text('No events yet'));
+        if (events.isEmpty) {
+          return Center(child: Text(_t(lang, 'noEvents')));
+        }
         return ListView.builder(
           scrollDirection: Axis.horizontal,
           clipBehavior: Clip.none,
           itemCount: events.length,
           itemBuilder: (context, index) {
-            final data = events[index];
-            final imageUrl = (data['event_pic'] ??
+            final data           = events[index];
+            final imageUrl       = (data['event_pic'] ??
                 data['event_pic_thumbnail'] ??
-                data['event_image'] ?? '').toString();
-            final title = (data['event_title'] ?? 'Untitled').toString();
-            final formattedDateTime = _formatEventDateTime(data);
-            final eventLocId = (data['event_loc_id'] ?? '').toString();
+                data['event_image'] ??
+                '')
+                .toString();
+            final title          = _eventTitle(data, lang);
+            final formattedDateTime = _formatEventDateTime(data, lang);
+            final eventLocId     = (data['event_loc_id'] ?? '').toString();
+
             return Consumer(
               builder: (context, ref, child) {
                 final locationAsync =
                 ref.watch(locationResolverProvider(eventLocId));
                 return locationAsync.when(
-                  data: (location) => GestureDetector(
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => EventDetailScreen(event: data),
+                  data: (locationEn) {
+                    // Use JP location field if available and lang == ja
+                    final location = lang == kLangJa
+                        ? (data['location_jp'] as String? ?? '').isNotEmpty
+                        ? (data['location_jp'] as String)
+                        : locationEn
+                        : locationEn;
+                    return GestureDetector(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => EventDetailScreen(event: data),
+                        ),
                       ),
-                    ),
-                    child: EventCard(imageUrl: imageUrl, title: title,
-                        dateTime: formattedDateTime, location: location),
-                  ),
-                  loading: () => EventCard(imageUrl: imageUrl, title: title,
-                      dateTime: formattedDateTime, location: '...'),
-                  error: (_, __) => EventCard(imageUrl: imageUrl, title: title,
+                      child: EventCard(
+                          imageUrl: imageUrl,
+                          title: title,
+                          dateTime: formattedDateTime,
+                          location: location),
+                    );
+                  },
+                  loading: () => EventCard(
+                      imageUrl: imageUrl,
+                      title: title,
                       dateTime: formattedDateTime,
-                      location: 'Unknown location'),
+                      location: '...'),
+                  error: (_, __) => EventCard(
+                      imageUrl: imageUrl,
+                      title: title,
+                      dateTime: formattedDateTime,
+                      location: _t(lang, 'unknownLocation')),
                 );
               },
             );
           },
         );
       },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, stack) => Center(child: Text('Error: $error')),
+      loading: () =>
+      const Center(child: CircularProgressIndicator()),
+      error: (error, stack) =>
+          Center(child: Text('Error: $error')),
     );
   }
 
-  // ── Groups Section ─────────────────────────────────────────────────────────
-  Widget _buildGroupsSection(WidgetRef ref) {
+  // ─────────────────────────────────────────────────────────────────────────
+  // Groups section (localised)
+  // ─────────────────────────────────────────────────────────────────────────
+  Widget _buildGroupsSection(WidgetRef ref, String lang) {
     final orgsAsync = ref.watch(organizationsProvider);
     return orgsAsync.when(
       data: (orgs) {
-        if (orgs.isEmpty) return const Center(child: Text('No groups yet'));
+        if (orgs.isEmpty) {
+          return Center(child: Text(_t(lang, 'noGroups')));
+        }
         return ListView.builder(
           scrollDirection: Axis.horizontal,
           clipBehavior: Clip.none,
           itemCount: orgs.length,
           itemBuilder: (context, index) {
-            final data = orgs[index];
+            final data     = orgs[index];
+            final name     = _groupName(data, lang);
             final orgLocId = (data['org_loc_id'] ?? '').toString();
+
             return Consumer(
               builder: (context, ref, child) {
                 final locationAsync =
                 ref.watch(locationResolverProvider(orgLocId));
                 return locationAsync.when(
-                  data: (location) => GestureDetector(
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => GroupDetailScreen(group: data),
+                  data: (locationEn) {
+                    final location = lang == kLangJa
+                        ? (data['location_jp'] as String? ?? '').isNotEmpty
+                        ? (data['location_jp'] as String)
+                        : locationEn
+                        : locationEn;
+                    return GestureDetector(
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => GroupDetailScreen(group: data),
+                        ),
                       ),
-                    ),
-                    child: GroupCard(
-                        imageUrl: (data['org_image'] ?? '').toString(),
-                        name: (data['org_name'] ?? 'Unnamed Group').toString(),
-                        location: location),
-                  ),
+                      child: GroupCard(
+                          imageUrl:
+                          (data['org_image'] ?? '').toString(),
+                          name: name,
+                          location: location),
+                    );
+                  },
                   loading: () => GroupCard(
                       imageUrl: (data['org_image'] ?? '').toString(),
-                      name: (data['org_name'] ?? 'Unnamed Group').toString(),
+                      name: name,
                       location: '...'),
                   error: (_, __) => GroupCard(
                       imageUrl: (data['org_image'] ?? '').toString(),
-                      name: (data['org_name'] ?? 'Unnamed Group').toString(),
-                      location: 'Unknown location'),
+                      name: name,
+                      location: _t(lang, 'unknownLocation')),
                 );
               },
             );
           },
         );
       },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, stack) => Center(child: Text('Error: $error')),
+      loading: () =>
+      const Center(child: CircularProgressIndicator()),
+      error: (error, stack) =>
+          Center(child: Text('Error: $error')),
     );
   }
 
-  // ── Courts Section ─────────────────────────────────────────────────────────
-  Widget _buildCourtsSection(WidgetRef ref) {
+  // ─────────────────────────────────────────────────────────────────────────
+  // Courts section (localised)
+  // ─────────────────────────────────────────────────────────────────────────
+  Widget _buildCourtsSection(WidgetRef ref, String lang) {
     final courtsAsync = ref.watch(locationsProvider);
     return courtsAsync.when(
       data: (courts) {
-        if (courts.isEmpty) return const Center(child: Text('No courts yet'));
+        if (courts.isEmpty) {
+          return Center(child: Text(_t(lang, 'noCourts')));
+        }
         return ListView.builder(
           scrollDirection: Axis.horizontal,
           clipBehavior: Clip.none,
           itemCount: courts.length,
           itemBuilder: (context, index) {
-            final data = courts[index];
-            final city = (data['loc_city'] ?? '').toString();
-            final country = (data['loc_country'] ?? '').toString();
-            final location = city.isNotEmpty
-                ? (country.isNotEmpty ? '$city, $country' : city)
-                : 'Unknown location';
+            final data     = courts[index];
+            final name     = _courtName(data, lang);
+            final location = _courtLocation(data, lang);
+
             return GestureDetector(
               onTap: () => widget.onNavigateToTab?.call(1),
               child: CourtCard(
                 imageUrl: (data['loc_image'] ?? '').toString(),
-                name: (data['loc_name'] ?? 'Unnamed Court').toString(),
-                location: location,
+                name: name,
+                location: location.isNotEmpty
+                    ? location
+                    : _t(lang, 'unknownLocation'),
               ),
             );
           },
         );
       },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, stack) => Center(child: Text('Error: $error')),
+      loading: () =>
+      const Center(child: CircularProgressIndicator()),
+      error: (error, stack) =>
+          Center(child: Text('Error: $error')),
     );
   }
 
-  // ── UI Helpers ─────────────────────────────────────────────────────────────
-  Widget _sectionHeader(String title, {required VoidCallback onSeeAll}) {
+  // ─────────────────────────────────────────────────────────────────────────
+  // UI helpers
+  // ─────────────────────────────────────────────────────────────────────────
+  Widget _sectionHeader(
+      String title, {
+        required VoidCallback onSeeAll,
+        required String lang,
+      }) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
@@ -586,14 +830,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         GestureDetector(
           onTap: onSeeAll,
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+            padding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
             decoration: BoxDecoration(
               color: AppColors.primary.withOpacity(0.08),
               borderRadius: BorderRadius.circular(20),
             ),
-            child: const Text(
-              'See all',
-              style: TextStyle(
+            child: Text(
+              _t(lang, 'seeAll'),
+              style: const TextStyle(
                 fontSize: 13,
                 color: AppColors.primary,
                 fontWeight: FontWeight.w700,
@@ -605,8 +850,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  Widget _divider() => Container(
-    height: 1,
-    color: const Color(0xFFEEEFF1),
-  );
+  Widget _divider() => Container(height: 1, color: const Color(0xFFEEEFF1));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _LangButton — reusable pill segment (mirrors GroupsScreen)
+// ─────────────────────────────────────────────────────────────────────────────
+class _LangButton extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _LangButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding:
+        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary : Colors.transparent,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: selected
+                  ? Colors.white
+                  : AppColors.primary.withOpacity(0.6)),
+        ),
+      ),
+    );
+  }
 }

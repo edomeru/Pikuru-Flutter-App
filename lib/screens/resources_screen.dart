@@ -1,25 +1,28 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:pikuru/theme/material.dart';
 
-class ResourcesScreen extends StatefulWidget {
+// ─────────────────────────────────────────────────────────────────────────────
+// ResourcesScreen
+// ─────────────────────────────────────────────────────────────────────────────
+class ResourcesScreen extends ConsumerStatefulWidget {
   const ResourcesScreen({super.key});
 
   @override
-  State<ResourcesScreen> createState() => _ResourcesScreenState();
+  ConsumerState<ResourcesScreen> createState() => _ResourcesScreenState();
 }
 
-class _ResourcesScreenState extends State<ResourcesScreen>
+class _ResourcesScreenState extends ConsumerState<ResourcesScreen>
     with TickerProviderStateMixin {
-  String _lang = 'en';
-
   bool _loading = true;
   List<Map<String, dynamic>> _learnItems = [];
 
   late final AnimationController _fadeController;
-  late final Animation<double>   _fadeAnim;
+  late final Animation<double> _fadeAnim;
   late final AnimationController _slideController;
-  late final Animation<Offset>   _slideAnim;
+  late final Animation<Offset> _slideAnim;
 
   @override
   void initState() {
@@ -28,7 +31,8 @@ class _ResourcesScreenState extends State<ResourcesScreen>
     _fadeController = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 900))
       ..forward();
-    _fadeAnim = CurvedAnimation(parent: _fadeController, curve: Curves.easeOut);
+    _fadeAnim =
+        CurvedAnimation(parent: _fadeController, curve: Curves.easeOut);
 
     _slideController = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 800))
@@ -57,12 +61,13 @@ class _ResourcesScreenState extends State<ResourcesScreen>
           .orderBy('order')
           .get();
       docs = snap.docs;
-    } catch (e) {
+    } catch (_) {
       try {
-        final snap =
-        await FirebaseFirestore.instance.collection('resources').get();
+        final snap = await FirebaseFirestore.instance
+            .collection('resources')
+            .get();
         docs = snap.docs;
-      } catch (e2) {
+      } catch (_) {
         if (mounted) setState(() => _loading = false);
         return;
       }
@@ -77,6 +82,7 @@ class _ResourcesScreenState extends State<ResourcesScreen>
       if (category == 'learn') learn.add(data);
     }
 
+    // Sort by the `order` field (mirrors web app's orderBy('order', 'asc'))
     int order(Map<String, dynamic> d) {
       final v = d['order'];
       if (v is int) return v;
@@ -94,29 +100,39 @@ class _ResourcesScreenState extends State<ResourcesScreen>
     }
   }
 
-  String _t(Map<String, dynamic> doc, String key) {
-    final langMap = doc[_lang] ?? doc['en'];
+  // ── Language-aware field resolver ─────────────────────────────────────────
+  // Firestore structure (shared with web app):
+  //   doc['en'] = { title, sub, hero, heroSub, sections, content, images, … }
+  //   doc['ja'] = { title, sub, hero, heroSub, sections, content, images, … }
+  // Falls back to 'en' when the requested lang map is absent.
+  String _t(Map<String, dynamic> doc, String key, String lang) {
+    final langMap = doc[lang] ?? doc[kLangEn];
     if (langMap is Map) return (langMap[key] ?? '').toString();
     return '';
   }
 
-  void _openDetail(Map<String, dynamic> doc) {
+  void _openDetail(Map<String, dynamic> doc, String lang) {
     final id = (doc['_doc_id'] ?? doc['id'] ?? '').toString();
     if (id.isEmpty) return;
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => ResourceDetailScreen(docId: id, lang: _lang),
+        builder: (_) => ResourceDetailScreen(docId: id, initialLang: lang),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    // ── Reactive: rebuilds whenever the global language changes ───────────
+    final lang = ref.watch(appLangProvider);
+    final isJa = lang == kLangJa;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF4F9F5),
       body: CustomScrollView(
         slivers: [
+          // ── App bar ──────────────────────────────────────────────────────
           SliverAppBar(
             expandedHeight: 180,
             pinned: true,
@@ -145,13 +161,20 @@ class _ResourcesScreenState extends State<ResourcesScreen>
                     ),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
                       _LangButton(
-                          label: 'EN',
-                          selected: _lang == 'en',
-                          onTap: () => setState(() => _lang = 'en')),
+                        label: 'EN',
+                        selected: lang == kLangEn,
+                        // Writes to the global provider — updates the whole app
+                        onTap: () => ref
+                            .read(appLangProvider.notifier)
+                            .setLang(kLangEn),
+                      ),
                       _LangButton(
-                          label: '日本語',
-                          selected: _lang == 'ja',
-                          onTap: () => setState(() => _lang = 'ja')),
+                        label: '日本語',
+                        selected: lang == kLangJa,
+                        onTap: () => ref
+                            .read(appLangProvider.notifier)
+                            .setLang(kLangJa),
+                      ),
                     ]),
                   ),
                 ),
@@ -190,7 +213,7 @@ class _ResourcesScreenState extends State<ResourcesScreen>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          _lang == 'ja'
+                          isJa
                               ? 'あなたの学習ハブ 📚'
                               : 'Your Learning Hub 📚',
                           style: const TextStyle(
@@ -202,7 +225,7 @@ class _ResourcesScreenState extends State<ResourcesScreen>
                         ),
                         const SizedBox(height: 5),
                         Text(
-                          _lang == 'ja'
+                          isJa
                               ? '日本のピックルボールを学び、発見し、探求しよう'
                               : 'Learn, discover, and explore pickleball in Japan',
                           style: TextStyle(
@@ -217,6 +240,7 @@ class _ResourcesScreenState extends State<ResourcesScreen>
             ),
           ),
 
+          // ── Body ─────────────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: FadeTransition(
               opacity: _fadeAnim,
@@ -228,6 +252,7 @@ class _ResourcesScreenState extends State<ResourcesScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Info banner
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 12),
@@ -243,7 +268,7 @@ class _ResourcesScreenState extends State<ResourcesScreen>
                           const SizedBox(width: 10),
                           Expanded(
                             child: Text(
-                              _lang == 'ja'
+                              isJa
                                   ? 'Pikuru内の情報ハブ'
                                   : 'Your information hub inside Pikuru',
                               style: const TextStyle(
@@ -258,10 +283,10 @@ class _ResourcesScreenState extends State<ResourcesScreen>
                       const SizedBox(height: 28),
 
                       if (_loading)
-                        _SkeletonSection()
+                        const _SkeletonSection()
                       else ...[
                         _SectionHeader(
-                          label: _lang == 'ja'
+                          label: isJa
                               ? 'ピックルボールを学ぶ'
                               : 'Learn Pickleball',
                           icon: Icons.school_rounded,
@@ -269,9 +294,9 @@ class _ResourcesScreenState extends State<ResourcesScreen>
                         const SizedBox(height: 12),
                         _ResourceCard(
                           items: _learnItems,
-                          lang: _lang,
-                          tFn: _t,
-                          onTap: _openDetail,
+                          lang: lang,
+                          tFn: (doc, key) => _t(doc, key, lang),
+                          onTap: (doc) => _openDetail(doc, lang),
                         ),
                       ],
 
@@ -306,7 +331,8 @@ class _LangButton extends StatelessWidget {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
-          color: selected ? Colors.white.withOpacity(0.9) : Colors.transparent,
+          color:
+          selected ? Colors.white.withOpacity(0.9) : Colors.transparent,
           borderRadius: BorderRadius.circular(18),
         ),
         child: Text(label,
@@ -479,7 +505,8 @@ class _ResourceTile extends StatelessWidget {
                 color: AppColors.primary.withOpacity(0.09),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(_iconForId(docId), color: AppColors.primary, size: 19),
+              child: Icon(_iconForId(docId),
+                  color: AppColors.primary, size: 19),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -546,6 +573,8 @@ class _ResourceTile extends StatelessWidget {
 // Loading skeleton
 // ─────────────────────────────────────────────────────────────────────────────
 class _SkeletonSection extends StatelessWidget {
+  const _SkeletonSection();
+
   @override
   Widget build(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -610,23 +639,27 @@ class _SkeletonSection extends StatelessWidget {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ResourceDetailScreen
+// ConsumerStatefulWidget so it reacts to global language changes live.
 // ─────────────────────────────────────────────────────────────────────────────
-class ResourceDetailScreen extends StatefulWidget {
+class ResourceDetailScreen extends ConsumerStatefulWidget {
   final String docId;
-  final String lang;
+  final String initialLang;
 
-  const ResourceDetailScreen(
-      {super.key, required this.docId, required this.lang});
+  const ResourceDetailScreen({
+    super.key,
+    required this.docId,
+    required this.initialLang,
+  });
 
   @override
-  State<ResourceDetailScreen> createState() => _ResourceDetailScreenState();
+  ConsumerState<ResourceDetailScreen> createState() =>
+      _ResourceDetailScreenState();
 }
 
-class _ResourceDetailScreenState extends State<ResourceDetailScreen>
+class _ResourceDetailScreenState extends ConsumerState<ResourceDetailScreen>
     with TickerProviderStateMixin {
   bool _loading = true;
   Map<String, dynamic>? _docData;
-  late String _lang;
 
   late final AnimationController _fadeCtrl;
   late final Animation<double> _fadeAnim;
@@ -634,11 +667,11 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
   @override
   void initState() {
     super.initState();
-    _lang = widget.lang;
     _fadeCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 700))
       ..forward();
-    _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
+    _fadeAnim =
+        CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
     _fetch();
   }
 
@@ -662,24 +695,33 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
           _loading = false;
         });
       }
-    } catch (e) {
+    } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  Map<String, dynamic> get _t {
+  /// Resolves the language-specific nested map.
+  /// Firestore: doc['en'] / doc['ja'] — same structure as the web app.
+  Map<String, dynamic> _langMap(String lang) {
     if (_docData == null) return {};
-    final langMap = _docData![_lang] ?? _docData!['en'];
-    if (langMap is Map) return Map<String, dynamic>.from(langMap);
+    final m = _docData![lang] ?? _docData![kLangEn];
+    if (m is Map) return Map<String, dynamic>.from(m);
     return {};
   }
 
-  String _s(String key) => (_t[key] ?? '').toString();
+  String _s(String key, String lang) =>
+      (_langMap(lang)[key] ?? '').toString();
 
   @override
   Widget build(BuildContext context) {
-    final hero = _s('hero').isNotEmpty ? _s('hero') : _s('title');
-    final heroSub = _s('heroSub').isNotEmpty ? _s('heroSub') : _s('sub');
+    // Reactive — picks up global language changes instantly
+    final lang = ref.watch(appLangProvider);
+
+    final hero =
+    _s('hero', lang).isNotEmpty ? _s('hero', lang) : _s('title', lang);
+    final heroSub = _s('heroSub', lang).isNotEmpty
+        ? _s('heroSub', lang)
+        : _s('sub', lang);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F9F5),
@@ -707,13 +749,19 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
                     ),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
                       _LangButton(
-                          label: 'EN',
-                          selected: _lang == 'en',
-                          onTap: () => setState(() => _lang = 'en')),
+                        label: 'EN',
+                        selected: lang == kLangEn,
+                        onTap: () => ref
+                            .read(appLangProvider.notifier)
+                            .setLang(kLangEn),
+                      ),
                       _LangButton(
-                          label: '日本語',
-                          selected: _lang == 'ja',
-                          onTap: () => setState(() => _lang = 'ja')),
+                        label: '日本語',
+                        selected: lang == kLangJa,
+                        onTap: () => ref
+                            .read(appLangProvider.notifier)
+                            .setLang(kLangJa),
+                      ),
                     ]),
                   ),
                 ),
@@ -785,7 +833,7 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                     horizontal: 20, vertical: 24),
-                child: _buildContent(),
+                child: _buildContent(lang),
               ),
             ),
           ),
@@ -804,8 +852,8 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
     );
   }
 
-  Widget _buildContent() {
-    final t = _t;
+  Widget _buildContent(String lang) {
+    final t = _langMap(lang);
 
     if (t['sections'] is List && (t['sections'] as List).isNotEmpty) {
       return _buildSectionsLayout(t['sections'] as List);
@@ -828,8 +876,9 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
   Widget _buildSectionsLayout(List sections) {
     return Column(
       children: sections.map<Widget>((sec) {
-        final secMap =
-        sec is Map ? Map<String, dynamic>.from(sec) : <String, dynamic>{};
+        final secMap = sec is Map
+            ? Map<String, dynamic>.from(sec)
+            : <String, dynamic>{};
         final title = (secMap['title'] ?? '').toString();
         final points = secMap['points'] is List
             ? (secMap['points'] as List).map((e) => e.toString()).toList()
@@ -869,7 +918,8 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
                   children: [
                     Container(
                       width: 20, height: 20,
-                      margin: const EdgeInsets.only(top: 1, right: 10),
+                      margin:
+                      const EdgeInsets.only(top: 1, right: 10),
                       decoration: BoxDecoration(
                           color: AppColors.primary.withOpacity(0.1),
                           shape: BoxShape.circle),
@@ -1092,13 +1142,13 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
                       color: Colors.white.withOpacity(0.8))),
               const SizedBox(height: 20),
               Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                _SocialBtn(icon: Icons.camera_alt_rounded),
+                const _SocialBtn(icon: Icons.camera_alt_rounded),
                 const SizedBox(width: 12),
-                _SocialBtn(icon: Icons.facebook_rounded),
+                const _SocialBtn(icon: Icons.facebook_rounded),
                 const SizedBox(width: 12),
-                _SocialBtn(icon: Icons.play_arrow_rounded),
+                const _SocialBtn(icon: Icons.play_arrow_rounded),
                 const SizedBox(width: 12),
-                _SocialBtn(label: 'LINE'),
+                const _SocialBtn(label: 'LINE'),
               ]),
             ]),
           ),
@@ -1110,10 +1160,13 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
 
   Widget _buildContentBlock(Map<String, dynamic> t) {
     final content = (t['content'] ?? '').toString();
+
+    // Images: full https:// Firebase Storage URLs.
+    // Both web app and Flutter use the same absolute URLs from the `images`
+    // array set by the seed tool.
     final rawImages = t['images'] is List
         ? (t['images'] as List).map((e) => e.toString()).toList()
         : <String>[];
-
     final images = rawImages
         .where((url) =>
     url.startsWith('http://') || url.startsWith('https://'))
@@ -1168,8 +1221,8 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
                       letterSpacing: -0.2)),
             ]),
           ),
-          ...images.asMap().entries.map((entry) =>
-              _DiagramCard(url: entry.value, index: entry.key)),
+          ...images.asMap().entries
+              .map((e) => _DiagramCard(url: e.value, index: e.key)),
         ],
 
         if (greatForPts.isNotEmpty) ...[
@@ -1212,7 +1265,8 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
             decoration: BoxDecoration(
               color: AppColors.primary.withOpacity(0.05),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppColors.primary.withOpacity(0.15)),
+              border: Border.all(
+                  color: AppColors.primary.withOpacity(0.15)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1241,7 +1295,8 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
                       color: AppColors.primary.withOpacity(0.12),
                       borderRadius: BorderRadius.circular(10),
                       border: Border.all(
-                          color: AppColors.primary.withOpacity(0.2)),
+                          color:
+                          AppColors.primary.withOpacity(0.2)),
                     ),
                     child: Text(kw,
                         style: const TextStyle(
@@ -1275,12 +1330,12 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
 
   IconData _iconForKey(String key) {
     switch (key) {
-      case 'map-pin':   return Icons.place_rounded;
-      case 'calendar':  return Icons.calendar_month_rounded;
-      case 'search':    return Icons.search_rounded;
-      case 'news':      return Icons.newspaper_rounded;
-      case 'phone':     return Icons.smartphone_rounded;
-      default:          return Icons.circle_outlined;
+      case 'map-pin':  return Icons.place_rounded;
+      case 'calendar': return Icons.calendar_month_rounded;
+      case 'search':   return Icons.search_rounded;
+      case 'news':     return Icons.newspaper_rounded;
+      case 'phone':    return Icons.smartphone_rounded;
+      default:         return Icons.circle_outlined;
     }
   }
 }
@@ -1290,7 +1345,7 @@ class _ResourceDetailScreenState extends State<ResourceDetailScreen>
 // ─────────────────────────────────────────────────────────────────────────────
 class _DiagramCard extends StatefulWidget {
   final String url;
-  final int    index;
+  final int index;
   const _DiagramCard({required this.url, required this.index});
 
   @override
@@ -1310,7 +1365,10 @@ class _DiagramCardState extends State<_DiagramCard> {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: AppColors.primary.withOpacity(0.12)),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 16, offset: const Offset(0, 4)),
+          BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 16,
+              offset: const Offset(0, 4)),
         ],
       ),
       clipBehavior: Clip.antiAlias,
@@ -1324,8 +1382,9 @@ class _DiagramCardState extends State<_DiagramCard> {
             fit: BoxFit.contain,
             loadingBuilder: (ctx, child, progress) {
               if (progress == null) {
-                WidgetsBinding.instance.addPostFrameCallback(
-                        (_) { if (mounted) setState(() => _loaded = true); });
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) setState(() => _loaded = true);
+                });
                 return child;
               }
               return Stack(children: [
@@ -1334,8 +1393,9 @@ class _DiagramCardState extends State<_DiagramCard> {
               ]);
             },
             errorBuilder: (_, __, ___) {
-              WidgetsBinding.instance.addPostFrameCallback(
-                      (_) { if (mounted) setState(() => _errored = true); });
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) setState(() => _errored = true);
+              });
               return _buildErrorState();
             },
           ),
@@ -1343,17 +1403,32 @@ class _DiagramCardState extends State<_DiagramCard> {
             Positioned(
               top: 12, left: 12,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.92),
                   borderRadius: BorderRadius.circular(20),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 6, offset: const Offset(0, 2))],
+                  boxShadow: [
+                    BoxShadow(
+                        color: Colors.black.withOpacity(0.08),
+                        blurRadius: 6,
+                        offset: const Offset(0, 2))
+                  ],
                 ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Container(width: 6, height: 6, decoration: const BoxDecoration(color: AppColors.primary, shape: BoxShape.circle)),
+                child:
+                Row(mainAxisSize: MainAxisSize.min, children: [
+                  Container(
+                      width: 6, height: 6,
+                      decoration: const BoxDecoration(
+                          color: AppColors.primary,
+                          shape: BoxShape.circle)),
                   const SizedBox(width: 6),
                   Text('Diagram ${widget.index + 1}',
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.primary, letterSpacing: 0.3)),
+                      style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary,
+                          letterSpacing: 0.3)),
                 ]),
               ),
             ),
@@ -1363,7 +1438,8 @@ class _DiagramCardState extends State<_DiagramCard> {
   }
 
   Widget _buildLoadingSkeleton(ImageChunkEvent? progress) {
-    final percent = (progress?.expectedTotalBytes != null && progress!.expectedTotalBytes! > 0)
+    final percent = (progress?.expectedTotalBytes != null &&
+        progress!.expectedTotalBytes! > 0)
         ? progress.cumulativeBytesLoaded / progress.expectedTotalBytes!
         : null;
     return Container(
@@ -1372,11 +1448,22 @@ class _DiagramCardState extends State<_DiagramCard> {
       color: const Color(0xFFF2F3F5),
       child: Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          SizedBox(width: 36, height: 36,
-              child: CircularProgressIndicator(strokeWidth: 3, value: percent, color: AppColors.primary, backgroundColor: AppColors.primary.withOpacity(0.12))),
+          SizedBox(
+              width: 36, height: 36,
+              child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  value: percent,
+                  color: AppColors.primary,
+                  backgroundColor: AppColors.primary.withOpacity(0.12))),
           const SizedBox(height: 12),
-          Text(percent != null ? '${(percent * 100).toInt()}%' : 'Loading diagram…',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade400, fontWeight: FontWeight.w500)),
+          Text(
+              percent != null
+                  ? '${(percent * 100).toInt()}%'
+                  : 'Loading diagram…',
+              style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey.shade400,
+                  fontWeight: FontWeight.w500)),
         ]),
       ),
     );
@@ -1387,7 +1474,8 @@ class _DiagramCardState extends State<_DiagramCard> {
       width: double.infinity, height: 160,
       color: AppColors.primary.withOpacity(0.05),
       child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-        Icon(Icons.broken_image_outlined, size: 36, color: AppColors.primary.withOpacity(0.3)),
+        Icon(Icons.broken_image_outlined,
+            size: 36, color: AppColors.primary.withOpacity(0.3)),
         const SizedBox(height: 8),
         Text('Could not load diagram ${widget.index + 1}',
             style: TextStyle(fontSize: 12, color: Colors.grey.shade400)),
@@ -1406,11 +1494,19 @@ class _DetailSectionLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(children: [
-      Container(width: 4, height: 20,
-          decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(2))),
+      Container(
+          width: 4, height: 20,
+          decoration: BoxDecoration(
+              color: AppColors.primary,
+              borderRadius: BorderRadius.circular(2))),
       const SizedBox(width: 10),
-      Expanded(child: Text(label,
-          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF0D0D0D), letterSpacing: -0.3))),
+      Expanded(
+          child: Text(label,
+              style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF0D0D0D),
+                  letterSpacing: -0.3))),
     ]);
   }
 }
@@ -1421,21 +1517,25 @@ class _BodyText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(text, style: const TextStyle(fontSize: 14, height: 1.65, color: Color(0xFF444548)));
+    return Text(text,
+        style: const TextStyle(
+            fontSize: 14, height: 1.65, color: Color(0xFF444548)));
   }
 }
 
 class _SocialBtn extends StatelessWidget {
   final IconData? icon;
-  final String?   label;
+  final String? label;
   const _SocialBtn({this.icon, this.label});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width:  label != null ? null : 48,
+      width: label != null ? null : 48,
       height: 48,
-      padding: label != null ? const EdgeInsets.symmetric(horizontal: 16) : EdgeInsets.zero,
+      padding: label != null
+          ? const EdgeInsets.symmetric(horizontal: 16)
+          : EdgeInsets.zero,
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.15),
         borderRadius: BorderRadius.circular(14),
@@ -1443,7 +1543,11 @@ class _SocialBtn extends StatelessWidget {
       ),
       child: Center(
         child: label != null
-            ? Text(label!, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14))
+            ? Text(label!,
+            style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                fontSize: 14))
             : Icon(icon, color: Colors.white, size: 22),
       ),
     );

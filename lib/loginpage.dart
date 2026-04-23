@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pikuru/register/RegisterPage.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/main_navigation.dart';
@@ -7,26 +8,95 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:modal_progress_hud_nsn/modal_progress_hud_nsn.dart';
 import 'package:pikuru/Utils/auth_service.dart';
 import 'package:pikuru/screens/reset_password_dialog.dart';
+import 'package:pikuru/providers/app_language_provider.dart';
 
-class LoginScreen extends StatefulWidget {
+// ─────────────────────────────────────────────────────────────────────────────
+// Localised strings — mirrors the web app's T map in login/page.tsx
+// ─────────────────────────────────────────────────────────────────────────────
+const _L = {
+  kLangEn: {
+    'headerTitle':   'Sign In',
+    'emailHint':     'Email',
+    'passwordHint':  'Password',
+    'forgotPassword':'Forgot Password?',
+    'signInBtn':     'Sign In',
+    'orWith':        'Or Sign In With',
+    'google':        'Google',
+    'apple':         'Apple',
+    'noAccount':     "Don't have an account yet? ",
+    'signUp':        'Sign Up',
+    // Error messages — mirrors web app's friendly() function
+    'errInvalidCred':'Incorrect email or password. Please try again.',
+    'errInvalidEmail':'Please enter a valid email address.',
+    'errDisabled':   'This account has been disabled.',
+    'errTooMany':    'Too many attempts. Please try again later.',
+    'errDefault':    'Login failed. Please try again.',
+    'errGoogle':     'Google sign-in failed',
+  },
+  kLangJa: {
+    'headerTitle':   'ログイン',
+    'emailHint':     'メールアドレス',
+    'passwordHint':  'パスワード',
+    'forgotPassword':'パスワードをお忘れですか？',
+    'signInBtn':     'ログイン',
+    'orWith':        'または以下でログイン',
+    'google':        'Google',
+    'apple':         'Apple',
+    'noAccount':     'アカウントをお持ちでないですか？ ',
+    'signUp':        '登録する',
+    // Error messages — mirrors web app's friendlyJa() function
+    'errInvalidCred':'メールアドレスまたはパスワードが正しくありません。',
+    'errInvalidEmail':'有効なメールアドレスを入力してください。',
+    'errDisabled':   'このアカウントは無効化されています。',
+    'errTooMany':    'ログイン試行回数が多すぎます。後でもう一度お試しください。',
+    'errDefault':    'エラーが発生しました。もう一度お試しください。',
+    'errGoogle':     'Googleログインに失敗しました',
+  },
+};
+
+String _t(String lang, String key) =>
+    _L[lang]?[key] ?? _L[kLangEn]![key]!;
+
+/// Mirrors the web app's friendly() / friendlyJa() functions
+String _authError(String lang, String code) {
+  switch (code) {
+    case 'invalid-credential':
+    case 'wrong-password':
+    case 'user-not-found':
+      return _t(lang, 'errInvalidCred');
+    case 'invalid-email':
+      return _t(lang, 'errInvalidEmail');
+    case 'user-disabled':
+      return _t(lang, 'errDisabled');
+    case 'too-many-requests':
+      return _t(lang, 'errTooMany');
+    default:
+      return _t(lang, 'errDefault');
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LoginScreen — ConsumerStatefulWidget to watch appLangProvider
+// ─────────────────────────────────────────────────────────────────────────────
+class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _auth = FirebaseAuth.instance;
   bool showSpinner = false;
   String email    = '';
   String password = '';
 
-  // ── Ensure SSO users have a registration doc using 'nickname' ─────
+  // ── Ensure SSO users have a registration doc using 'nickname' ──────────────
   // Matches the web app's ensureRegistrationDoc which writes 'nickname'
   // (not firstName/lastName) to the registration collection.
   Future<void> _ensureRegistrationDoc(User user) async {
     try {
-      final docRef = FirebaseFirestore.instance
+      final docRef  = FirebaseFirestore.instance
           .collection('registration')
           .doc(user.uid);
       final docSnap = await docRef.get();
@@ -64,6 +134,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // ✅ Watch global lang provider — rebuilds whenever lang changes anywhere
+    final lang = ref.watch(appLangProvider);
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: ModalProgressHUD(
@@ -72,7 +145,7 @@ class _LoginScreenState extends State<LoginScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _buildHeader(context),
+              _buildHeader(context, lang),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: Column(
@@ -80,29 +153,29 @@ class _LoginScreenState extends State<LoginScreen> {
                   children: [
                     const SizedBox(height: 36),
 
-                    // ── Email ─────────────────────────────────────
+                    // ── Email ────────────────────────────────────────────────
                     TextFormField(
                       onChanged: (v) => email = v,
                       keyboardType: TextInputType.emailAddress,
                       style: const TextStyle(
                           color: Colors.black, fontWeight: FontWeight.bold),
-                      decoration: _inputDecoration('Email'),
+                      decoration: _inputDecoration(_t(lang, 'emailHint')),
                     ),
 
                     const SizedBox(height: 16),
 
-                    // ── Password ──────────────────────────────────
+                    // ── Password ─────────────────────────────────────────────
                     TextFormField(
                       obscureText: true,
                       onChanged: (v) => password = v,
                       style: const TextStyle(
                           color: Colors.black, fontWeight: FontWeight.bold),
-                      decoration: _inputDecoration('Password'),
+                      decoration: _inputDecoration(_t(lang, 'passwordHint')),
                     ),
 
                     const SizedBox(height: 6),
 
-                    // ── Forgot Password ───────────────────────────
+                    // ── Forgot Password ──────────────────────────────────────
                     Align(
                       alignment: Alignment.centerRight,
                       child: TextButton(
@@ -111,15 +184,17 @@ class _LoginScreenState extends State<LoginScreen> {
                         style: TextButton.styleFrom(
                             padding: EdgeInsets.zero,
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-                        child: const Text('Forgot Password?',
-                            style:
-                            TextStyle(color: Colors.black54, fontSize: 13)),
+                        child: Text(
+                          _t(lang, 'forgotPassword'),
+                          style: const TextStyle(
+                              color: Colors.black54, fontSize: 13),
+                        ),
                       ),
                     ),
 
                     const SizedBox(height: 20),
 
-                    // ── Sign In Button ────────────────────────────
+                    // ── Sign In Button ───────────────────────────────────────
                     SizedBox(
                       height: 54,
                       child: ElevatedButton(
@@ -137,25 +212,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             );
                           } on FirebaseAuthException catch (e) {
                             setState(() => showSpinner = false);
-                            String msg;
-                            switch (e.code) {
-                              case 'invalid-credential':
-                              case 'wrong-password':
-                              case 'user-not-found':
-                                msg = 'Incorrect email or password. Please try again.';
-                                break;
-                              case 'invalid-email':
-                                msg = 'Please enter a valid email address.';
-                                break;
-                              case 'user-disabled':
-                                msg = 'This account has been disabled.';
-                                break;
-                              case 'too-many-requests':
-                                msg = 'Too many attempts. Please try again later.';
-                                break;
-                              default:
-                                msg = 'Login failed. Please try again.';
-                            }
+                            final msg = _authError(lang, e.code);
                             if (!mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
                                 SnackBar(content: Text(msg)));
@@ -174,37 +231,42 @@ class _LoginScreenState extends State<LoginScreen> {
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10)),
                         ),
-                        child: const Text('Sign In',
-                            style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white)),
+                        child: Text(
+                          _t(lang, 'signInBtn'),
+                          style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white),
+                        ),
                       ),
                     ),
 
                     const SizedBox(height: 28),
 
-                    // ── Divider ───────────────────────────────────
-                    const Row(children: [
-                      Expanded(child: Divider()),
+                    // ── Divider ──────────────────────────────────────────────
+                    Row(children: [
+                      const Expanded(child: Divider()),
                       Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 12),
-                        child: Text('Or Sign In With',
-                            style:
-                            TextStyle(fontSize: 12, color: Colors.black45)),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          _t(lang, 'orWith'),
+                          style: const TextStyle(
+                              fontSize: 12, color: Colors.black45),
+                        ),
                       ),
-                      Expanded(child: Divider()),
+                      const Expanded(child: Divider()),
                     ]),
 
                     const SizedBox(height: 20),
 
-                    // ── Google + Apple ────────────────────────────
+                    // ── Google + Apple ───────────────────────────────────────
                     Row(children: [
                       Expanded(
                         child: _pillButton(
                           onPressed: () async {
                             setState(() => showSpinner = true);
-                            final result = await AuthService.signInWithGoogle();
+                            final result =
+                            await AuthService.signInWithGoogle();
                             setState(() => showSpinner = false);
                             if (result != null) {
                               await result.user!.getIdToken(true);
@@ -218,9 +280,9 @@ class _LoginScreenState extends State<LoginScreen> {
                             } else {
                               if (!mounted) return;
                               ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                      content:
-                                      Text('Google sign-in failed')));
+                                  SnackBar(
+                                      content: Text(
+                                          _t(lang, 'errGoogle'))));
                             }
                           },
                           child: Row(
@@ -228,11 +290,13 @@ class _LoginScreenState extends State<LoginScreen> {
                             children: [
                               _googleIcon(),
                               const SizedBox(width: 8),
-                              Text('Google',
-                                  style: TextStyle(
-                                      color: AppColors.primary,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 14)),
+                              Text(
+                                _t(lang, 'google'),
+                                style: TextStyle(
+                                    color: AppColors.primary,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14),
+                              ),
                             ],
                           ),
                         ),
@@ -243,16 +307,19 @@ class _LoginScreenState extends State<LoginScreen> {
                           onPressed: () {
                             // TODO: Apple sign-in
                           },
-                          child: const Row(
+                          child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.apple, color: Colors.black87, size: 22),
-                              SizedBox(width: 6),
-                              Text('Apple',
-                                  style: TextStyle(
-                                      color: Colors.black87,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 14)),
+                              const Icon(Icons.apple,
+                                  color: Colors.black87, size: 22),
+                              const SizedBox(width: 6),
+                              Text(
+                                _t(lang, 'apple'),
+                                style: const TextStyle(
+                                    color: Colors.black87,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14),
+                              ),
                             ],
                           ),
                         ),
@@ -261,24 +328,28 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     const SizedBox(height: 28),
 
-                    // ── Sign Up link ──────────────────────────────
+                    // ── Sign Up link ─────────────────────────────────────────
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Text("Don't have an account yet? ",
-                            style: TextStyle(
-                                fontSize: 13, color: Colors.black54)),
+                        Text(
+                          _t(lang, 'noAccount'),
+                          style: const TextStyle(
+                              fontSize: 13, color: Colors.black54),
+                        ),
                         GestureDetector(
                           onTap: () => Navigator.pushReplacement(
                             context,
                             MaterialPageRoute(
                                 builder: (_) => const RegisterPage()),
                           ),
-                          child: Text('Sign Up',
-                              style: TextStyle(
-                                  fontSize: 13,
-                                  color: AppColors.primary,
-                                  fontWeight: FontWeight.bold)),
+                          child: Text(
+                            _t(lang, 'signUp'),
+                            style: TextStyle(
+                                fontSize: 13,
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.bold),
+                          ),
                         ),
                       ],
                     ),
@@ -294,7 +365,8 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _buildHeader(BuildContext context) {
+  // ── Header with lang toggle ──────────────────────────────────────────────────
+  Widget _buildHeader(BuildContext context, String lang) {
     final w = MediaQuery.of(context).size.width;
     return SizedBox(
       height: 300,
@@ -318,15 +390,32 @@ class _LoginScreenState extends State<LoginScreen> {
                 shape: BoxShape.circle),
           ),
         ),
-        const Positioned(
+
+        // ── Title ────────────────────────────────────────────────────────────
+        Positioned(
           top: 68, left: 28,
-          child: Text('Sign In',
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.3)),
+          child: Text(
+            _t(lang, 'headerTitle'),
+            style: const TextStyle(
+                color: Colors.white,
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.3),
+          ),
         ),
+
+        // ── EN / JP language toggle — top-right of header ─────────────────
+        Positioned(
+          top: 60, right: 20,
+          child: SafeArea(
+            child: _LangToggle(
+              lang: lang,
+              onToggle: (selected) =>
+                  ref.read(appLangProvider.notifier).setLang(selected),
+            ),
+          ),
+        ),
+
         Positioned(
           bottom: 0, left: 0, right: 0,
           child: Image.asset('assets/pikuru_full_logo.png',
@@ -337,7 +426,59 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 }
 
-// ── Input decoration ─────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Language Toggle — same pill style as HomeScreen / CourtsScreen
+// ─────────────────────────────────────────────────────────────────────────────
+class _LangToggle extends StatelessWidget {
+  final String lang;
+  final ValueChanged<String> onToggle;
+  const _LangToggle({required this.lang, required this.onToggle});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.18),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.30)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        _tab('EN',    lang == kLangEn, () => onToggle(kLangEn)),
+        _tab('日本語', lang == kLangJa, () => onToggle(kLangJa)),
+      ]),
+    );
+  }
+
+  Widget _tab(String label, bool active, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          // Active: white pill with green text (mirrors web app LangToggleLight)
+          color: active ? Colors.white.withOpacity(0.95) : Colors.transparent,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: active
+                ? const Color(0xFF2d6a3f) // green text on white — matches web
+                : Colors.white.withOpacity(0.75),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Shared widget helpers (unchanged from original)
+// ─────────────────────────────────────────────────────────────────────────────
 InputDecoration _inputDecoration(String hint) {
   return InputDecoration(
     hintText: hint,
@@ -345,25 +486,29 @@ InputDecoration _inputDecoration(String hint) {
         color: Colors.black, fontWeight: FontWeight.bold),
     filled: true,
     fillColor: Colors.white,
-    contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+    contentPadding:
+    const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
     enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
         borderSide: BorderSide(
             color: AppColors.primary.withOpacity(0.6), width: 1.4)),
     focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(color: AppColors.primary, width: 2.0)),
+        borderSide:
+        const BorderSide(color: AppColors.primary, width: 2.0)),
   );
 }
 
-Widget _pillButton({required VoidCallback onPressed, required Widget child}) {
+Widget _pillButton(
+    {required VoidCallback onPressed, required Widget child}) {
   return SizedBox(
     height: 48,
     child: OutlinedButton(
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
         side: const BorderSide(color: Color(0xFFDDDDDD)),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(30)),
         backgroundColor: Colors.white,
         padding: EdgeInsets.zero,
       ),
@@ -382,7 +527,8 @@ Widget _googleIcon() {
 class _GoogleGPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final center = Rect.fromLTWH(0, 0, size.width, size.height).center;
+    final center =
+        Rect.fromLTWH(0, 0, size.width, size.height).center;
     final radius = size.width / 2;
     const sweeps = [
       [0.0, 90.0, Color(0xFF4285F4)],
@@ -399,10 +545,13 @@ class _GoogleGPainter extends CustomPainter {
         Rect.fromCircle(center: center, radius: radius * 0.72),
         (s[0] as double) * 3.14159 / 180,
         (s[1] as double) * 3.14159 / 180,
-        false, paint,
+        false,
+        paint,
       );
     }
-    final whitePaint = Paint()..color = Colors.white..style = PaintingStyle.fill;
+    final whitePaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
     canvas.drawRect(
         Rect.fromLTWH(center.dx, center.dy - size.height * 0.15,
             size.width * 0.55, size.height * 0.30),

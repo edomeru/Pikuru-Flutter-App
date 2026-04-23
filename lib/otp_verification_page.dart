@@ -1,17 +1,65 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/main_navigation.dart';
+import 'package:pikuru/providers/app_language_provider.dart';
 import 'dart:async';
 import 'dart:math';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 
-class OtpVerificationPage extends StatefulWidget {
+// ═══════════════════════════════════════════════════════════════════
+// Translations
+// ═══════════════════════════════════════════════════════════════════
+const _T = {
+  'en': {
+    'appBarTitle':      'Sign up Verification',
+    'heading':          'We just sent an Email',
+    'subHeading':       'Enter the security code we just sent to:',
+    'verify':           'Verify',
+    'noCode':           "Don't receive code?",
+    'resend':           'Resend Code',
+    'resendIn':         'Resend in',
+    'errIncomplete':    'Please enter the complete 6-digit code',
+    'errIncorrect':     'Incorrect code. Please check your email and try again.',
+    'resendSuccess':    'A new code has been sent to your email',
+    'resendFail':       'Failed to resend',
+    'errEmailInUse':    'This email is already registered. Please log in instead.',
+    'errWeakPassword':  'Password is too weak.',
+    'errRegFailed':     'Registration failed.',
+    'errGeneric':       'Error',
+  },
+  'ja': {
+    'appBarTitle':      '登録認証',
+    'heading':          'メールを送信しました',
+    'subHeading':       '以下のアドレスに送信されたセキュリティコードを入力してください：',
+    'verify':           '確認する',
+    'noCode':           'コードが届きませんでしたか？',
+    'resend':           'コードを再送する',
+    'resendIn':         '再送まで',
+    'errIncomplete':    '6桁のコードをすべて入力してください',
+    'errIncorrect':     'コードが間違っています。メールを確認してもう一度お試しください。',
+    'resendSuccess':    '新しいコードをメールに送信しました',
+    'resendFail':       '再送に失敗しました',
+    'errEmailInUse':    'このメールアドレスはすでに登録されています。ログインしてください。',
+    'errWeakPassword':  'パスワードが弱すぎます。',
+    'errRegFailed':     '登録に失敗しました。',
+    'errGeneric':       'エラー',
+  },
+};
+
+String _t(String lang, String key) =>
+    (_T[lang]?[key] ?? _T['en']![key]) ?? key;
+
+// ═══════════════════════════════════════════════════════════════════
+// OtpVerificationPage
+// ═══════════════════════════════════════════════════════════════════
+class OtpVerificationPage extends ConsumerStatefulWidget {
   final String email;
-  final String nickname;   // ← replaces firstName + lastName
+  final String nickname;
   final String password;
   final String generatedOtp;
 
@@ -24,19 +72,20 @@ class OtpVerificationPage extends StatefulWidget {
   });
 
   @override
-  State<OtpVerificationPage> createState() => _OtpVerificationPageState();
+  ConsumerState<OtpVerificationPage> createState() =>
+      _OtpVerificationPageState();
 }
 
-class _OtpVerificationPageState extends State<OtpVerificationPage> {
+class _OtpVerificationPageState extends ConsumerState<OtpVerificationPage> {
   final List<TextEditingController> _controllers =
   List.generate(6, (_) => TextEditingController());
-  final List<FocusNode> _focusNodes = List.generate(6, (_) => FocusNode());
+  final List<FocusNode> _focusNodes =
+  List.generate(6, (_) => FocusNode());
 
   bool   _isVerifying      = false;
   bool   _canResend        = false;
   int    _secondsRemaining = 30;
   Timer? _timer;
-
   late String _currentOtp;
 
   // ── EmailJS credentials ───────────────────────────────────────────
@@ -79,44 +128,13 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
     });
   }
 
-  // ── Resend OTP ────────────────────────────────────────────────────
-  Future<void> _resendOtp() async {
-    if (!_canResend) return;
-
-    final newOtp = _generateOtp();
-    _currentOtp  = newOtp;
-
-    for (final c in _controllers) c.clear();
-    _focusNodes[0].requestFocus();
-
-    try {
-      await _sendOtpEmail(
-        toEmail:  widget.email,
-        nickname: widget.nickname,
-        otp:      newOtp,
-      );
-      _startTimer();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('A new code has been sent to your email')),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to resend: ${e.toString()}')),
-      );
-    }
-  }
-
-  String _generateOtp() {
-    final rand = Random.secure();
-    return (100000 + rand.nextInt(900000)).toString();
+  String get _timerText {
+    final mins = (_secondsRemaining ~/ 60).toString().padLeft(2, '0');
+    final secs = (_secondsRemaining % 60).toString().padLeft(2, '0');
+    return '$mins:$secs';
   }
 
   // ── Send via EmailJS ──────────────────────────────────────────────
-  // The template uses {{to_name}} for the greeting — we pass nickname there.
-  // The Cloud Function also accepts 'firstName' as the greeting param;
-  // we keep passing nickname so existing templates work without changes.
   Future<void> _sendOtpEmail({
     required String toEmail,
     required String nickname,
@@ -142,21 +160,57 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
     }
   }
 
+  // ── Resend OTP ────────────────────────────────────────────────────
+  Future<void> _resendOtp(String lang) async {
+    if (!_canResend) return;
+
+    final newOtp = _generateOtp();
+    _currentOtp  = newOtp;
+
+    for (final c in _controllers) c.clear();
+    _focusNodes[0].requestFocus();
+
+    try {
+      await _sendOtpEmail(
+        toEmail:  widget.email,
+        nickname: widget.nickname,
+        otp:      newOtp,
+      );
+      _startTimer();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(_t(lang, 'resendSuccess'))),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text('${_t(lang, 'resendFail')}: ${e.toString()}')),
+      );
+    }
+  }
+
+  String _generateOtp() {
+    final rand = Random.secure();
+    return (100000 + rand.nextInt(900000)).toString();
+  }
+
   // ── Verify OTP & create Firebase account ─────────────────────────
-  Future<void> _onVerify() async {
-    final enteredOtp = _controllers.map((c) => c.text.trim()).join();
+  Future<void> _onVerify(String lang) async {
+    final enteredOtp =
+    _controllers.map((c) => c.text.trim()).join();
 
     if (enteredOtp.length < 6) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter the complete 6-digit code')),
+        SnackBar(content: Text(_t(lang, 'errIncomplete'))),
       );
       return;
     }
 
     if (enteredOtp != _currentOtp) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Incorrect code. Please check your email and try again.'),
+        SnackBar(
+          content: Text(_t(lang, 'errIncorrect')),
           backgroundColor: Colors.red,
         ),
       );
@@ -179,9 +233,7 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
       // 2. Set Auth display name
       await user.updateDisplayName(widget.nickname);
 
-      // 3. Write registration doc — 'nickname' field matches web app schema.
-      //    No firstName/lastName split; single field keeps things consistent
-      //    with the web app's registration collection.
+      // 3. Write registration doc — matches web app schema
       await FirebaseFirestore.instance
           .collection('registration')
           .doc(user.uid)
@@ -208,22 +260,24 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
       );
     } on FirebaseAuthException catch (e) {
       setState(() => _isVerifying = false);
-      String message = 'Registration failed.';
+      String message = _t(lang, 'errRegFailed');
       if (e.code == 'email-already-in-use') {
-        message = 'This email is already registered. Please log in instead.';
+        message = _t(lang, 'errEmailInUse');
       } else if (e.code == 'weak-password') {
-        message = 'Password is too weak.';
+        message = _t(lang, 'errWeakPassword');
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message), backgroundColor: Colors.red),
+        SnackBar(
+            content: Text(message), backgroundColor: Colors.red),
       );
     } catch (e) {
       setState(() => _isVerifying = false);
       debugPrint('Error creating account: $e');
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: ${e.toString()}')),
+        SnackBar(
+            content: Text('${_t(lang, 'errGeneric')}: ${e.toString()}')),
       );
     }
   }
@@ -233,7 +287,6 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
     if (value.length == 1 && index < 5) {
       _focusNodes[index + 1].requestFocus();
     }
-    // Handle paste of full 6-digit code into the first box
     if (value.length == 6 && index == 0) {
       for (int i = 0; i < 6; i++) {
         _controllers[i].text = value[i];
@@ -252,14 +305,13 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
     }
   }
 
-  String get _timerText {
-    final mins = (_secondsRemaining ~/ 60).toString().padLeft(2, '0');
-    final secs = (_secondsRemaining % 60).toString().padLeft(2, '0');
-    return '$mins:$secs';
-  }
-
+  // ─────────────────────────────────────────────────────────────────
+  // BUILD
+  // ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(appLangProvider);
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -269,10 +321,12 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
           icon: const Icon(Icons.arrow_back_ios, color: Colors.black87),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text(
-          'Sign up Verification Screen',
-          style: TextStyle(
-              color: Colors.black54, fontSize: 13, fontWeight: FontWeight.w400),
+        title: Text(
+          _t(lang, 'appBarTitle'),
+          style: const TextStyle(
+              color: Colors.black54,
+              fontSize: 13,
+              fontWeight: FontWeight.w400),
         ),
         centerTitle: true,
       ),
@@ -283,9 +337,10 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
             children: [
               const Spacer(flex: 2),
 
-              const Text(
-                'We just sent an Email',
-                style: TextStyle(
+              // ── Heading ────────────────────────────────────────
+              Text(
+                _t(lang, 'heading'),
+                style: const TextStyle(
                     fontSize: 26,
                     fontWeight: FontWeight.bold,
                     color: Colors.black87),
@@ -293,9 +348,10 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
               ),
               const SizedBox(height: 12),
 
-              const Text(
-                'Enter the security code we just sent to:',
-                style: TextStyle(fontSize: 14, color: Colors.black54),
+              Text(
+                _t(lang, 'subHeading'),
+                style: const TextStyle(
+                    fontSize: 14, color: Colors.black54),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 4),
@@ -339,15 +395,18 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
                             borderSide: const BorderSide(
-                                color: AppColors.primary, width: 1.5),
+                                color: AppColors.primary,
+                                width: 1.5),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
                             borderSide: const BorderSide(
-                                color: AppColors.primary, width: 2.5),
+                                color: AppColors.primary,
+                                width: 2.5),
                           ),
                         ),
-                        onChanged: (value) => _onOtpChanged(value, index),
+                        onChanged: (value) =>
+                            _onOtpChanged(value, index),
                       ),
                     ),
                   );
@@ -361,7 +420,9 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
                 width: double.infinity,
                 height: 52,
                 child: ElevatedButton(
-                  onPressed: _isVerifying ? null : _onVerify,
+                  onPressed: _isVerifying
+                      ? null
+                      : () => _onVerify(lang),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
                     shape: RoundedRectangleBorder(
@@ -370,31 +431,44 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
                   ),
                   child: _isVerifying
                       ? const SizedBox(
-                      width: 22, height: 22,
+                      width: 22,
+                      height: 22,
                       child: CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2.5))
-                      : const Text('Verify',
-                      style: TextStyle(
                           color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold)),
+                          strokeWidth: 2.5))
+                      : Text(
+                    _t(lang, 'verify'),
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold),
+                  ),
                 ),
               ),
               const SizedBox(height: 20),
 
               // ── Resend ─────────────────────────────────────────
               Column(children: [
-                const Text("Don't receive code?",
-                    style: TextStyle(fontSize: 14, color: Colors.black54)),
+                Text(
+                  _t(lang, 'noCode'),
+                  style: const TextStyle(
+                      fontSize: 14, color: Colors.black54),
+                ),
                 const SizedBox(height: 4),
                 GestureDetector(
-                  onTap: _canResend ? _resendOtp : null,
+                  onTap: _canResend
+                      ? () => _resendOtp(lang)
+                      : null,
                   child: Text(
-                    _canResend ? 'Resend Code' : 'Resend in $_timerText',
+                    _canResend
+                        ? _t(lang, 'resend')
+                        : '${_t(lang, 'resendIn')} $_timerText',
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.bold,
-                      color: _canResend ? AppColors.primary : Colors.black87,
+                      color: _canResend
+                          ? AppColors.primary
+                          : Colors.black87,
                     ),
                   ),
                 ),

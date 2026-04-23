@@ -3,12 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/providers/providers.dart';
+import 'package:pikuru/providers/app_language_provider.dart';
 import 'dart:async';
 import 'dart:io' show Platform;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:pikuru/screens/add_court_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:io';
+import 'package:firebase_auth/firebase_auth.dart';
 
-// ── i18n ─────────────────────────────────────────────────────────────────────
+// ── i18n ──────────────────────────────────────────────────────────────────────
 class _T {
   final String courts;
   final String tokyo;
@@ -31,19 +37,43 @@ class _T {
   final String disclaimer;
   final String addCourt;
   final String loadingMap;
-  // Setup type labels
   final String setupPublic;
   final String setupPrivate;
-  // Amenity labels
   final String amenityOpenPlay;
   final String amenityReservation;
   final String amenityMembership;
   final String amenityLessons;
   final String amenityDedicated;
   final String amenityPaddleRentals;
-  // Detail sheet
   final String indoor2;
   final String outdoor2;
+  final String visitWebsite;
+  final String viewOnMaps;
+  final String noCoords;
+  final String active;
+  final String free;
+  // Reviews
+  final String writeReview;
+  final String addPhotos;
+  final String tellExperience;
+  final String startReview;
+  final String reviewMinChars;
+  final String charsLeft;
+  final String addPhotosOptional;
+  final String uploadImages;
+  final String postReview;
+  final String noReviews;
+  final String loadingReviews;
+  final String photosSelected;
+  final String clear;
+  final String signInRequired;
+  final String reviewMinError;
+  final String photoSelectError;
+  final String browseFiles;
+  final String dragDropHint;
+  final String uploading;
+  final String upload;
+  final String anonymous;
 
   const _T({
     required this.courts,
@@ -77,6 +107,32 @@ class _T {
     required this.amenityPaddleRentals,
     required this.indoor2,
     required this.outdoor2,
+    required this.visitWebsite,
+    required this.viewOnMaps,
+    required this.noCoords,
+    required this.active,
+    required this.free,
+    required this.writeReview,
+    required this.addPhotos,
+    required this.tellExperience,
+    required this.startReview,
+    required this.reviewMinChars,
+    required this.charsLeft,
+    required this.addPhotosOptional,
+    required this.uploadImages,
+    required this.postReview,
+    required this.noReviews,
+    required this.loadingReviews,
+    required this.photosSelected,
+    required this.clear,
+    required this.signInRequired,
+    required this.reviewMinError,
+    required this.photoSelectError,
+    required this.browseFiles,
+    required this.dragDropHint,
+    required this.uploading,
+    required this.upload,
+    required this.anonymous,
   });
 
   static const en = _T(
@@ -111,6 +167,32 @@ class _T {
     amenityPaddleRentals: 'Paddle Rentals',
     indoor2:              'Indoor',
     outdoor2:             'Outdoor',
+    visitWebsite:         'Visit Website',
+    viewOnMaps:           'View on Google Maps',
+    noCoords:             'No map location available for this court.',
+    active:               '✓ Active',
+    free:                 'Free',
+    writeReview:          'Write a review',
+    addPhotos:            'Add photos',
+    tellExperience:       'Tell us about your experience',
+    startReview:          'Start your review...',
+    reviewMinChars:       'Reviews need to be at least 85 characters.',
+    charsLeft:            'left',
+    addPhotosOptional:    'Add photos (optional)',
+    uploadImages:         'Upload images of the court to help others',
+    postReview:           'Post Review',
+    noReviews:            'No reviews yet. Be the first to share your experience!',
+    loadingReviews:       'Loading reviews...',
+    photosSelected:       'photos selected',
+    clear:                'Clear',
+    signInRequired:       'You must be signed in to post.',
+    reviewMinError:       'Review must be at least 85 characters.',
+    photoSelectError:     'Please select at least one photo.',
+    browseFiles:          'Browse Files',
+    dragDropHint:         'Tap to select photos/videos',
+    uploading:            'Uploading...',
+    upload:               'Upload',
+    anonymous:            'Anonymous',
   );
 
   static const ja = _T(
@@ -145,10 +227,38 @@ class _T {
     amenityPaddleRentals: 'パドルレンタル',
     indoor2:              '室内',
     outdoor2:             '屋外',
+    visitWebsite:         'ウェブサイトを見る',
+    viewOnMaps:           'Googleマップで見る',
+    noCoords:             'このコートの地図情報はありません。',
+    active:               '✓ 利用可能',
+    free:                 '無料',
+    writeReview:          'レビューを書く',
+    addPhotos:            '写真を追加',
+    tellExperience:       'あなたの体験を教えてください',
+    startReview:          'レビューを始めましょう...',
+    reviewMinChars:       'レビューは85文字以上必要です。',
+    charsLeft:            '文字残り',
+    addPhotosOptional:    '写真を追加（任意）',
+    uploadImages:         'コートの画像をアップロードして他の人を助けましょう',
+    postReview:           'レビューを投稿',
+    noReviews:            'まだレビューはありません。最初に体験を共有しましょう！',
+    loadingReviews:       'レビューを読み込み中...',
+    photosSelected:       '枚の写真を選択しました',
+    clear:                'クリア',
+    signInRequired:       '投稿するにはログインが必要です。',
+    reviewMinError:       'レビューは85文字以上が必要です。',
+    photoSelectError:     '少なくとも1枚の写真を選択してください。',
+    browseFiles:          'ファイルを選択',
+    dragDropHint:         'タップして写真・動画を選択',
+    uploading:            'アップロード中...',
+    upload:               'アップロード',
+    anonymous:            '匿名',
   );
+
+  static _T of(String lang) => lang == kLangJa ? ja : en;
 }
 
-// ── Filter State ──────────────────────────────────────────────────────────────
+// ── Filter State ───────────────────────────────────────────────────────────────
 class CourtFilter {
   final String? prefecture;
   final String? city;
@@ -250,8 +360,6 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
   bool _mapReady = false;
 
   CourtFilter _filter = CourtFilter.defaultFilter;
-  bool _isJa = false; // ← language toggle
-  _T get _t => _isJa ? _T.ja : _T.en;
 
   List<Map<String, dynamic>> _lastLocations = [];
   Timer? _searchDebounce;
@@ -333,7 +441,10 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
         newMarkers.add(Marker(
           markerId: MarkerId(loc['_doc_id'] ?? 'court_$i'),
           position: LatLng(lat, lng),
-          onTap: () => _showCourtSheet(loc),
+          onTap: () {
+            final lang = ref.read(appLangProvider);
+            _showCourtSheet(loc, lang);
+          },
         ));
       }
     }
@@ -364,16 +475,18 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
     _updateMarkers(filtered);
   }
 
-  void _showCourtSheet(Map<String, dynamic> loc) {
+  void _showCourtSheet(Map<String, dynamic> loc, String lang) {
+    final t = _T.of(lang);
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (_) => _CourtDetailSheet(loc: loc, isJa: _isJa, t: _t),
+      builder: (_) => _CourtDetailSheet(loc: loc, lang: lang, t: t),
     );
   }
 
-  void _openFilterModal(List<Map<String, dynamic>> allLocations) async {
+  void _openFilterModal(List<Map<String, dynamic>> allLocations, String lang) async {
+    final t = _T.of(lang);
     final result = await showModalBottomSheet<CourtFilter>(
       context: context,
       isScrollControlled: true,
@@ -381,8 +494,8 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
       builder: (_) => _CourtFilterModal(
         currentFilter: _filter,
         allLocations: allLocations,
-        isJa: _isJa,
-        t: _t,
+        lang: lang,
+        t: t,
       ),
     );
     if (result != null && mounted) {
@@ -394,6 +507,9 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+
+    final lang           = ref.watch(appLangProvider);
+    final t              = _T.of(lang);
     final showAddButton  = ref.watch(showAddCourtButtonProvider);
     final locationsAsync = ref.watch(locationsProvider);
     final allLocations   = locationsAsync.asData?.value ?? [];
@@ -458,12 +574,12 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
 
           if (!_mapReady && Platform.isIOS)
             Container(
-              color: const Color(0xFFE8F0E9),
+              color: const Color(0xFFF4F9F5),
               child: Center(
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
                   CircularProgressIndicator(color: AppColors.primary),
                   const SizedBox(height: 12),
-                  Text(_t.loadingMap,
+                  Text(t.loadingMap,
                       style: TextStyle(
                           color: AppColors.primary, fontWeight: FontWeight.w600)),
                 ]),
@@ -472,7 +588,7 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
 
           SafeArea(
             child: Column(children: [
-              _buildHeader(allLocations, hasActiveFilter),
+              _buildHeader(allLocations, hasActiveFilter, lang, t),
             ]),
           ),
 
@@ -494,9 +610,9 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
                     ],
                   ),
                   child: Text(
-                    _isJa
-                        ? '${filteredLocations.length}${_t.courtsFound}'
-                        : '${filteredLocations.length} ${_t.courtsFound}',
+                    lang == kLangJa
+                        ? '${filteredLocations.length}${t.courtsFound}'
+                        : '${filteredLocations.length} ${t.courtsFound}',
                     style: const TextStyle(
                         color: Colors.white,
                         fontSize: 13,
@@ -509,14 +625,19 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
           if (showAddButton)
             Positioned(
               bottom: 24, left: 0, right: 0,
-              child: Center(child: _buildAddCourtButton()),
+              child: Center(child: _buildAddCourtButton(t)),
             ),
         ],
       ),
     );
   }
 
-  Widget _buildHeader(List<Map<String, dynamic>> allLocations, bool hasActiveFilter) {
+  Widget _buildHeader(
+      List<Map<String, dynamic>> allLocations,
+      bool hasActiveFilter,
+      String lang,
+      _T t,
+      ) {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       child: Column(children: [
@@ -544,7 +665,7 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
                       color: AppColors.primary, size: 18),
                 ),
                 const SizedBox(width: 10),
-                Text(_t.courts,
+                Text(t.courts,
                     style: const TextStyle(
                         fontSize: 20, fontWeight: FontWeight.w800,
                         color: Color(0xFF0D0D0D), letterSpacing: -0.5)),
@@ -555,7 +676,7 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
                     decoration: BoxDecoration(
                         color: AppColors.primary.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(8)),
-                    child: Text(_t.tokyo,
+                    child: Text(t.tokyo,
                         style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
@@ -566,19 +687,15 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
           ),
           const SizedBox(width: 8),
 
-          // ── Language toggle ─────────────────────────────────────────────
           _LangToggle(
-            isJa: _isJa,
-            onToggle: (ja) => setState(() {
-              _isJa = ja;
-              // Rebuild filter modal with new lang next open
-            }),
+            lang: lang,
+            onToggle: (selected) =>
+                ref.read(appLangProvider.notifier).setLang(selected),
           ),
           const SizedBox(width: 8),
 
-          // ── Filter button ───────────────────────────────────────────────
           GestureDetector(
-            onTap: () => _openFilterModal(allLocations),
+            onTap: () => _openFilterModal(allLocations, lang),
             child: Stack(clipBehavior: Clip.none, children: [
               AnimatedContainer(
                 duration: const Duration(milliseconds: 250),
@@ -636,7 +753,7 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
             },
             style: const TextStyle(fontSize: 15, color: Color(0xFF0D0D0D)),
             decoration: InputDecoration(
-              hintText: _t.search,
+              hintText: t.search,
               hintStyle: TextStyle(
                   color: Colors.black.withOpacity(0.35),
                   fontSize: 15, fontWeight: FontWeight.w400),
@@ -662,7 +779,7 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
     );
   }
 
-  Widget _buildAddCourtButton() {
+  Widget _buildAddCourtButton(_T t) {
     return Stack(clipBehavior: Clip.none, children: [
       GestureDetector(
         onTap: () => Navigator.push(
@@ -683,7 +800,7 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             const Icon(Icons.add_rounded, color: Colors.white, size: 20),
             const SizedBox(width: 8),
-            Text(_t.addCourt,
+            Text(t.addCourt,
                 style: const TextStyle(
                     color: Colors.white, fontSize: 15,
                     fontWeight: FontWeight.w700, letterSpacing: 0.2)),
@@ -716,11 +833,11 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
   }
 }
 
-// ── Language Toggle widget ────────────────────────────────────────────────────
+// ── Language Toggle ────────────────────────────────────────────────────────────
 class _LangToggle extends StatelessWidget {
-  final bool isJa;
-  final ValueChanged<bool> onToggle;
-  const _LangToggle({required this.isJa, required this.onToggle});
+  final String lang;
+  final ValueChanged<String> onToggle;
+  const _LangToggle({required this.lang, required this.onToggle});
 
   @override
   Widget build(BuildContext context) {
@@ -738,8 +855,8 @@ class _LangToggle extends StatelessWidget {
         ],
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
-        _tab('EN',   !isJa, () => onToggle(false)),
-        _tab('日本語', isJa,  () => onToggle(true)),
+        _tab('EN',    lang == kLangEn, () => onToggle(kLangEn)),
+        _tab('日本語', lang == kLangJa, () => onToggle(kLangJa)),
       ]),
     );
   }
@@ -765,76 +882,146 @@ class _LangToggle extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Court Detail Bottom Sheet
+// Court Detail Bottom Sheet — LIGHT MODE
 // ─────────────────────────────────────────────────────────────────────────────
-class _CourtDetailSheet extends StatelessWidget {
+class _CourtDetailSheet extends StatefulWidget {
   final Map<String, dynamic> loc;
-  final bool isJa;
+  final String lang;
   final _T t;
-  const _CourtDetailSheet({required this.loc, required this.isJa, required this.t});
+  const _CourtDetailSheet({required this.loc, required this.lang, required this.t});
+
+  @override
+  State<_CourtDetailSheet> createState() => _CourtDetailSheetState();
+}
+
+class _CourtDetailSheetState extends State<_CourtDetailSheet> {
+  // ── Light mode palette ─────────────────────────────────────────────────────
+  static const Color _sheetBg   = Color(0xFFF5F7F4);
+  static const Color _cardBg    = Colors.white;         // AppColors.background
+  static const Color _primary   = Color(0xFF497C38);    // AppColors.primary
+  static const Color _accent    = Color(0xFF6AAF52);
+  static const Color _accentSoft= Color(0xFFDDEDD6);
+  static const Color _textDark  = Color(0xFF222222);    // AppColors.textDark
+  static const Color _textMid   = Color(0xFF444444);
+  static const Color _textLight = Color(0xFF777777);    // AppColors.textLight
+  static const Color _border    = Color(0xFFCCDEC5);
+  static const Color _errorBg   = Color(0xFFFFF0F0);
+  static const Color _successBg = Color(0xFFEEF7EA);
+
+  // ── State ──────────────────────────────────────────────────────────────────
+  bool _showReviewForm = false;
+  bool _showPhotoForm  = false;
+  String _reviewText   = '';
+  List<File> _files    = [];
+  bool _isSubmitting   = false;
+  String _errorLine    = '';
+  String _successMsg   = '';
+  bool _loadingReviews = true;
+  List<Map<String, dynamic>> _reviews     = [];
+  List<Map<String, dynamic>> _courtImages = [];
+  int? _selectedImageIndex;
+
+  final TextEditingController _reviewController = TextEditingController();
+
+  bool get _isJa => widget.lang == kLangJa;
+  _T   get _t    => widget.t;
+  Map<String, dynamic> get _loc => widget.loc;
+  String get _locId => (_loc['loc_id'] ?? _loc['_doc_id'] ?? '').toString();
+
+  List<String> get _allImages {
+    final reviewImgs = _reviews.expand<String>((r) {
+      final urls = r['image_urls'];
+      if (urls is List) return urls.cast<String>();
+      final url = r['image_url'];
+      if (url is String && url.isNotEmpty) return [url];
+      return [];
+    }).toList();
+    final courtImgs = _courtImages.expand<String>((img) {
+      final imgs = img['images'];
+      if (imgs is List) return imgs.cast<String>();
+      return [];
+    }).toList();
+    return [...reviewImgs, ...courtImgs];
+  }
 
   String get _name {
-    if (isJa) {
-      final jp = (loc['loc_name_jp'] ?? '').toString().trim();
+    if (_isJa) {
+      final jp = (_loc['loc_name_jp'] ?? '').toString().trim();
       if (jp.isNotEmpty) return jp;
     }
-    return (loc['loc_name'] ?? 'Court').toString();
+    return (_loc['loc_name'] ?? 'Court').toString();
   }
 
   String get _address {
-    if (isJa) {
-      final jp = (loc['loc_address_jp'] ?? '').toString().trim();
+    if (_isJa) {
+      final jp = (_loc['loc_address_jp'] ?? '').toString().trim();
       if (jp.isNotEmpty) return jp;
     }
-    return (loc['loc_address'] ?? '').toString();
+    return (_loc['loc_address'] ?? '').toString();
   }
 
   String get _city {
-    if (isJa) {
-      final jp = (loc['loc_city_jp'] ?? '').toString().trim();
+    if (_isJa) {
+      final jp = (_loc['loc_city_jp'] ?? '').toString().trim();
       if (jp.isNotEmpty) return jp;
     }
-    final en = (loc['loc_city_en'] ?? '').toString().trim();
-    return en.isNotEmpty ? en : (loc['loc_city'] ?? '').toString();
+    final en = (_loc['loc_city_en'] ?? '').toString().trim();
+    return en.isNotEmpty ? en : (_loc['loc_city'] ?? '').toString();
   }
 
   String get _prefecture {
-    if (isJa) {
-      final jp = (loc['loc_prefecture_jp'] ?? '').toString().trim();
+    if (_isJa) {
+      final jp = (_loc['loc_prefecture_jp'] ?? '').toString().trim();
       if (jp.isNotEmpty) return jp;
     }
-    final en = (loc['loc_prefecture_en'] ?? '').toString().trim();
-    return en.isNotEmpty ? en : (loc['loc_prefecture'] ?? '').toString();
+    final en = (_loc['loc_prefecture_en'] ?? '').toString().trim();
+    return en.isNotEmpty ? en : (_loc['loc_prefecture'] ?? '').toString();
   }
 
-  String get _country    => (loc['loc_country']      ?? '').toString();
-  String get _type       => (loc['loc_type']          ?? '').toString();
-  String get _price      => (loc['loc_price']         ?? '').toString();
-  String get _phone      => (loc['loc_contact_email'] ?? '').toString();
-  String get _googleLink => (loc['loc_googlelink']    ?? '').toString();
-  String get _website    => (loc['loc_website']       ?? '').toString();
-  String get _image      => (loc['loc_image']         ?? '').toString();
+  String get _country    => (_loc['loc_country']   ?? '').toString();
+  String get _type       => (_loc['loc_type']       ?? '').toString();
+  String get _price      => (_loc['loc_price']      ?? '').toString();
+  String get _googleLink => (_loc['loc_googlelink'] ?? '').toString();
+  String get _website    => (_loc['loc_website']    ?? '').toString();
+  String get _image      => (_loc['loc_image']      ?? '').toString();
   String get _primaryLink => _website.isNotEmpty ? _website : _googleLink;
 
-  // Setup type — show JP label when in JP mode
   String get _setupTypeLabel {
-    final raw = (loc['loc_setup_type'] ?? '').toString().trim();
-    if (!isJa || raw.isEmpty) return raw;
-    if (raw == 'Public Access Courts')         return '一般開放コート';
-    if (raw == 'Private / Coordinated Courts') return '事前調整・予約制コート';
+    final raw = (_loc['loc_setup_type'] ?? '').toString().trim();
+    if (!_isJa || raw.isEmpty) return raw;
+    if (raw == 'Public Access Courts')         return _t.setupPublic;
+    if (raw == 'Private / Coordinated Courts') return _t.setupPrivate;
     return raw;
   }
 
+  String get _priceDisplay {
+    final isFree = _loc['loc_price_free'] == true ||
+        _loc['loc_price_free']?.toString() == 'T';
+    if (isFree) return _t.free;
+    return _price;
+  }
+
   int get _courtCount {
-    final v = loc['loc_court_count'];
+    final v = _loc['loc_court_count'];
     if (v is int)    return v;
     if (v is double) return v.toInt();
     if (v is String) return int.tryParse(v) ?? 0;
     return 0;
   }
 
-  bool get _isIndoor  => loc['loc_court_type_indoor']  == true;
-  bool get _isOutdoor => loc['loc_court_type_outdoor'] == true;
+  bool get _isIndoor  => _loc['loc_court_type_indoor']  == true ||
+      _loc['loc_court_type_indoor']?.toString()  == 'T';
+  bool get _isOutdoor => _loc['loc_court_type_outdoor'] == true ||
+      _loc['loc_court_type_outdoor']?.toString() == 'T';
+
+  String get _courtCountLabel {
+    if (_courtCount <= 0) return '';
+    if (_isJa) return '$_courtCount コート';
+    return '$_courtCount court${_courtCount == 1 ? '' : 's'}';
+  }
+
+  String get _locationLine =>
+      [_city, _prefecture, _country].where((s) => s.isNotEmpty).join(', ');
 
   String get _hoursFormatted {
     const days = [
@@ -845,7 +1032,7 @@ class _CourtDetailSheet extends StatelessWidget {
     ];
     final filled = <(String, String)>[];
     for (final (label, field) in days) {
-      final v = (loc[field] ?? '').toString().trim();
+      final v = (_loc[field] ?? '').toString().trim();
       if (v.isNotEmpty) filled.add((label, v));
     }
     if (filled.isEmpty) return '';
@@ -856,240 +1043,1022 @@ class _CourtDetailSheet extends StatelessWidget {
       if (hours == curHours) {
         prevDay = day;
       } else {
-        groups.add((
-        range: startDay == prevDay ? startDay : '$startDay–$prevDay',
-        hours: curHours,
-        ));
+        groups.add((range: startDay == prevDay ? startDay : '$startDay–$prevDay', hours: curHours));
         startDay = prevDay = day;
         curHours = hours;
       }
     }
-    groups.add((
-    range: startDay == prevDay ? startDay : '$startDay–$prevDay',
-    hours: curHours,
-    ));
+    groups.add((range: startDay == prevDay ? startDay : '$startDay–$prevDay', hours: curHours));
     return groups.map((g) => '${g.range}: ${g.hours}').join('  •  ');
-  }
-
-  String get _locationLine =>
-      [_city, _prefecture, _country].where((s) => s.isNotEmpty).join(', ');
-
-  Future<void> _openLink(BuildContext context, String url) async {
-    if (url.isEmpty) return;
-    final uri = Uri.tryParse(url);
-    if (uri == null) return;
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
   }
 
   bool _isTruthy(dynamic v) =>
       v == true || v?.toString() == 'T' || v?.toString() == 'Yes';
 
   @override
+  void initState() {
+    super.initState();
+    _fetchData();
+  }
+
+  @override
+  void dispose() {
+    _reviewController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _fetchData() async {
+    setState(() => _loadingReviews = true);
+    try {
+      final db = FirebaseFirestore.instance;
+      final reviewsSnap = await db
+          .collection('reviews')
+          .where('loc_id', isEqualTo: _locId)
+          .get();
+      final imagesSnap = await db
+          .collection('court_images')
+          .where('loc_id', isEqualTo: _locId)
+          .get();
+
+      final reviews = reviewsSnap.docs
+          .map((d) => {'id': d.id, ...d.data()})
+          .where((r) => r['review_pending_review'] == false)
+          .toList();
+      reviews.sort((a, b) {
+        final tA = (a['created_at'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
+        final tB = (b['created_at'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
+        return tB.compareTo(tA);
+      });
+
+      final courtImages = imagesSnap.docs
+          .map((d) => {'id': d.id, ...d.data()})
+          .where((img) => img['court_images_pending_review'] == false)
+          .toList();
+      courtImages.sort((a, b) {
+        final tA = (a['created_at'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
+        final tB = (b['created_at'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
+        return tB.compareTo(tA);
+      });
+
+      if (mounted) {
+        setState(() {
+          _reviews     = reviews;
+          _courtImages = courtImages;
+        });
+      }
+    } catch (e) {
+      debugPrint('[CourtDetailSheet] _fetchData error: $e');
+    } finally {
+      if (mounted) setState(() => _loadingReviews = false);
+    }
+  }
+
+  Future<void> _pickImages() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickMultiImage();
+    if (picked.isNotEmpty && mounted) {
+      setState(() => _files = [..._files, ...picked.map((x) => File(x.path))]);
+    }
+  }
+
+  Future<List<String>> _uploadFiles() async {
+    final storage = FirebaseStorage.instance;
+    final urls = <String>[];
+    for (final f in _files) {
+      final name = '${DateTime.now().millisecondsSinceEpoch}_${f.path.split('/').last}';
+      final ref  = storage.ref('court_images/$name');
+      final snap = await ref.putFile(f);
+      urls.add(await snap.ref.getDownloadURL());
+    }
+    return urls;
+  }
+
+  Future<void> _submitReview() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) { setState(() => _errorLine = _t.signInRequired); return; }
+    if (_reviewText.length < 85) { setState(() => _errorLine = _t.reviewMinError); return; }
+    setState(() { _isSubmitting = true; _errorLine = ''; });
+    try {
+      final imageUrls = _files.isNotEmpty ? await _uploadFiles() : <String>[];
+      await FirebaseFirestore.instance.collection('reviews').add({
+        'loc_id':                _locId,
+        'review_pending_review': true,
+        'text':                  _reviewText,
+        'image_urls':            imageUrls,
+        'user_id':               user.uid,
+        'user_name':             user.displayName ?? _t.anonymous,
+        'user_image':            user.photoURL,
+        'created_at':            FieldValue.serverTimestamp(),
+      });
+      if (mounted) {
+        setState(() {
+          _reviewText = '';
+          _reviewController.clear();
+          _files = [];
+          _showReviewForm = false;
+          _successMsg = _isJa ? 'レビューを投稿しました！' : 'Review posted successfully!';
+        });
+        Future.delayed(const Duration(seconds: 3), () {
+          if (mounted) setState(() => _successMsg = '');
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _errorLine = e.toString());
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  Future<void> _submitPhotos() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) { setState(() => _errorLine = _t.signInRequired); return; }
+    if (_files.isEmpty) { setState(() => _errorLine = _t.photoSelectError); return; }
+    setState(() { _isSubmitting = true; _errorLine = ''; });
+    try {
+      final imageUrls = await _uploadFiles();
+      await FirebaseFirestore.instance.collection('court_images').add({
+        'loc_id':                         _locId,
+        'user_id':                        user.uid,
+        'images':                         imageUrls,
+        'created_at':                     FieldValue.serverTimestamp(),
+        'court_images_pending_review':    true,
+      });
+      if (mounted) {
+        setState(() {
+          _files = [];
+          _showPhotoForm = false;
+          _successMsg = _isJa ? '写真をアップロードしました！' : 'Photos uploaded successfully!';
+        });
+        Future.delayed(const Duration(seconds: 3), () {
+          if (mounted) setState(() => _successMsg = '');
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _errorLine = e.toString());
+    } finally {
+      if (mounted) setState(() => _isSubmitting = false);
+    }
+  }
+
+  Future<void> _openLink(String url) async {
+    if (url.isEmpty) return;
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final hasCoords = _loc['loc_latitude'] != null && _loc['loc_longitude'] != null;
+
     return Container(
-      margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+      margin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _sheetBg,
         borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withOpacity(0.18),
+              color: Colors.black.withOpacity(0.12),
               blurRadius: 40,
-              offset: const Offset(0, -8)),
+              offset: const Offset(0, -4)),
         ],
+      ),
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.91,
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(28),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const SizedBox(height: 12),
+          // Drag handle
           Container(
+            margin: const EdgeInsets.only(top: 12, bottom: 4),
             width: 40, height: 4,
             decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.12),
+                color: _primary.withOpacity(0.2),
                 borderRadius: BorderRadius.circular(2)),
           ),
-          const SizedBox(height: 4),
+
+          // ── Hero image ────────────────────────────────────────────────────
           if (_image.isNotEmpty)
-            SizedBox(
-              height: 160, width: double.infinity,
-              child: Image.network(_image, fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    height: 160,
-                    color: AppColors.primary.withOpacity(0.08),
-                    child: Icon(Icons.sports_tennis_rounded,
-                        size: 48, color: AppColors.primary.withOpacity(0.3)),
-                  )),
-            )
-          else
-            Container(
-              height: 100, width: double.infinity,
-              color: AppColors.primary.withOpacity(0.08),
-              child: Icon(Icons.sports_tennis_rounded,
-                  size: 48, color: AppColors.primary.withOpacity(0.3)),
-            ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Expanded(
-                  child: Text(_name,
-                      style: const TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.w800,
-                          color: Color(0xFF0D0D0D), letterSpacing: -0.3)),
+            Stack(children: [
+              SizedBox(
+                height: 200, width: double.infinity,
+                child: Image.network(_image, fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      height: 200,
+                      color: _accentSoft,
+                      child: Icon(Icons.sports_tennis_rounded, size: 52, color: _primary.withOpacity(0.4)),
+                    )),
+              ),
+              // Bottom fade into sheet bg
+              Positioned(
+                bottom: 0, left: 0, right: 0,
+                child: Container(
+                  height: 60,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.bottomCenter, end: Alignment.topCenter,
+                      colors: [_sheetBg, Colors.transparent],
+                    ),
+                  ),
                 ),
-                if (_type.isNotEmpty)
-                  Container(
+              ),
+              // Active badge
+              Positioned(
+                bottom: 12, left: 16,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: _primary,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(_t.active,
+                      style: const TextStyle(
+                          fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
+                ),
+              ),
+              // Type badge
+              if (_type.isNotEmpty)
+                Positioned(
+                  top: 12, left: 12,
+                  child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(20)),
-                    child: Text(_type,
-                        style: const TextStyle(
-                            fontSize: 11, fontWeight: FontWeight.w700,
-                            color: AppColors.primary)),
-                  ),
-              ]),
-              const SizedBox(height: 14),
-              if (_locationLine.isNotEmpty)
-                _infoRow(Icons.location_on_rounded,  _locationLine),
-              if (_address.isNotEmpty)
-                _infoRow(Icons.home_rounded,          _address),
-              if (_price.isNotEmpty)
-                _infoRow(Icons.payments_outlined,     _price),
-              if (_hoursFormatted.isNotEmpty)
-                _infoRow(Icons.access_time_rounded,   _hoursFormatted),
-              if (_phone.isNotEmpty)
-                _infoRow(Icons.phone_outlined,        _phone),
-              if (_setupTypeLabel.isNotEmpty)
-                _infoRow(Icons.construction_rounded,  _setupTypeLabel),
-
-              // Tags
-              if (_isIndoor || _isOutdoor || _courtCount > 0 ||
-                  _isTruthy(loc['loc_amenities_dedicated'])    ||
-                  _isTruthy(loc['loc_amenities_membership'])   ||
-                  _isTruthy(loc['loc_amenities_openplay'])     ||
-                  _isTruthy(loc['loc_amenities_reservation'])  ||
-                  _isTruthy(loc['loc_amenities_lessons'])      ||
-                  _isTruthy(loc['loc_amenities_paddlerentals'])) ...[
-                const SizedBox(height: 10),
-                Wrap(spacing: 8, runSpacing: 6, children: [
-                  if (_isIndoor)
-                    _tag(t.indoor2,  Icons.roofing_rounded),
-                  if (_isOutdoor)
-                    _tag(t.outdoor2, Icons.park_rounded),
-                  if (_courtCount > 0)
-                    _tag(
-                      isJa
-                          ? '$_courtCount コート'
-                          : '$_courtCount court${_courtCount == 1 ? '' : 's'}',
-                      Icons.grid_view_rounded,
+                      color: Colors.white.withOpacity(0.92),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: _border),
                     ),
-                  if (_isTruthy(loc['loc_amenities_dedicated']))
-                    _tag(t.amenityDedicated,     Icons.sports_tennis_rounded),
-                  if (_isTruthy(loc['loc_amenities_membership']))
-                    _tag(t.amenityMembership,    Icons.card_membership_rounded),
-                  if (_isTruthy(loc['loc_amenities_openplay']))
-                    _tag(t.amenityOpenPlay,      Icons.people_rounded),
-                  if (_isTruthy(loc['loc_amenities_reservation']))
-                    _tag(t.amenityReservation,   Icons.calendar_today_rounded),
-                  if (_isTruthy(loc['loc_amenities_lessons']))
-                    _tag(t.amenityLessons,       Icons.school_rounded),
-                  if (_isTruthy(loc['loc_amenities_paddlerentals']))
-                    _tag(t.amenityPaddleRentals, Icons.sports_rounded),
-                ]),
-              ],
-
-              const SizedBox(height: 18),
-              SizedBox(
-                width: double.infinity, height: 52,
-                child: ElevatedButton.icon(
-                  onPressed: _primaryLink.isNotEmpty
-                      ? () => _openLink(context, _primaryLink)
-                      : null,
-                  icon: const Icon(Icons.open_in_browser_rounded,
-                      size: 18, color: Colors.white),
-                  label: Text(t.moreInfo,
-                      style: const TextStyle(
-                          fontSize: 15, fontWeight: FontWeight.w800,
-                          color: Colors.white, letterSpacing: 0.1)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _primaryLink.isNotEmpty
-                        ? AppColors.primary
-                        : Colors.grey.shade300,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
+                    child: Text(_type,
+                        style: TextStyle(
+                            fontSize: 10, fontWeight: FontWeight.w700, color: _primary)),
+                  ),
+                ),
+              // Close button
+              Positioned(
+                top: 12, right: 12,
+                child: GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    width: 32, height: 32,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.92),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: _border),
+                    ),
+                    child: Icon(Icons.close_rounded, size: 16, color: _textDark),
                   ),
                 ),
               ),
-              const SizedBox(height: 12),
+            ])
+          else
+            Stack(children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade50,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.grey.shade200),
-                ),
-                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Icon(Icons.info_outline_rounded, size: 14, color: Colors.grey.shade400),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(t.disclaimer,
-                        style: const TextStyle(
-                            fontSize: 11, color: Colors.black38, height: 1.5)),
+                height: 100, width: double.infinity,
+                color: _accentSoft,
+                child: Icon(Icons.sports_tennis_rounded, size: 48, color: _primary.withOpacity(0.4)),
+              ),
+              Positioned(
+                top: 12, right: 12,
+                child: GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    width: 32, height: 32,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: _border),
+                    ),
+                    child: Icon(Icons.close_rounded, size: 16, color: _textDark),
                   ),
-                ]),
+                ),
               ),
             ]),
+
+          // ── Scrollable body ───────────────────────────────────────────────
+          Flexible(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+                // Name
+                Text(_name,
+                    style: const TextStyle(
+                        fontSize: 20, fontWeight: FontWeight.w800,
+                        color: _textDark, letterSpacing: -0.3)),
+                if (_loc['loc_name_jp'] != null && !_isJa) ...[
+                  const SizedBox(height: 3),
+                  Text(_loc['loc_name_jp'].toString(),
+                      style: TextStyle(fontSize: 11, color: _textLight)),
+                ],
+                const SizedBox(height: 14),
+
+                // Info card
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: _cardBg,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: _border),
+                    boxShadow: [
+                      BoxShadow(
+                          color: _primary.withOpacity(0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 3)),
+                    ],
+                  ),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    if (_locationLine.isNotEmpty) _infoRow(Icons.location_on_rounded,   _locationLine),
+                    if (_address.isNotEmpty)      _infoRow(Icons.home_rounded,          _address),
+                    if (_priceDisplay.isNotEmpty) _infoRow(Icons.payments_outlined,     _priceDisplay),
+                    if (_hoursFormatted.isNotEmpty) _infoRow(Icons.access_time_rounded, _hoursFormatted),
+                    if (_setupTypeLabel.isNotEmpty) _infoRow(Icons.construction_rounded, _setupTypeLabel),
+                  ]),
+                ),
+
+                // Tags
+                if (_isIndoor || _isOutdoor || _courtCount > 0 ||
+                    _isTruthy(_loc['loc_amenities_dedicated'])    ||
+                    _isTruthy(_loc['loc_amenities_membership'])   ||
+                    _isTruthy(_loc['loc_amenities_openplay'])     ||
+                    _isTruthy(_loc['loc_amenities_reservation'])  ||
+                    _isTruthy(_loc['loc_amenities_lessons'])      ||
+                    _isTruthy(_loc['loc_amenities_paddlerentals'])) ...[
+                  const SizedBox(height: 12),
+                  Wrap(spacing: 8, runSpacing: 6, children: [
+                    if (_isIndoor)              _primaryTag('🏠 ${_t.indoor2}'),
+                    if (_isOutdoor)             _primaryTag('🌳 ${_t.outdoor2}'),
+                    if (_courtCountLabel.isNotEmpty) _primaryTag(_courtCountLabel),
+                    if (_isTruthy(_loc['loc_amenities_dedicated']))    _softTag(_t.amenityDedicated),
+                    if (_isTruthy(_loc['loc_amenities_membership']))   _softTag(_t.amenityMembership),
+                    if (_isTruthy(_loc['loc_amenities_openplay']))     _softTag(_t.amenityOpenPlay),
+                    if (_isTruthy(_loc['loc_amenities_reservation']))  _softTag(_t.amenityReservation),
+                    if (_isTruthy(_loc['loc_amenities_lessons']))      _softTag(_t.amenityLessons),
+                    if (_isTruthy(_loc['loc_amenities_paddlerentals'])) _softTag(_t.amenityPaddleRentals),
+                  ]),
+                ],
+
+                if (!hasCoords) ...[
+                  const SizedBox(height: 8),
+                  Text(_t.noCoords,
+                      style: TextStyle(
+                          fontSize: 11, color: _textLight, fontStyle: FontStyle.italic)),
+                ],
+
+                // ── Photo Gallery ─────────────────────────────────────────
+                if (_allImages.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  _buildGallery(),
+                ],
+
+                const SizedBox(height: 18),
+
+                // ── Action buttons ────────────────────────────────────────
+                if (_primaryLink.isNotEmpty)
+                  SizedBox(
+                    width: double.infinity, height: 52,
+                    child: ElevatedButton.icon(
+                      onPressed: () => _openLink(_primaryLink),
+                      icon: const Icon(Icons.open_in_browser_rounded, size: 18, color: Colors.white),
+                      label: Text(_t.moreInfo,
+                          style: const TextStyle(
+                              fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _primary,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                    ),
+                  ),
+
+                if (_googleLink.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity, height: 52,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _openLink(_googleLink),
+                      icon: Icon(Icons.map_rounded, size: 18, color: _primary),
+                      label: Text(_t.viewOnMaps,
+                          style: TextStyle(
+                              fontSize: 15, fontWeight: FontWeight.w700, color: _primary)),
+                      style: OutlinedButton.styleFrom(
+                        side: BorderSide(color: _primary, width: 1.5),
+                        backgroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                    ),
+                  ),
+                ],
+
+                // Disclaimer
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: _accentSoft.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _border),
+                  ),
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Icon(Icons.info_outline_rounded, size: 13, color: _textLight),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(_t.disclaimer,
+                          style: TextStyle(fontSize: 10, color: _textMid, height: 1.5)),
+                    ),
+                  ]),
+                ),
+
+                const SizedBox(height: 20),
+                Divider(color: _border, height: 1),
+                const SizedBox(height: 16),
+
+                // ── Status/error banners ──────────────────────────────────
+                if (_errorLine.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: _errorBg,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.red.withOpacity(0.2)),
+                    ),
+                    child: Text(_errorLine,
+                        style: const TextStyle(
+                            color: Colors.redAccent,
+                            fontSize: 12, fontWeight: FontWeight.w600)),
+                  ),
+
+                if (_successMsg.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: _successBg,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: _accent.withOpacity(0.3)),
+                    ),
+                    child: Text(_successMsg,
+                        style: TextStyle(
+                            color: _primary,
+                            fontSize: 12, fontWeight: FontWeight.w600)),
+                  ),
+
+                // ── Write Review / Add Photos buttons ─────────────────────
+                Row(children: [
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() {
+                        _showReviewForm = !_showReviewForm;
+                        _showPhotoForm  = false;
+                        _errorLine = '';
+                      }),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: _showReviewForm ? _primary : _cardBg,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                              color: _showReviewForm ? _primary : _border,
+                              width: 1.5),
+                          boxShadow: _showReviewForm ? [
+                            BoxShadow(
+                                color: _primary.withOpacity(0.25),
+                                blurRadius: 10,
+                                offset: const Offset(0, 3))
+                          ] : [],
+                        ),
+                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          Icon(Icons.star_outline_rounded, size: 16,
+                              color: _showReviewForm ? Colors.white : _primary),
+                          const SizedBox(width: 6),
+                          Text(_t.writeReview,
+                              style: TextStyle(
+                                  fontSize: 13, fontWeight: FontWeight.w700,
+                                  color: _showReviewForm ? Colors.white : _primary)),
+                        ]),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => setState(() {
+                        _showPhotoForm  = !_showPhotoForm;
+                        _showReviewForm = false;
+                        _errorLine = '';
+                      }),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: _showPhotoForm ? _primary : _cardBg,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                              color: _showPhotoForm ? _primary : _border,
+                              width: 1.5),
+                          boxShadow: _showPhotoForm ? [
+                            BoxShadow(
+                                color: _primary.withOpacity(0.25),
+                                blurRadius: 10,
+                                offset: const Offset(0, 3))
+                          ] : [],
+                        ),
+                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          Icon(Icons.camera_alt_outlined, size: 16,
+                              color: _showPhotoForm ? Colors.white : _primary),
+                          const SizedBox(width: 6),
+                          Text(_t.addPhotos,
+                              style: TextStyle(
+                                  fontSize: 13, fontWeight: FontWeight.w700,
+                                  color: _showPhotoForm ? Colors.white : _primary)),
+                        ]),
+                      ),
+                    ),
+                  ),
+                ]),
+
+                // ── Review form ───────────────────────────────────────────
+                if (_showReviewForm) ...[
+                  const SizedBox(height: 14),
+                  _buildReviewForm(),
+                ],
+
+                // ── Photo form ────────────────────────────────────────────
+                if (_showPhotoForm) ...[
+                  const SizedBox(height: 14),
+                  _buildPhotoForm(),
+                ],
+
+                // ── Reviews list ──────────────────────────────────────────
+                const SizedBox(height: 20),
+                Divider(color: _border, height: 1),
+
+                if (_loadingReviews)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                      child: Text(_t.loadingReviews,
+                          style: TextStyle(fontSize: 12, color: _textLight)),
+                    ),
+                  )
+                else if (_reviews.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                      child: Text(_t.noReviews,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(fontSize: 12, color: _textLight)),
+                    ),
+                  )
+                else ...[
+                    const SizedBox(height: 16),
+                    ..._reviews.map((review) => _buildReviewItem(review)),
+                  ],
+              ]),
+            ),
           ),
         ]),
       ),
     );
   }
 
+  // ── Gallery ────────────────────────────────────────────────────────────────
+  Widget _buildGallery() {
+    final imgs = _allImages;
+    if (imgs.isEmpty) return const SizedBox.shrink();
+
+    Widget imgTile(String url, int index, {bool hasOverlay = false, int extra = 0}) {
+      return GestureDetector(
+        onTap: () => setState(() => _selectedImageIndex = index),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Stack(fit: StackFit.expand, children: [
+            Image.network(url, fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(color: _accentSoft)),
+            if (hasOverlay)
+              Container(
+                color: Colors.black.withOpacity(0.45),
+                child: Center(
+                  child: Text('+$extra',
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 22, fontWeight: FontWeight.w800)),
+                ),
+              ),
+          ]),
+        ),
+      );
+    }
+
+    Widget gallery;
+    if (imgs.length == 1) {
+      gallery = SizedBox(height: 200, child: imgTile(imgs[0], 0));
+    } else if (imgs.length == 2) {
+      gallery = SizedBox(
+        height: 200,
+        child: Row(children: [
+          Expanded(child: imgTile(imgs[0], 0)),
+          const SizedBox(width: 4),
+          Expanded(child: imgTile(imgs[1], 1)),
+        ]),
+      );
+    } else {
+      gallery = SizedBox(
+        height: 200,
+        child: Row(children: [
+          Expanded(flex: 2, child: imgTile(imgs[0], 0)),
+          const SizedBox(width: 4),
+          Expanded(child: Column(children: [
+            Expanded(child: imgTile(imgs[1], 1)),
+            const SizedBox(height: 4),
+            Expanded(child: imgTile(imgs[2], 2, hasOverlay: imgs.length > 3, extra: imgs.length - 3)),
+          ])),
+        ]),
+      );
+    }
+
+    return Column(children: [
+      gallery,
+      if (_selectedImageIndex != null)
+        Positioned.fill(
+          child: GestureDetector(
+            onTap: () => setState(() => _selectedImageIndex = null),
+            child: Container(
+              color: Colors.black.withOpacity(0.95),
+              child: Stack(alignment: Alignment.center, children: [
+                InteractiveViewer(
+                  child: Image.network(imgs[_selectedImageIndex!], fit: BoxFit.contain),
+                ),
+                Positioned(
+                  top: 16, right: 16,
+                  child: GestureDetector(
+                    onTap: () => setState(() => _selectedImageIndex = null),
+                    child: Container(
+                      width: 36, height: 36,
+                      decoration: BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                      child: const Icon(Icons.close_rounded, color: Colors.white, size: 18),
+                    ),
+                  ),
+                ),
+                if (_selectedImageIndex! > 0)
+                  Positioned(
+                    left: 8,
+                    child: GestureDetector(
+                      onTap: () => setState(() => _selectedImageIndex = _selectedImageIndex! - 1),
+                      child: Container(
+                        width: 40, height: 40,
+                        decoration: BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                        child: const Icon(Icons.chevron_left_rounded, color: Colors.white, size: 24),
+                      ),
+                    ),
+                  ),
+                if (_selectedImageIndex! < imgs.length - 1)
+                  Positioned(
+                    right: 8,
+                    child: GestureDetector(
+                      onTap: () => setState(() => _selectedImageIndex = _selectedImageIndex! + 1),
+                      child: Container(
+                        width: 40, height: 40,
+                        decoration: BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                        child: const Icon(Icons.chevron_right_rounded, color: Colors.white, size: 24),
+                      ),
+                    ),
+                  ),
+              ]),
+            ),
+          ),
+        ),
+    ]);
+  }
+
+  // ── Review form ────────────────────────────────────────────────────────────
+  Widget _buildReviewForm() {
+    final remaining = 85 - _reviewText.length;
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _cardBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _border),
+        boxShadow: [
+          BoxShadow(
+              color: _primary.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 3)),
+        ],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(_t.tellExperience,
+            style: const TextStyle(
+                fontSize: 13, fontWeight: FontWeight.w800, color: _textDark)),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _reviewController,
+          onChanged: (v) => setState(() => _reviewText = v),
+          maxLines: 5,
+          style: const TextStyle(fontSize: 13, color: _textDark),
+          decoration: InputDecoration(
+            hintText: _t.startReview,
+            hintStyle: TextStyle(color: _textLight, fontSize: 13),
+            filled: true,
+            fillColor: _sheetBg,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: _border),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: _border),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: _primary, width: 1.5),
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(children: [
+          Text(_t.reviewMinChars,
+              style: TextStyle(fontSize: 10, color: _textLight)),
+          if (remaining > 0)
+            Text(' ($remaining ${_t.charsLeft})',
+                style: const TextStyle(fontSize: 10, color: Colors.redAccent)),
+        ]),
+        const SizedBox(height: 12),
+
+        // Photo picker
+        GestureDetector(
+          onTap: _pickImages,
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              border: Border.all(color: _border),
+              borderRadius: BorderRadius.circular(12),
+              color: _sheetBg,
+            ),
+            child: Row(children: [
+              Container(
+                width: 34, height: 34,
+                decoration: BoxDecoration(
+                    color: _accentSoft, shape: BoxShape.circle),
+                child: Icon(Icons.add_rounded, size: 18, color: _primary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(children: [
+                    Text(
+                      _files.isEmpty
+                          ? _t.addPhotosOptional
+                          : '${_files.length} ${_t.photosSelected}',
+                      style: TextStyle(
+                          fontSize: 12, fontWeight: FontWeight.w700, color: _textMid),
+                    ),
+                    if (_files.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: () => setState(() => _files = []),
+                        child: Text(_t.clear,
+                            style: const TextStyle(
+                                fontSize: 11, color: Colors.redAccent)),
+                      ),
+                    ],
+                  ]),
+                  Text(_t.uploadImages,
+                      style: TextStyle(fontSize: 10, color: _textLight)),
+                ]),
+              ),
+            ]),
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton(
+            onPressed: _reviewText.length >= 85 && !_isSubmitting ? _submitReview : null,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _primary,
+              disabledBackgroundColor: _primary.withOpacity(0.35),
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              elevation: 0,
+            ),
+            child: _isSubmitting
+                ? const SizedBox(width: 18, height: 18,
+                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                : Text(_t.postReview,
+                style: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white)),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  // ── Photo-only form ────────────────────────────────────────────────────────
+  Widget _buildPhotoForm() {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: _cardBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _border),
+        boxShadow: [
+          BoxShadow(
+              color: _primary.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 3)),
+        ],
+      ),
+      child: Column(children: [
+        const Text('🖼️', style: TextStyle(fontSize: 36)),
+        const SizedBox(height: 10),
+        Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Text(
+            _files.isEmpty ? _t.dragDropHint : '${_files.length} ${_t.photosSelected}',
+            style: TextStyle(
+                fontSize: 13, fontWeight: FontWeight.w700, color: _textDark),
+          ),
+          if (_files.isNotEmpty) ...[
+            const SizedBox(width: 10),
+            GestureDetector(
+              onTap: () => setState(() => _files = []),
+              child: Text(_t.clear,
+                  style: const TextStyle(fontSize: 11, color: Colors.redAccent)),
+            ),
+          ],
+        ]),
+        const SizedBox(height: 12),
+        ElevatedButton(
+          onPressed: _pickImages,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _primary,
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          child: Text(_t.browseFiles,
+              style: const TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)),
+        ),
+        if (_files.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          ElevatedButton(
+            onPressed: _isSubmitting ? null : _submitPhotos,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _primary,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: _isSubmitting
+                ? const SizedBox(width: 18, height: 18,
+                child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                : Text(_t.upload,
+                style: const TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white)),
+          ),
+        ],
+      ]),
+    );
+  }
+
+  // ── Review item ────────────────────────────────────────────────────────────
+  Widget _buildReviewItem(Map<String, dynamic> review) {
+    final userName  = (review['user_name'] ?? _t.anonymous).toString();
+    final userImage = (review['user_image'] ?? '').toString();
+    final text      = (review['text'] ?? '').toString();
+    final createdAt = review['created_at'] as Timestamp?;
+    final dateStr   = createdAt != null ? _formatDate(createdAt.toDate()) : '';
+    final imgUrls = <String>[];
+    final urls = review['image_urls'];
+    if (urls is List) imgUrls.addAll(urls.cast<String>());
+    final singleUrl = review['image_url'];
+    if (singleUrl is String && singleUrl.isNotEmpty) imgUrls.add(singleUrl);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: _cardBg,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _border),
+          boxShadow: [
+            BoxShadow(
+                color: _primary.withOpacity(0.04),
+                blurRadius: 8,
+                offset: const Offset(0, 2)),
+          ],
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: _accentSoft,
+              backgroundImage: userImage.isNotEmpty ? NetworkImage(userImage) : null,
+              child: userImage.isEmpty
+                  ? Text(
+                  userName.isNotEmpty ? userName[0].toUpperCase() : '?',
+                  style: TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w700, color: _primary))
+                  : null,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(userName,
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w700, color: _textDark)),
+                if (dateStr.isNotEmpty)
+                  Text(dateStr,
+                      style: TextStyle(fontSize: 10, color: _textLight)),
+              ]),
+            ),
+          ]),
+          if (text.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(text,
+                style: TextStyle(fontSize: 12, color: _textMid, height: 1.6)),
+          ],
+          if (imgUrls.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(spacing: 8, runSpacing: 8, children: imgUrls.map((url) {
+              final globalIdx = _allImages.indexOf(url);
+              return GestureDetector(
+                onTap: () => setState(
+                        () => _selectedImageIndex = globalIdx >= 0 ? globalIdx : 0),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: SizedBox(
+                    width: 80, height: 80,
+                    child: Image.network(url, fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) =>
+                            Container(color: _accentSoft)),
+                  ),
+                ),
+              );
+            }).toList()),
+          ],
+        ]),
+      ),
+    );
+  }
+
+  String _formatDate(DateTime d) {
+    if (_isJa) return '${d.year}年${d.month}月${d.day}日';
+    const months = ['Jan','Feb','Mar','Apr','May','Jun',
+      'Jul','Aug','Sep','Oct','Nov','Dec'];
+    return '${months[d.month - 1]} ${d.day}, ${d.year}';
+  }
+
   Widget _infoRow(IconData icon, String text) => Padding(
     padding: const EdgeInsets.only(bottom: 8),
     child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Icon(icon, size: 15, color: AppColors.primary),
+      Icon(icon, size: 14, color: _primary),
       const SizedBox(width: 8),
       Expanded(
         child: Text(text,
-            style: TextStyle(
-                fontSize: 13, color: Colors.black.withOpacity(0.65), height: 1.4)),
+            style: TextStyle(fontSize: 12, color: _textMid, height: 1.4)),
       ),
     ]),
   );
 
-  Widget _tag(String label, IconData icon) => Container(
+  Widget _primaryTag(String label) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
     decoration: BoxDecoration(
-        color: AppColors.primary.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(20)),
-    child: Row(mainAxisSize: MainAxisSize.min, children: [
-      Icon(icon, size: 12, color: AppColors.primary),
-      const SizedBox(width: 4),
-      Text(label,
-          style: const TextStyle(
-              fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.primary)),
-    ]),
+        color: _primary.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _primary.withOpacity(0.2))),
+    child: Text(label,
+        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: _primary)),
+  );
+
+  Widget _softTag(String label) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    decoration: BoxDecoration(
+        color: _accentSoft,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _border)),
+    child: Text(label,
+        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: _textMid)),
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Filter Modal
+// Filter Modal (unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
 class _CourtFilterModal extends StatefulWidget {
   final CourtFilter currentFilter;
   final List<Map<String, dynamic>> allLocations;
-  final bool isJa;
+  final String lang;
   final _T t;
 
   const _CourtFilterModal({
     required this.currentFilter,
     required this.allLocations,
-    required this.isJa,
+    required this.lang,
     required this.t,
   });
 
@@ -1102,13 +2071,11 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
   late final List<String> _prefectures;
   late final Map<String, List<String>> _citiesByPref;
 
-  // Fixed setup type options: (EN Firestore value, EN label, JP label)
   static const _setupTypes = [
     ('Public Access Courts',         'Public Access Courts',         '一般開放コート'),
     ('Private / Coordinated Courts', 'Private / Coordinated Courts', '事前調整・予約制コート'),
   ];
 
-  // (EN label, JP label, Firestore key)
   static const _amenities = [
     ('Open Play',      'オープンプレイ',   'openplay'),
     ('Reservation',    '予約制',          'reservation'),
@@ -1128,19 +2095,15 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
   void _buildLookups() {
     final prefectures  = <String>{};
     final citiesByPref = <String, Set<String>>{};
-
     for (final loc in widget.allLocations) {
       final country = (loc['loc_country'] ?? '').toString().trim();
       if (country != 'Japan') continue;
-
       final prefEn  = (loc['loc_prefecture_en'] ?? '').toString().trim();
       final pref    = (loc['loc_prefecture']    ?? '').toString().trim();
       final prefVal = prefEn.isNotEmpty ? prefEn : pref;
-
       final cityEn  = (loc['loc_city_en'] ?? '').toString().trim();
       final city    = (loc['loc_city']    ?? '').toString().trim();
       final cityVal = cityEn.isNotEmpty ? cityEn : city;
-
       if (prefVal.isNotEmpty) {
         prefectures.add(prefVal);
         if (cityVal.isNotEmpty) {
@@ -1148,7 +2111,6 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
         }
       }
     }
-
     _prefectures  = prefectures.toList()..sort();
     _citiesByPref = citiesByPref.map((k, v) => MapEntry(k, v.toList()..sort()));
   }
@@ -1157,17 +2119,15 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
       _draft.prefecture != null ? (_citiesByPref[_draft.prefecture] ?? []) : [];
 
   String? get _safeCity =>
-      (_draft.city != null && _currentCities.contains(_draft.city))
-          ? _draft.city
-          : null;
+      (_draft.city != null && _currentCities.contains(_draft.city)) ? _draft.city : null;
 
   String? get _safePref =>
       (_draft.prefecture != null && _prefectures.contains(_draft.prefecture))
           ? _draft.prefecture
           : null;
 
-  _T get _t => widget.t;
-  bool get _isJa => widget.isJa;
+  _T   get _t    => widget.t;
+  bool get _isJa => widget.lang == kLangJa;
 
   void _resetAndClose() =>
       Navigator.of(context, rootNavigator: false).pop(CourtFilter.defaultFilter);
@@ -1199,8 +2159,6 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(28),
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-
-                // Drag handle
                 const SizedBox(height: 12),
                 Container(
                   width: 40, height: 4,
@@ -1210,7 +2168,6 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
                 ),
                 const SizedBox(height: 12),
 
-                // Header
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Row(children: [
@@ -1219,8 +2176,7 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
                       decoration: BoxDecoration(
                           color: AppColors.primary.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(10)),
-                      child: Icon(Icons.tune_rounded,
-                          color: AppColors.primary, size: 20),
+                      child: Icon(Icons.tune_rounded, color: AppColors.primary, size: 20),
                     ),
                     const SizedBox(width: 12),
                     Text(_t.filterTitle,
@@ -1229,12 +2185,10 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
                             color: Color(0xFF0D0D0D), letterSpacing: -0.5)),
                     const Spacer(),
                     IconButton(
-                      onPressed: () =>
-                          Navigator.of(context, rootNavigator: false).pop(),
+                      onPressed: () => Navigator.of(context, rootNavigator: false).pop(),
                       style: IconButton.styleFrom(
                         backgroundColor: Colors.black.withOpacity(0.06),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         minimumSize: const Size(34, 34),
                         padding: EdgeInsets.zero,
                       ),
@@ -1244,178 +2198,146 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
                   ]),
                 ),
                 const SizedBox(height: 4),
-                Divider(height: 20, thickness: 1,
-                    color: Colors.black.withOpacity(0.06)),
+                Divider(height: 20, thickness: 1, color: Colors.black.withOpacity(0.06)),
 
-                // Scrollable body
                 Flexible(
                   child: SingleChildScrollView(
                     padding: EdgeInsets.fromLTRB(
-                        20, 4, 20,
-                        MediaQuery.of(context).padding.bottom + 16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
+                        20, 4, 20, MediaQuery.of(context).padding.bottom + 16),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      _sectionLabel(_t.courtSetting, Icons.roofing_rounded),
+                      const SizedBox(height: 10),
+                      Row(children: [
+                        _settingChip(_t.all,     'all'),
+                        const SizedBox(width: 8),
+                        _settingChip(_t.indoor,  'indoor'),
+                        const SizedBox(width: 8),
+                        _settingChip(_t.outdoor, 'outdoor'),
+                      ]),
+                      const SizedBox(height: 20),
 
-                        // ── 1. Court Setting ──────────────────────────────
-                        _sectionLabel(_t.courtSetting, Icons.roofing_rounded),
-                        const SizedBox(height: 10),
-                        Row(children: [
-                          _settingChip(_t.all,     'all'),
-                          const SizedBox(width: 8),
-                          _settingChip(_t.indoor,  'indoor'),
-                          const SizedBox(width: 8),
-                          _settingChip(_t.outdoor, 'outdoor'),
-                        ]),
-                        const SizedBox(height: 20),
+                      _sectionLabel(_t.prefecture, Icons.map_outlined),
+                      const SizedBox(height: 10),
+                      _buildDropdown(
+                        value: _safePref, hint: _t.allPrefectures, items: _prefectures,
+                        onChanged: (v) => setState(() =>
+                        _draft = _draft.copyWith(prefecture: v, city: null)),
+                      ),
+                      const SizedBox(height: 20),
 
-                        // ── 2. Prefecture ─────────────────────────────────
-                        _sectionLabel(_t.prefecture, Icons.map_outlined),
+                      if (_currentCities.isNotEmpty) ...[
+                        _sectionLabel(_t.city, Icons.location_city_rounded),
                         const SizedBox(height: 10),
                         _buildDropdown(
-                          value:     _safePref,
-                          hint:      _t.allPrefectures,
-                          items:     _prefectures,
-                          onChanged: (v) => setState(() => _draft =
-                              _draft.copyWith(prefecture: v, city: null)),
+                          value: _safeCity, hint: _t.allCities, items: _currentCities,
+                          onChanged: (v) => setState(() => _draft = _draft.copyWith(city: v)),
                         ),
                         const SizedBox(height: 20),
-
-                        // ── 3. City ───────────────────────────────────────
-                        if (_currentCities.isNotEmpty) ...[
-                          _sectionLabel(_t.city, Icons.location_city_rounded),
-                          const SizedBox(height: 10),
-                          _buildDropdown(
-                            value:     _safeCity,
-                            hint:      _t.allCities,
-                            items:     _currentCities,
-                            onChanged: (v) => setState(
-                                    () => _draft = _draft.copyWith(city: v)),
-                          ),
-                          const SizedBox(height: 20),
-                        ],
-
-                        // ── 4. Setup Type ─────────────────────────────────
-                        _sectionLabel(_t.setupType, Icons.construction_rounded),
-                        const SizedBox(height: 10),
-                        Wrap(spacing: 8, runSpacing: 8, children: [
-                          _setupChip(
-                              _isJa ? 'すべて' : 'All',
-                              null),
-                          ..._setupTypes.map((tp) {
-                            final (value, enLabel, jpLabel) = tp;
-                            return _setupChip(
-                                _isJa ? jpLabel : enLabel,
-                                value);
-                          }),
-                        ]),
-                        const SizedBox(height: 20),
-
-                        // ── 5. Amenities ──────────────────────────────────
-                        _sectionLabel(_t.amenities, Icons.star_outline_rounded),
-                        const SizedBox(height: 10),
-                        Wrap(
-                          spacing: 8, runSpacing: 8,
-                          children: _amenities.map((a) {
-                            final (enLabel, jpLabel, key) = a;
-                            final label  = _isJa ? jpLabel : enLabel;
-                            final active = _draft.amenities.contains(key);
-                            return GestureDetector(
-                              onTap: () {
-                                final next = Set<String>.from(_draft.amenities);
-                                if (active) next.remove(key); else next.add(key);
-                                setState(() =>
-                                _draft = _draft.copyWith(amenities: next));
-                              },
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 180),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 14, vertical: 9),
-                                decoration: BoxDecoration(
-                                  color: active
-                                      ? AppColors.primary.withOpacity(0.1)
-                                      : Colors.black.withOpacity(0.04),
-                                  borderRadius: BorderRadius.circular(24),
-                                  border: Border.all(
-                                    color: active
-                                        ? AppColors.primary
-                                        : Colors.transparent,
-                                    width: 1.5,
-                                  ),
-                                ),
-                                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                  if (active) ...[
-                                    Icon(Icons.check_rounded,
-                                        size: 14, color: AppColors.primary),
-                                    const SizedBox(width: 4),
-                                  ],
-                                  Text(label,
-                                      style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w600,
-                                          color: active
-                                              ? AppColors.primary
-                                              : Colors.black.withOpacity(0.55))),
-                                ]),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                        const SizedBox(height: 28),
-
-                        // ── Action buttons ────────────────────────────────
-                        Row(children: [
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: _resetAndClose,
-                              child: Container(
-                                height: 54,
-                                decoration: BoxDecoration(
-                                  color: Colors.black.withOpacity(0.05),
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                child: Center(
-                                  child: Text(_t.resetFilters,
-                                      style: TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w700,
-                                          color: Colors.black.withOpacity(0.55))),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            flex: 2,
-                            child: GestureDetector(
-                              onTap: _applyAndClose,
-                              child: Container(
-                                height: 54,
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary,
-                                  borderRadius: BorderRadius.circular(16),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: AppColors.primary.withOpacity(0.35),
-                                      blurRadius: 16,
-                                      offset: const Offset(0, 6),
-                                    ),
-                                  ],
-                                ),
-                                child: Center(
-                                  child: Text(_t.applyFilters,
-                                      style: const TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w800,
-                                          color: Colors.white,
-                                          letterSpacing: 0.2)),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ]),
                       ],
-                    ),
+
+                      _sectionLabel(_t.setupType, Icons.construction_rounded),
+                      const SizedBox(height: 10),
+                      Wrap(spacing: 8, runSpacing: 8, children: [
+                        _setupChip(_isJa ? 'すべて' : 'All', null),
+                        ..._setupTypes.map((tp) {
+                          final (value, enLabel, jpLabel) = tp;
+                          return _setupChip(_isJa ? jpLabel : enLabel, value);
+                        }),
+                      ]),
+                      const SizedBox(height: 20),
+
+                      _sectionLabel(_t.amenities, Icons.star_outline_rounded),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8, runSpacing: 8,
+                        children: _amenities.map((a) {
+                          final (enLabel, jpLabel, key) = a;
+                          final label  = _isJa ? jpLabel : enLabel;
+                          final active = _draft.amenities.contains(key);
+                          return GestureDetector(
+                            onTap: () {
+                              final next = Set<String>.from(_draft.amenities);
+                              if (active) next.remove(key); else next.add(key);
+                              setState(() => _draft = _draft.copyWith(amenities: next));
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                              decoration: BoxDecoration(
+                                color: active
+                                    ? AppColors.primary.withOpacity(0.1)
+                                    : Colors.black.withOpacity(0.04),
+                                borderRadius: BorderRadius.circular(24),
+                                border: Border.all(
+                                  color: active ? AppColors.primary : Colors.transparent,
+                                  width: 1.5,
+                                ),
+                              ),
+                              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                if (active) ...[
+                                  Icon(Icons.check_rounded, size: 14, color: AppColors.primary),
+                                  const SizedBox(width: 4),
+                                ],
+                                Text(label,
+                                    style: TextStyle(
+                                        fontSize: 13, fontWeight: FontWeight.w600,
+                                        color: active
+                                            ? AppColors.primary
+                                            : Colors.black.withOpacity(0.55))),
+                              ]),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 28),
+
+                      Row(children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: _resetAndClose,
+                            child: Container(
+                              height: 54,
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.05),
+                                borderRadius: BorderRadius.circular(16),
+                              ),
+                              child: Center(
+                                child: Text(_t.resetFilters,
+                                    style: TextStyle(
+                                        fontSize: 15, fontWeight: FontWeight.w700,
+                                        color: Colors.black.withOpacity(0.55))),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: GestureDetector(
+                            onTap: _applyAndClose,
+                            child: Container(
+                              height: 54,
+                              decoration: BoxDecoration(
+                                color: AppColors.primary,
+                                borderRadius: BorderRadius.circular(16),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppColors.primary.withOpacity(0.35),
+                                    blurRadius: 16, offset: const Offset(0, 6),
+                                  ),
+                                ],
+                              ),
+                              child: Center(
+                                child: Text(_t.applyFilters,
+                                    style: const TextStyle(
+                                        fontSize: 15, fontWeight: FontWeight.w800,
+                                        color: Colors.white, letterSpacing: 0.2)),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ]),
+                    ]),
                   ),
                 ),
               ]),
@@ -1446,8 +2368,7 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
           color: selected ? AppColors.primary : Colors.black.withOpacity(0.04),
           borderRadius: BorderRadius.circular(24),
           border: Border.all(
-              color: selected ? AppColors.primary : Colors.transparent,
-              width: 1.5),
+              color: selected ? AppColors.primary : Colors.transparent, width: 1.5),
         ),
         child: Text(label,
             style: TextStyle(
@@ -1468,8 +2389,7 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
           color: selected ? AppColors.primary : Colors.black.withOpacity(0.04),
           borderRadius: BorderRadius.circular(24),
           border: Border.all(
-              color: selected ? AppColors.primary : Colors.transparent,
-              width: 1.5),
+              color: selected ? AppColors.primary : Colors.transparent, width: 1.5),
         ),
         child: Text(label,
             style: TextStyle(
@@ -1486,8 +2406,7 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
     required void Function(String?) onChanged,
   }) {
     final uniqueItems = items.toSet().toList()..sort();
-    final safeValue =
-    (value != null && uniqueItems.contains(value)) ? value : null;
+    final safeValue = (value != null && uniqueItems.contains(value)) ? value : null;
     return Container(
       decoration: BoxDecoration(
         color: Colors.black.withOpacity(0.04),
@@ -1513,22 +2432,18 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
           isExpanded: true,
           padding: const EdgeInsets.only(left: 14, right: 8),
           borderRadius: BorderRadius.circular(16),
-          icon: Icon(Icons.keyboard_arrow_down_rounded,
-              color: AppColors.primary, size: 22),
+          icon: Icon(Icons.keyboard_arrow_down_rounded, color: AppColors.primary, size: 22),
           items: [
             DropdownMenuItem<String>(
               value: null,
               child: Text(hint,
-                  style: TextStyle(
-                      fontSize: 14, color: Colors.black.withOpacity(0.4))),
+                  style: TextStyle(fontSize: 14, color: Colors.black.withOpacity(0.4))),
             ),
             ...uniqueItems.map((item) => DropdownMenuItem<String>(
               value: item,
               child: Text(item,
                   style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Color(0xFF0D0D0D))),
+                      fontSize: 14, fontWeight: FontWeight.w500, color: Color(0xFF0D0D0D))),
             )),
           ],
           onChanged: onChanged,

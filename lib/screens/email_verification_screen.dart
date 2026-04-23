@@ -1,13 +1,87 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:pikuru/theme/material.dart';
+import 'package:pikuru/providers/app_language_provider.dart';
 import 'dart:async';
 import 'dart:math';
 
-class EmailVerificationScreen extends StatefulWidget {
+// ═══════════════════════════════════════════════════════════════════
+// Translations
+// ═══════════════════════════════════════════════════════════════════
+const _T = {
+  'en': {
+    'appBarTitle':       'Verify Email',
+    'headerTitle':       'Check your inbox 📬',
+    'headerSub':         'Code sent to',
+    'pageTitle':         'Email Verification',
+    'pageSub':           'Please enter the code sent to your new email address',
+    'verify':            'Verify',
+    'noCode':            "Don't receive code?",
+    'resend':            'Resend Code',
+    'resendIn':          'Resend in',
+    'errIncomplete':     'Please enter the complete 6-digit code.',
+    'errIncorrect':      'Incorrect code. Please check your email and try again.',
+    'errNotLoggedIn':    'Not logged in',
+    'resendSuccess':     'A new code has been sent to',
+    'resendFail':        'Failed to resend code.',
+    'updateSuccess':     'Email updated successfully!',
+    'updateNewLogin':    'Email updated! Please log in with your new email.',
+    'errWrongPassword':  'Incorrect password. Please try again.',
+    'errEmailInUse':     'This email is already used by another account.',
+    'errInvalidEmail':   'The email address is not valid.',
+    'errRecentLogin':    'Session expired. Please log out and try again.',
+    'errGeneric':        'Something went wrong',
+    // Password dialog
+    'dialogTitle':       'Confirm Password',
+    'dialogSub':         'Enter your current password to continue.',
+    'dialogHint':        'Current password',
+    'dialogCancel':      'Cancel',
+    'dialogConfirm':     'Confirm',
+    'dialogRequired':    'Password is required',
+  },
+  'ja': {
+    'appBarTitle':       'メール認証',
+    'headerTitle':       'メールを確認してください 📬',
+    'headerSub':         'コードを送信しました：',
+    'pageTitle':         'メール認証',
+    'pageSub':           '新しいメールアドレスに送信されたコードを入力してください',
+    'verify':            '確認する',
+    'noCode':            'コードが届きませんでしたか？',
+    'resend':            'コードを再送する',
+    'resendIn':          '再送まで',
+    'errIncomplete':     '6桁のコードをすべて入力してください。',
+    'errIncorrect':      'コードが間違っています。メールを確認してもう一度お試しください。',
+    'errNotLoggedIn':    'ログインしていません',
+    'resendSuccess':     '新しいコードを送信しました：',
+    'resendFail':        'コードの再送に失敗しました。',
+    'updateSuccess':     'メールアドレスを更新しました！',
+    'updateNewLogin':    'メールアドレスを更新しました！新しいメールアドレスでログインしてください。',
+    'errWrongPassword':  'パスワードが間違っています。もう一度お試しください。',
+    'errEmailInUse':     'このメールアドレスは既に別のアカウントで使用されています。',
+    'errInvalidEmail':   'メールアドレスが無効です。',
+    'errRecentLogin':    'セッションが切れました。ログアウトして再度お試しください。',
+    'errGeneric':        'エラーが発生しました',
+    // Password dialog
+    'dialogTitle':       'パスワードの確認',
+    'dialogSub':         '続けるには現在のパスワードを入力してください。',
+    'dialogHint':        '現在のパスワード',
+    'dialogCancel':      'キャンセル',
+    'dialogConfirm':     '確認',
+    'dialogRequired':    'パスワードを入力してください',
+  },
+};
+
+String _t(String lang, String key) =>
+    (_T[lang]?[key] ?? _T['en']![key]) ?? key;
+
+// ═══════════════════════════════════════════════════════════════════
+// EmailVerificationScreen
+// ═══════════════════════════════════════════════════════════════════
+class EmailVerificationScreen extends ConsumerStatefulWidget {
   final String newEmail;
   final String generatedOtp;
 
@@ -18,23 +92,24 @@ class EmailVerificationScreen extends StatefulWidget {
   });
 
   @override
-  State<EmailVerificationScreen> createState() =>
+  ConsumerState<EmailVerificationScreen> createState() =>
       _EmailVerificationScreenState();
 }
 
-class _EmailVerificationScreenState extends State<EmailVerificationScreen>
+class _EmailVerificationScreenState
+    extends ConsumerState<EmailVerificationScreen>
     with TickerProviderStateMixin {
   late final AnimationController _fadeController;
-  late final Animation<double> _fadeAnim;
+  late final Animation<double>   _fadeAnim;
   late final AnimationController _slideController;
-  late final Animation<Offset> _slideAnim;
+  late final Animation<Offset>   _slideAnim;
 
   late final List<TextEditingController> _controllers;
-  late final List<FocusNode> _focusNodes;
+  late final List<FocusNode>             _focusNodes;
 
-  bool _isVerifying = false;
-  bool _canResend = false;
-  int _secondsRemaining = 30;
+  bool   _isVerifying      = false;
+  bool   _canResend        = false;
+  int    _secondsRemaining = 30;
   Timer? _timer;
   late String _currentOtp;
   bool _isDisposed = false;
@@ -45,7 +120,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen>
     _currentOtp = widget.generatedOtp;
 
     _controllers = List.generate(6, (_) => TextEditingController());
-    _focusNodes = List.generate(6, (_) => FocusNode());
+    _focusNodes  = List.generate(6, (_) => FocusNode());
 
     _fadeController = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 900))
@@ -76,12 +151,13 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen>
     super.dispose();
   }
 
+  // ── Timer ─────────────────────────────────────────────────────────────────
   void _startTimer() {
     _timer?.cancel();
     if (_isDisposed) return;
     setState(() {
       _secondsRemaining = 30;
-      _canResend = false;
+      _canResend        = false;
     });
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (_isDisposed || !mounted) { t.cancel(); return; }
@@ -102,7 +178,8 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen>
     return '$m:$s';
   }
 
-  Future<void> _resendOtp() async {
+  // ── Resend OTP ────────────────────────────────────────────────────────────
+  Future<void> _resendOtp(String lang) async {
     if (!_canResend || _isDisposed) return;
     final newOtp = _generateOtp();
     _currentOtp = newOtp;
@@ -115,35 +192,37 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen>
       String firstName = (user?.displayName ?? '').split(' ').first;
       if (firstName.isEmpty) firstName = 'User';
       await FirebaseFunctions.instance.httpsCallable('sendOtp').call({
-        'email': widget.newEmail,
+        'email':     widget.newEmail,
         'firstName': firstName,
-        'otp': newOtp,
+        'otp':       newOtp,
       });
       _startTimer();
       if (!mounted) return;
-      _showSnackBar('A new code has been sent to ${widget.newEmail}', false);
+      _showSnackBar(
+          '${_t(lang, 'resendSuccess')} ${widget.newEmail}', false);
     } catch (e) {
       debugPrint('Resend error: $e');
       if (!mounted) return;
-      _showSnackBar('Failed to resend code.', true);
+      _showSnackBar(_t(lang, 'resendFail'), true);
     }
   }
 
   String _generateOtp() =>
       (100000 + Random.secure().nextInt(900000)).toString();
 
-  Future<void> _onVerify() async {
+  // ── Verify ────────────────────────────────────────────────────────────────
+  Future<void> _onVerify(String lang) async {
     if (_isDisposed) return;
 
     final entered = _controllers.map((c) => c.text.trim()).join();
 
     if (entered.length < 6) {
-      _showSnackBar('Please enter the complete 6-digit code.', true);
+      _showSnackBar(_t(lang, 'errIncomplete'), true);
       return;
     }
 
     if (entered != _currentOtp) {
-      _showSnackBar('Incorrect code. Please check your email and try again.', true);
+      _showSnackBar(_t(lang, 'errIncorrect'), true);
       for (final c in _controllers) c.clear();
       if (_focusNodes.isNotEmpty && _focusNodes[0].canRequestFocus) {
         _focusNodes[0].requestFocus();
@@ -154,17 +233,15 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen>
     setState(() => _isVerifying = true);
 
     try {
-      // ✅ Capture user BEFORE showing dialog — currentUser can become
-      // null briefly after dialog closes due to Auth state refresh
       final user = FirebaseAuth.instance.currentUser;
-      if (user == null) throw Exception('Not logged in');
+      if (user == null) throw Exception(_t(lang, 'errNotLoggedIn'));
       final userEmail = user.email!;
-      final userId = user.uid;
+      final userId    = user.uid;
 
       final password = await showDialog<String>(
         context: context,
         barrierDismissible: false,
-        builder: (_) => const _PasswordDialog(),
+        builder: (_) => _PasswordDialog(lang: lang),
       );
 
       if (password == null) {
@@ -176,14 +253,14 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen>
       if (!mounted || _isDisposed) return;
 
       final credential = EmailAuthProvider.credential(
-        email: userEmail,
+        email:    userEmail,
         password: password,
       );
       await user.reauthenticateWithCredential(credential);
 
-      await FirebaseFunctions.instance.httpsCallable('updateUserEmail').call({
-        'newEmail': widget.newEmail,
-      });
+      await FirebaseFunctions.instance
+          .httpsCallable('updateUserEmail')
+          .call({'newEmail': widget.newEmail});
 
       await FirebaseFirestore.instance
           .collection('registration')
@@ -194,22 +271,20 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen>
 
       if (!mounted || _isDisposed) return;
       setState(() => _isVerifying = false);
-      _showSnackBar('Email updated successfully!', false);
+      _showSnackBar(_t(lang, 'updateSuccess'), false);
 
       await Future.delayed(const Duration(seconds: 2));
       if (!mounted || _isDisposed) return;
       Navigator.popUntil(context, (route) => route.isFirst);
-
     } on FirebaseAuthException catch (e) {
       debugPrint('FirebaseAuthException: ${e.code} - ${e.message}');
       if (!mounted || _isDisposed) return;
 
-      // ✅ user-token-expired = Firebase invalidated token after email change.
-      // Email already updated successfully — sign out and redirect to login.
-      if (e.code == 'user-token-expired' || e.code == 'invalid-user-token') {
+      if (e.code == 'user-token-expired' ||
+          e.code == 'invalid-user-token') {
         await FirebaseAuth.instance.signOut();
         if (!mounted || _isDisposed) return;
-        _showSnackBar('Email updated! Please log in with your new email.', false);
+        _showSnackBar(_t(lang, 'updateNewLogin'), false);
         await Future.delayed(const Duration(seconds: 2));
         if (!mounted || _isDisposed) return;
         Navigator.popUntil(context, (route) => route.isFirst);
@@ -217,30 +292,30 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen>
       }
 
       setState(() => _isVerifying = false);
-      String msg;
+      final String msg;
       switch (e.code) {
         case 'wrong-password':
         case 'invalid-credential':
-          msg = 'Incorrect password. Please try again.';
+          msg = _t(lang, 'errWrongPassword');
           break;
         case 'email-already-in-use':
-          msg = 'This email is already used by another account.';
+          msg = _t(lang, 'errEmailInUse');
           break;
         case 'invalid-email':
-          msg = 'The email address is not valid.';
+          msg = _t(lang, 'errInvalidEmail');
           break;
         case 'requires-recent-login':
-          msg = 'Session expired. Please log out and try again.';
+          msg = _t(lang, 'errRecentLogin');
           break;
         default:
-          msg = 'Error (${e.code}). Please try again.';
+          msg = '${_t(lang, 'errGeneric')} (${e.code}).';
       }
       _showSnackBar(msg, true);
     } catch (e) {
       debugPrint('Unexpected error: $e');
       if (!mounted || _isDisposed) return;
       setState(() => _isVerifying = false);
-      _showSnackBar('Something went wrong: $e', true);
+      _showSnackBar('${_t(lang, 'errGeneric')}: $e', true);
     }
   }
 
@@ -251,29 +326,43 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen>
         content: Row(
           children: [
             Icon(
-              isError ? Icons.error_rounded : Icons.check_circle_rounded,
-              color: Colors.white, size: 18,
+              isError
+                  ? Icons.error_rounded
+                  : Icons.check_circle_rounded,
+              color: Colors.white,
+              size: 18,
             ),
             const SizedBox(width: 10),
-            Expanded(child: Text(message,
-                style: const TextStyle(fontWeight: FontWeight.w600))),
+            Expanded(
+                child: Text(message,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w600))),
           ],
         ),
-        backgroundColor: isError ? Colors.red.shade400 : AppColors.primary,
+        backgroundColor:
+        isError ? Colors.red.shade400 : AppColors.primary,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.symmetric(
+            horizontal: 20, vertical: 12),
         duration: const Duration(seconds: 4),
       ),
     );
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // BUILD
+  // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(appLangProvider);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF4F9F5),
       body: CustomScrollView(
         slivers: [
+          // ── App bar ────────────────────────────────────────────────────────
           SliverAppBar(
             expandedHeight: 160,
             pinned: true,
@@ -283,9 +372,13 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen>
                   color: Colors.white, size: 20),
               onPressed: () => Navigator.maybePop(context),
             ),
-            title: const Text('Verify Email',
-                style: TextStyle(color: Colors.white,
-                    fontWeight: FontWeight.w600, fontSize: 18)),
+            title: Text(
+              _t(lang, 'appBarTitle'),
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 18),
+            ),
             flexibleSpace: FlexibleSpaceBar(
               background: Stack(
                 fit: StackFit.expand,
@@ -303,14 +396,22 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen>
                       ),
                     ),
                   ),
-                  Positioned(top: -40, right: -30,
-                      child: Container(width: 160, height: 160,
-                          decoration: BoxDecoration(shape: BoxShape.circle,
-                              color: Colors.white.withOpacity(0.06)))),
-                  Positioned(bottom: -20, left: -20,
-                      child: Container(width: 110, height: 110,
-                          decoration: BoxDecoration(shape: BoxShape.circle,
-                              color: Colors.white.withOpacity(0.05)))),
+                  Positioned(
+                    top: -40, right: -30,
+                    child: Container(
+                        width: 160, height: 160,
+                        decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white.withOpacity(0.06))),
+                  ),
+                  Positioned(
+                    bottom: -20, left: -20,
+                    child: Container(
+                        width: 110, height: 110,
+                        decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white.withOpacity(0.05))),
+                  ),
                   Positioned(
                     bottom: 20, left: 24,
                     child: FadeTransition(
@@ -319,15 +420,22 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Text('Check your inbox 📬',
-                              style: TextStyle(fontSize: 22,
-                                  fontWeight: FontWeight.w900,
-                                  color: Colors.white, letterSpacing: -0.3)),
+                          Text(
+                            _t(lang, 'headerTitle'),
+                            style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.white,
+                                letterSpacing: -0.3),
+                          ),
                           const SizedBox(height: 4),
-                          Text('Code sent to ${widget.newEmail}',
-                              style: TextStyle(fontSize: 12,
-                                  color: Colors.white.withOpacity(0.72)),
-                              overflow: TextOverflow.ellipsis),
+                          Text(
+                            '${_t(lang, 'headerSub')} ${widget.newEmail}',
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.white.withOpacity(0.72)),
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ],
                       ),
                     ),
@@ -336,84 +444,128 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen>
               ),
             ),
           ),
+
+          // ── Body ───────────────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: FadeTransition(
               opacity: _fadeAnim,
               child: SlideTransition(
                 position: _slideAnim,
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 24, vertical: 32),
                   child: Column(
                     children: [
-                      const Text('Email Verification',
-                          style: TextStyle(fontSize: 24,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF1A1A1A), letterSpacing: -0.3)),
+                      Text(
+                        _t(lang, 'pageTitle'),
+                        style: const TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF1A1A1A),
+                            letterSpacing: -0.3),
+                      ),
                       const SizedBox(height: 10),
-                      Text('Please enter the code sent to your new email address',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 14,
-                              color: Colors.grey.shade500, height: 1.5)),
+                      Text(
+                        _t(lang, 'pageSub'),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey.shade500,
+                            height: 1.5),
+                      ),
                       const SizedBox(height: 8),
-                      Text(widget.newEmail,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.primary)),
+                      Text(
+                        widget.newEmail,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primary),
+                      ),
                       const SizedBox(height: 36),
+
+                      // ── OTP boxes ─────────────────────────────────────────
                       Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: List.generate(6, (i) => _OtpBox(
-                          controller: _controllers[i],
-                          focusNode: _focusNodes[i],
-                          onChanged: (val) {
-                            if (val.isNotEmpty && i < 5) {
-                              _focusNodes[i + 1].requestFocus();
-                            } else if (val.isNotEmpty && i == 5) {
-                              _focusNodes[i].unfocus();
-                            } else if (val.isEmpty && i > 0) {
-                              _focusNodes[i - 1].requestFocus();
-                            }
-                          },
-                        )),
+                        mainAxisAlignment:
+                        MainAxisAlignment.spaceBetween,
+                        children: List.generate(
+                          6,
+                              (i) => _OtpBox(
+                            controller: _controllers[i],
+                            focusNode:  _focusNodes[i],
+                            onChanged: (val) {
+                              if (val.isNotEmpty && i < 5) {
+                                _focusNodes[i + 1].requestFocus();
+                              } else if (val.isNotEmpty && i == 5) {
+                                _focusNodes[i].unfocus();
+                              } else if (val.isEmpty && i > 0) {
+                                _focusNodes[i - 1].requestFocus();
+                              }
+                            },
+                          ),
+                        ),
                       ),
                       const SizedBox(height: 32),
+
+                      // ── Verify button ─────────────────────────────────────
                       SizedBox(
                         width: double.infinity,
                         height: 54,
                         child: ElevatedButton(
-                          onPressed: _isVerifying ? null : _onVerify,
+                          onPressed: _isVerifying
+                              ? null
+                              : () => _onVerify(lang),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.primary,
                             disabledBackgroundColor:
                             AppColors.primary.withOpacity(0.6),
                             elevation: 0,
                             shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14)),
+                                borderRadius:
+                                BorderRadius.circular(14)),
                           ),
                           child: _isVerifying
-                              ? const SizedBox(width: 22, height: 22,
+                              ? const SizedBox(
+                              width: 22, height: 22,
                               child: CircularProgressIndicator(
-                                  color: Colors.white, strokeWidth: 2.5))
-                              : const Text('Verify',
-                              style: TextStyle(fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white, letterSpacing: 0.3)),
+                                  color: Colors.white,
+                                  strokeWidth: 2.5))
+                              : Text(
+                            _t(lang, 'verify'),
+                            style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                                letterSpacing: 0.3),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 24),
-                      Text("Don't receive code?",
-                          style: TextStyle(fontSize: 14, color: Colors.grey.shade500)),
+
+                      // ── Resend ────────────────────────────────────────────
+                      Text(
+                        _t(lang, 'noCode'),
+                        style: TextStyle(
+                            fontSize: 14, color: Colors.grey.shade500),
+                      ),
                       const SizedBox(height: 6),
                       GestureDetector(
-                        onTap: _canResend ? _resendOtp : null,
+                        onTap: _canResend
+                            ? () => _resendOtp(lang)
+                            : null,
                         child: Text(
-                          _canResend ? 'Resend Code' : 'Resend in $_timerText',
+                          _canResend
+                              ? _t(lang, 'resend')
+                              : '${_t(lang, 'resendIn')} $_timerText',
                           style: TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.w700,
-                            color: _canResend ? AppColors.primary : Colors.black87,
-                            decoration: _canResend ? TextDecoration.underline : null,
+                            color: _canResend
+                                ? AppColors.primary
+                                : Colors.black87,
+                            decoration: _canResend
+                                ? TextDecoration.underline
+                                : null,
                             decorationColor: AppColors.primary,
                           ),
                         ),
@@ -431,11 +583,13 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen>
   }
 }
 
-// ── OTP Box ───────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════
+// OTP Box
+// ═══════════════════════════════════════════════════════════════════
 class _OtpBox extends StatelessWidget {
   final TextEditingController controller;
-  final FocusNode focusNode;
-  final ValueChanged<String> onChanged;
+  final FocusNode             focusNode;
+  final ValueChanged<String>  onChanged;
 
   const _OtpBox({
     required this.controller,
@@ -450,12 +604,14 @@ class _OtpBox extends StatelessWidget {
       height: 56,
       child: TextField(
         controller: controller,
-        focusNode: focusNode,
-        textAlign: TextAlign.center,
+        focusNode:  focusNode,
+        textAlign:  TextAlign.center,
         keyboardType: TextInputType.number,
         maxLength: 1,
         inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-        style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold,
+        style: const TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.bold,
             color: Color(0xFF1A1A1A)),
         decoration: InputDecoration(
           counterText: '',
@@ -463,11 +619,13 @@ class _OtpBox extends StatelessWidget {
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(
-                color: AppColors.primary.withOpacity(0.35), width: 1.5),
+                color: AppColors.primary.withOpacity(0.35),
+                width: 1.5),
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: AppColors.primary, width: 2.5),
+            borderSide: const BorderSide(
+                color: AppColors.primary, width: 2.5),
           ),
           filled: true,
           fillColor: Colors.white,
@@ -478,20 +636,20 @@ class _OtpBox extends StatelessWidget {
   }
 }
 
-// ── Password Dialog ───────────────────────────────────────────────────
-// A proper StatefulWidget so TextEditingController is owned by State
-// and disposed by Flutter at the correct time — never externally.
+// ═══════════════════════════════════════════════════════════════════
+// Password Dialog  — receives lang so it can show translated strings
+// ═══════════════════════════════════════════════════════════════════
 class _PasswordDialog extends StatefulWidget {
-  const _PasswordDialog();
+  final String lang;
+  const _PasswordDialog({required this.lang});
 
   @override
   State<_PasswordDialog> createState() => _PasswordDialogState();
 }
 
 class _PasswordDialogState extends State<_PasswordDialog> {
-  // ✅ Controller owned here — Flutter calls dispose() when widget leaves tree
   final _ctrl = TextEditingController();
-  bool _obscure = true;
+  bool    _obscure = true;
   String? _error;
 
   @override
@@ -502,9 +660,13 @@ class _PasswordDialogState extends State<_PasswordDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = widget.lang;
+
     return AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      contentPadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20)),
+      contentPadding:
+      const EdgeInsets.fromLTRB(24, 20, 24, 0),
       title: Row(
         children: [
           Container(
@@ -517,9 +679,12 @@ class _PasswordDialogState extends State<_PasswordDialog> {
                 color: AppColors.primary, size: 20),
           ),
           const SizedBox(width: 12),
-          const Expanded(
-            child: Text('Confirm Password',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800)),
+          Expanded(
+            child: Text(
+              _t(lang, 'dialogTitle'),
+              style: const TextStyle(
+                  fontSize: 17, fontWeight: FontWeight.w800),
+            ),
           ),
         ],
       ),
@@ -527,26 +692,34 @@ class _PasswordDialogState extends State<_PasswordDialog> {
         mainAxisSize: MainAxisSize.min,
         children: [
           const SizedBox(height: 8),
-          Text('Enter your current password to continue.',
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade500,
-                  height: 1.4)),
+          Text(
+            _t(lang, 'dialogSub'),
+            style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey.shade500,
+                height: 1.4),
+          ),
           const SizedBox(height: 16),
           TextField(
             controller: _ctrl,
             obscureText: _obscure,
             autofocus: true,
             decoration: InputDecoration(
-              hintText: 'Current password',
-              hintStyle: TextStyle(color: Colors.grey.shade400),
+              hintText: _t(lang, 'dialogHint'),
+              hintStyle:
+              TextStyle(color: Colors.grey.shade400),
               prefixIcon: const Icon(Icons.lock_rounded,
                   color: AppColors.primary, size: 20),
               suffixIcon: IconButton(
                 icon: Icon(
-                  _obscure ? Icons.visibility_outlined
+                  _obscure
+                      ? Icons.visibility_outlined
                       : Icons.visibility_off_outlined,
-                  color: Colors.grey.shade400, size: 20,
+                  color: Colors.grey.shade400,
+                  size: 20,
                 ),
-                onPressed: () => setState(() => _obscure = !_obscure),
+                onPressed: () =>
+                    setState(() => _obscure = !_obscure),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -555,16 +728,19 @@ class _PasswordDialogState extends State<_PasswordDialog> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: AppColors.primary, width: 2),
+                borderSide: const BorderSide(
+                    color: AppColors.primary, width: 2),
               ),
               errorText: _error,
               errorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.red.shade300),
+                borderSide:
+                BorderSide(color: Colors.red.shade300),
               ),
               focusedErrorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.red.shade400, width: 1.5),
+                borderSide: BorderSide(
+                    color: Colors.red.shade400, width: 1.5),
               ),
               contentPadding: const EdgeInsets.symmetric(
                   horizontal: 16, vertical: 14),
@@ -579,17 +755,19 @@ class _PasswordDialogState extends State<_PasswordDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context, null),
-          child: Text('Cancel',
-              style: TextStyle(color: Colors.grey.shade500)),
+          child: Text(
+            _t(lang, 'dialogCancel'),
+            style: TextStyle(color: Colors.grey.shade500),
+          ),
         ),
         ElevatedButton(
           onPressed: () {
             final pw = _ctrl.text;
             if (pw.isEmpty) {
-              setState(() => _error = 'Password is required');
+              setState(
+                      () => _error = _t(lang, 'dialogRequired'));
               return;
             }
-            // ✅ Pop with the password string — controller still alive here
             Navigator.pop(context, pw);
           },
           style: ElevatedButton.styleFrom(
@@ -598,9 +776,12 @@ class _PasswordDialogState extends State<_PasswordDialog> {
             shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10)),
           ),
-          child: const Text('Confirm',
-              style: TextStyle(color: Colors.white,
-                  fontWeight: FontWeight.w700)),
+          child: Text(
+            _t(lang, 'dialogConfirm'),
+            style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w700),
+          ),
         ),
       ],
     );

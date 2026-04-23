@@ -3,8 +3,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/screens/group_detail_screen.dart';
+import 'package:pikuru/providers/app_language_provider.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // UTILITY — upgrades Google profile photo URLs to full resolution
@@ -17,10 +19,10 @@ String hiRes(String url, {int size = 400}) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// Shared Avatar widget
+// Shared Avatar widget — rebuilds when app language changes
 // ════════════════════════════════════════════════════════════════════════════
 
-class UserAvatar extends StatelessWidget {
+class UserAvatar extends ConsumerWidget {
   final String url;
   final String name;
   final double radius;
@@ -34,9 +36,32 @@ class UserAvatar extends StatelessWidget {
     required this.fontSize,
   });
 
+  /// Returns the display initial for the avatar, respecting the active locale.
+  /// - Japanese (ja): if the name contains any CJK character, return the first
+  ///   CJK character; otherwise fall back to the first character uppercased.
+  /// - All other locales: first character of the trimmed name, uppercased.
+  static String _initial(String name, String langCode) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return '?';
+
+    if (langCode == kLangJa) {
+      // Prefer the first CJK unified ideograph / kana character if present
+      final cjkMatch = RegExp(
+        r'[\u3000-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]',
+      ).firstMatch(trimmed);
+      if (cjkMatch != null) return cjkMatch.group(0)!;
+    }
+
+    // Default: first Unicode scalar value (handles multi-byte chars safely)
+    return String.fromCharCode(trimmed.runes.first).toUpperCase();
+  }
+
   @override
-  Widget build(BuildContext context) {
-    final initial = name.isNotEmpty ? name.trim()[0].toUpperCase() : '?';
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Watching the provider means this widget rebuilds on every language toggle
+    final langCode = ref.watch(appLangProvider);
+    final initial  = _initial(name, langCode);
+
     return CircleAvatar(
       radius: radius,
       backgroundColor: AppColors.primary.withOpacity(0.12),
@@ -116,7 +141,6 @@ class UserProfileModal extends StatefulWidget {
 }
 
 class _UserProfileModalState extends State<UserProfileModal> {
-  // ── Cached future — created once in initState, never recreated on rebuild ──
   late final Future<List<dynamic>> _dataFuture;
 
   @override
@@ -125,10 +149,8 @@ class _UserProfileModalState extends State<UserProfileModal> {
     _dataFuture = Future.wait([_fetchRegistration(), _fetchGroups()]);
   }
 
-  // ── Fetch registration doc ──────────────────────────────────────────────
   Future<Map<String, dynamic>> _fetchRegistration() async {
     try {
-      // Primary: doc ID == uid (most common case)
       final doc = await FirebaseFirestore.instance
           .collection('registration')
           .doc(widget.userId)
@@ -138,7 +160,6 @@ class _UserProfileModalState extends State<UserProfileModal> {
         return doc.data()!;
       }
 
-      // Fallback: query by uid field
       final q = await FirebaseFirestore.instance
           .collection('registration')
           .where('uid', isEqualTo: widget.userId)
@@ -155,7 +176,6 @@ class _UserProfileModalState extends State<UserProfileModal> {
     return {};
   }
 
-  // ── Fetch groups ────────────────────────────────────────────────────────
   Future<List<Map<String, dynamic>>> _fetchGroups() async {
     try {
       final q = await FirebaseFirestore.instance
@@ -214,7 +234,7 @@ class _UserProfileModalState extends State<UserProfileModal> {
     final hiResAvatar = hiRes(widget.avatarUrl, size: 600);
 
     return FutureBuilder<List<dynamic>>(
-      future: _dataFuture, // ← stable reference, no infinite rebuild
+      future: _dataFuture,
       builder: (context, snapshot) {
         final data = snapshot.hasData
             ? snapshot.data![0] as Map<String, dynamic>
@@ -240,19 +260,15 @@ class _UserProfileModalState extends State<UserProfileModal> {
           backgroundColor: const Color(0xFFF5F5F7),
           body: CustomScrollView(
             slivers: [
-              // ── Hero ────────────────────────────────────────────────────
               SliverToBoxAdapter(
                 child: _HeroHeader(
                   avatarUrl: hiResAvatar,
                   userName: resolvedName,
-                  // Pass address only after data has loaded, so the pill
-                  // appears once we actually have the value.
                   location: snapshot.hasData ? address : '',
                   onClose: () => Navigator.pop(context),
                 ),
               ),
 
-              // ── Action buttons ──────────────────────────────────────────
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
@@ -271,7 +287,6 @@ class _UserProfileModalState extends State<UserProfileModal> {
                 ),
               ),
 
-              // ── Loading spinner ─────────────────────────────────────────
               if (!snapshot.hasData)
                 SliverToBoxAdapter(
                   child: Padding(
@@ -283,7 +298,6 @@ class _UserProfileModalState extends State<UserProfileModal> {
                   ),
                 ),
 
-              // ── About card ───────────────────────────────────────────────
               if (snapshot.hasData && (bio.isNotEmpty || address.isNotEmpty))
                 SliverToBoxAdapter(
                   child: _SectionCard(
@@ -326,7 +340,6 @@ class _UserProfileModalState extends State<UserProfileModal> {
                   ),
                 ),
 
-              // ── Groups section ───────────────────────────────────────────
               if (snapshot.hasData && groups.isNotEmpty) ...[
                 SliverToBoxAdapter(
                   child: Padding(
@@ -501,7 +514,6 @@ class _HeroHeader extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          // Photo or gradient fallback
           avatarUrl.isNotEmpty
               ? Image.network(
             avatarUrl,
@@ -510,7 +522,6 @@ class _HeroHeader extends StatelessWidget {
           )
               : _gradientBox(initials),
 
-          // Bottom scrim
           Positioned.fill(
             child: DecoratedBox(
               decoration: BoxDecoration(
@@ -529,7 +540,6 @@ class _HeroHeader extends StatelessWidget {
             ),
           ),
 
-          // Glass close button
           Positioned(
             top: topPadding + 14,
             left: 16,
@@ -564,7 +574,6 @@ class _HeroHeader extends StatelessWidget {
             ),
           ),
 
-          // Name + glassmorphism location pill
           Positioned(
             left: 20,
             right: 20,
@@ -773,7 +782,6 @@ class _GroupCard extends StatelessWidget {
       if (ageGroup.isNotEmpty) ageGroup,
     ];
 
-    // Fixed height — every card identical regardless of image load state
     const double cardHeight = 100.0;
 
     return Padding(
@@ -795,7 +803,6 @@ class _GroupCard extends StatelessWidget {
           ),
           child: Row(
             children: [
-              // Thumbnail
               ClipRRect(
                 borderRadius: const BorderRadius.only(
                   topLeft: Radius.circular(18),
@@ -814,7 +821,6 @@ class _GroupCard extends StatelessWidget {
                 ),
               ),
 
-              // Content
               Expanded(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
@@ -879,7 +885,6 @@ class _GroupCard extends StatelessWidget {
                 ),
               ),
 
-              // Chevron
               Padding(
                 padding: const EdgeInsets.only(right: 12),
                 child: Icon(

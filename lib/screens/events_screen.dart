@@ -5,79 +5,73 @@ import 'package:pikuru/providers/providers.dart';
 import 'package:pikuru/widgets/event_card_full.dart';
 import 'package:pikuru/screens/calendar_events_screen.dart';
 import 'package:pikuru/screens/add_event_screen.dart';
+import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Language
-// ─────────────────────────────────────────────────────────────────────────────
-enum AppLang { en, ja }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Strings
 // ─────────────────────────────────────────────────────────────────────────────
 class _S {
-  final AppLang lang;
+  final String lang;
   const _S(this.lang);
 
-  String get events        => lang == AppLang.en ? 'Events'          : 'イベント';
-  String get upcoming      => lang == AppLang.en ? 'Upcoming'        : '開催予定';
-  String get today         => lang == AppLang.en ? 'Today'           : '今日';
-  String get tomorrow      => lang == AppLang.en ? 'Tomorrow'        : '明日';
-  String get thisWeek      => lang == AppLang.en ? 'This Week'       : '今週';
-  String get weekend       => lang == AppLang.en ? 'Weekend'         : '週末';
-  String get search        => lang == AppLang.en ? 'Search events, type…' : 'イベント・種類を検索…';
-  String get filters       => lang == AppLang.en ? 'Filters'         : 'フィルター';
-  String get filtersActive => lang == AppLang.en ? 'Filters active'  : 'フィルター中';
-  String get allCountries  => lang == AppLang.en ? 'All Countries'   : 'すべての国';
-  String get clearAll      => lang == AppLang.en ? 'Clear All'       : 'クリア';
-  String get applyFilters  => lang == AppLang.en ? 'APPLY FILTERS'   : 'フィルターを適用';
+  bool get isJa => lang == kLangJa;
 
-  // Section labels
-  String get dateSection      => lang == AppLang.en ? 'DATE'         : '日付';
-  String get locationSection  => lang == AppLang.en ? 'LOCATION'     : '場所';
-  String get eventTypeSection => lang == AppLang.en ? 'EVENT TYPE'   : 'イベント種類';
-  String get skillSection     => lang == AppLang.en ? 'SKILL LEVELS' : 'スキルレベル';
-  String get categorySection  => lang == AppLang.en ? 'CATEGORIES'   : 'カテゴリー';
-  String get otherSection     => lang == AppLang.en ? 'OTHER'        : 'その他';
+  String get events        => isJa ? 'イベント'           : 'Events';
+  String get upcoming      => isJa ? '開催予定'           : 'Upcoming';
+  String get today         => isJa ? '今日'               : 'Today';
+  String get tomorrow      => isJa ? '明日'               : 'Tomorrow';
+  String get thisWeek      => isJa ? '今週'               : 'This Week';
+  String get weekend       => isJa ? '週末'               : 'Weekend';
+  String get search        => isJa ? 'イベント・種類を検索…' : 'Search events, type…';
+  String get filters       => isJa ? 'フィルター'          : 'Filters';
+  String get filtersActive => isJa ? 'フィルター中'        : 'Filters active';
+  String get allCountries  => isJa ? 'すべての国'          : 'All Countries';
+  String get clearAll      => isJa ? 'クリア'             : 'Clear All';
+  String get applyFilters  => isJa ? 'フィルターを適用'    : 'APPLY FILTERS';
 
-  // Date
-  String get startDate     => lang == AppLang.en ? 'Start Date' : '開始日';
-  String get endDate       => lang == AppLang.en ? 'End Date'   : '終了日';
-  String get selectDate    => lang == AppLang.en ? 'Select'     : '選択';
+  String get dateSection      => isJa ? '日付'          : 'DATE';
+  String get locationSection  => isJa ? '場所'          : 'LOCATION';
+  String get eventTypeSection => isJa ? 'イベント種類'   : 'EVENT TYPE';
+  String get skillSection     => isJa ? 'スキルレベル'   : 'SKILL LEVELS';
+  // Category section label — note appended separately in UI
+  String get categorySection  => isJa ? 'カテゴリー'    : 'CATEGORIES';
+  // The sub-note shown next to "Categories"
+  String get categoryNote     => isJa ? 'M=男子、W=女子、Mixed=混合' : "M=Men's, W=Women's, Mixed";
+  String get otherSection     => isJa ? 'その他'        : 'OTHER';
 
-  // Location
-  String get country       => lang == AppLang.en ? 'Country'    : '国';
-  String get prefecture    => lang == AppLang.en ? 'Prefecture' : '都道府県';
-  String get city          => lang == AppLang.en ? 'City'       : '市区町村';
-  String get all           => lang == AppLang.en ? 'All'        : 'すべて';
-  String get allTypes      => lang == AppLang.en ? 'All types'  : 'すべての種類';
+  String get startDate  => isJa ? '開始日' : 'Start Date';
+  String get endDate    => isJa ? '終了日' : 'End Date';
+  String get selectDate => isJa ? '選択'  : 'Select';
 
-  // Skills
-  String get pro           => lang == AppLang.en ? 'Pro'        : '上級';
-  String get amateur       => lang == AppLang.en ? 'Amateur'    : '中級';
-  String get beginner      => lang == AppLang.en ? 'Beginner'   : '初級';
+  String get country    => isJa ? '国'       : 'Country';
+  String get prefecture => isJa ? '都道府県'  : 'Prefecture';
+  String get city       => isJa ? '市区町村'  : 'City';
+  String get all        => isJa ? 'すべて'   : 'All';
+  String get allTypes   => isJa ? 'すべての種類' : 'All types';
 
-  // Categories
-  String get mixedDoubles  => lang == AppLang.en ? 'Mixed Doubles'   : 'ミックス';
-  String get mensDoubles   => lang == AppLang.en ? "Men's Doubles"   : '男子ダブルス';
-  String get womensDoubles => lang == AppLang.en ? "Women's Doubles" : '女子ダブルス';
-  String get mensSingles   => lang == AppLang.en ? "Men's Singles"   : '男子シングルス';
-  String get womensSingles => lang == AppLang.en ? "Women's Singles" : '女子シングルス';
-  String get seniors       => lang == AppLang.en ? 'Seniors'         : 'シニア';
-  String get juniors       => lang == AppLang.en ? 'Juniors'         : 'ジュニア';
-  String get collegiate    => lang == AppLang.en ? 'Collegiate'      : '学生';
+  String get pro      => isJa ? '上級' : 'Pro';
+  String get amateur  => isJa ? '中級' : 'Amateur';
+  String get beginner => isJa ? '初級' : 'Beginner';
 
-  // Other
-  String get touristFriendly => lang == AppLang.en ? 'Tourist Friendly' : '観光客歓迎';
+  // ── Category labels — reordered to match web app ──────────────────────
+  String get mensDoubles   => isJa ? '男子ダブルス'   : 'M Doubles';
+  String get mensSingles   => isJa ? '男子シングルズ'  : 'M Singles';
+  String get womensDoubles => isJa ? '女子ダブルス'   : 'W Doubles';
+  String get womensSingles => isJa ? '女子シングルズ'  : 'W Singles';
+  String get mixedDoubles  => isJa ? 'ミックスダブルス' : 'Mixed Doubles';
+  String get seniors       => isJa ? 'シニア'         : 'Seniors';
+  String get juniors       => isJa ? 'ジュニア'       : 'Juniors';
+  String get collegiate    => isJa ? '学生'           : 'Collegiate';
 
-  // Empty state
-  String noEvents(String loc) => lang == AppLang.en
-      ? 'No upcoming events in $loc\nin the next 30 days.'
-      : '$loc で今後30日間のイベントはありません。';
-  String get clearFilters => lang == AppLang.en ? 'Clear all filters' : 'フィルターをクリア';
+  String get touristFriendly => isJa ? '観光客歓迎' : 'Tourist Friendly';
 
-  // Event types
+  String noEvents(String loc) => isJa
+      ? '$loc で今後30日間のイベントはありません。'
+      : 'No upcoming events in $loc\nin the next 30 days.';
+  String get clearFilters => isJa ? 'フィルターをクリア' : 'Clear all filters';
+
   List<String> get eventTypeKeys => [
     'Professional Tournament', 'Global Tournament', 'Japan Tournament',
     'Open Play', 'Trial Session', 'Local Event',
@@ -85,7 +79,7 @@ class _S {
   ];
 
   String localizeEventType(String key) {
-    if (lang == AppLang.en) return key;
+    if (!isJa) return key;
     const m = {
       'Professional Tournament':      'プロトーナメント',
       'Global Tournament':            'グローバルトーナメント',
@@ -189,22 +183,22 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
   final TextEditingController _searchController = TextEditingController();
   final ScrollController      _scrollController = ScrollController();
 
-  String    _selectedFilter = 'Upcoming';
-  AppLang   _lang           = AppLang.en;
+  String     _selectedFilter = 'Upcoming';
   _AdvFilter _adv = _AdvFilter(country: 'Japan', prefecture: 'Tokyo');
 
-  _S get s => _S(_lang);
+  static const Color _bg         = Color(0xFFF7F8FA);
+  static const Color _surface    = Color(0xFFFFFFFF);
+  static const Color _cardBg     = Color(0xFFF0F4F1);
+  static const Color _border     = Color(0xFFE2EAE4);
+  static const Color _green      = Color(0xFF3A7D44);
+  static const Color _greenLight = Color(0xFFE8F4EB);
+  static const Color _textDark   = Color(0xFF1A1D1B);
+  static const Color _textMid    = Color(0xFF5C6B61);
+  static const Color _textLight  = Color(0xFF9EB3A3);
+
+  _S get s => _S(ref.watch(appLangProvider));
 
   static const int _defaultDays = 30;
-
-  // ── Original light-mode palette ───────────────────────────────────────────
-  static const Color _bg        = Color(0xFFF7F8FA);
-  static const Color _surface   = Colors.white;
-  static const Color _cardBg    = Color(0xFFF2F3F5);
-  static const Color _border    = Color(0xFFDDDEE1);
-  static const Color _textDark  = Color(0xFF0D0D0D);
-  static const Color _textMid   = Color(0xFF555760);
-  static const Color _textLight = Color(0xFF888A90);
 
   String get _locationLabel {
     if (_adv.prefecture.isNotEmpty) return _adv.prefecture;
@@ -212,7 +206,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     return s.allCountries;
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
   bool _matchesLocation(
       Map<String, dynamic> event, List<Map<String, dynamic>> allLocs) {
     if (_adv.country.isEmpty) return true;
@@ -264,7 +257,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     return true;
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
   List<Map<String, dynamic>> _applyFilter(
       List<Map<String, dynamic>> events, List<Map<String, dynamic>> allLocs) {
     final now        = DateTime.now();
@@ -280,16 +272,16 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     return events.where((e) {
       if (q.isNotEmpty) {
         final title   = (e['event_title']    ?? '').toString().toLowerCase();
-        final type    = (e['event_type']     ?? '').toString().toLowerCase();
         final titleJp = (e['event_title_jp'] ?? '').toString().toLowerCase();
-        if (!title.contains(q) && !type.contains(q) && !titleJp.contains(q)) return false;
+        final type    = (e['event_type']     ?? '').toString().toLowerCase();
+        if (!title.contains(q) && !titleJp.contains(q) && !type.contains(q)) return false;
       }
 
       if (!_matchesLocation(e, allLocs)) return false;
 
       final raw = e['event_date'];
       DateTime? d;
-      if (raw is Timestamp) d = raw.toDate();
+      if (raw is Timestamp)            d = raw.toDate();
       else if (raw is String && raw.isNotEmpty) {
         try { d = DateTime.parse(raw); } catch (_) {}
       }
@@ -347,7 +339,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
       a.year == b.year && a.month == b.month && a.day == b.day;
 
   // ─────────────────────────────────────────────────────────────────────────
-  // FILTER MODAL — original light style, new structure
+  // FILTER MODAL
   // ─────────────────────────────────────────────────────────────────────────
   void _showFilterModal() {
     _AdvFilter temp = _adv;
@@ -372,9 +364,11 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
       final c  = field('loc_country');
       final p  = field('loc_prefecture_en').isNotEmpty
-          ? field('loc_prefecture_en') : field('loc_prefecture');
+          ? field('loc_prefecture_en')
+          : field('loc_prefecture');
       final ci = field('loc_city_en').isNotEmpty
-          ? field('loc_city_en') : field('loc_city');
+          ? field('loc_city_en')
+          : field('loc_city');
 
       if (c.isNotEmpty)  countries.add(c);
       if (p.isNotEmpty)  prefectures.add(p);
@@ -391,23 +385,65 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(builder: (ctx, setS) {
 
-        // ── Section label ─────────────────────────────────────────────
+        // ── Plain section label ──────────────────────────────────────────
         Widget sectionLabel(String text) => Padding(
-          padding: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.only(bottom: 14),
           child: Row(children: [
             Container(
               width: 3, height: 14,
               margin: const EdgeInsets.only(right: 8),
               decoration: BoxDecoration(
-                color: AppColors.primary,
+                color: _green,
                 borderRadius: BorderRadius.circular(2),
               ),
             ),
             Text(text, style: const TextStyle(
-              fontSize: 12, fontWeight: FontWeight.w800,
-              color: _textMid, letterSpacing: 0.8,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: _green,
+              letterSpacing: 1.0,
             )),
           ]),
+        );
+
+        // ── Section label WITH inline note (used for Categories) ─────────
+        Widget sectionLabelWithNote(String text, String note) => Padding(
+          padding: const EdgeInsets.only(bottom: 14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Green accent bar
+              Container(
+                width: 3, height: 14,
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  color: _green,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              // Section title
+              Text(text, style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: _green,
+                letterSpacing: 1.0,
+              )),
+              const SizedBox(width: 8),
+              // Inline muted note — matches web "M=Men's, W=Women's, Mixed"
+              Flexible(
+                child: Text(
+                  note,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                    color: _textLight,
+                    letterSpacing: 0.1,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
         );
 
         Widget divider() => const Padding(
@@ -415,13 +451,11 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
           child: Divider(height: 1, color: _border),
         );
 
-        // ── Date picker field ─────────────────────────────────────────
-        Widget datePicker(String label, DateTime? value,
-            ValueChanged<DateTime?> onPicked) {
+        Widget datePicker(String label, DateTime? value, ValueChanged<DateTime?> onPicked) {
           final hasVal = value != null;
           return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(label, style: const TextStyle(
-              fontSize: 11, fontWeight: FontWeight.w700, color: _textLight,
+              fontSize: 11, fontWeight: FontWeight.w700, color: _textMid,
             )),
             const SizedBox(height: 6),
             GestureDetector(
@@ -434,7 +468,8 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                   builder: (c, child) => Theme(
                     data: Theme.of(c).copyWith(
                       colorScheme: const ColorScheme.light(
-                        primary: AppColors.primary,
+                        primary: _green,
+                        surface: _surface,
                         onSurface: _textDark,
                       ),
                     ),
@@ -445,48 +480,41 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
               },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 decoration: BoxDecoration(
-                  color: hasVal
-                      ? AppColors.primary.withOpacity(0.06)
-                      : _cardBg,
+                  color: hasVal ? _greenLight : _cardBg,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                    color: hasVal
-                        ? AppColors.primary.withOpacity(0.4)
-                        : _border,
+                    color: hasVal ? _green.withOpacity(0.5) : _border,
+                    width: 1.5,
                   ),
                 ),
                 child: Row(children: [
                   Icon(Icons.calendar_today_rounded,
-                      size: 14,
-                      color: hasVal ? AppColors.primary : _textLight),
+                      size: 14, color: hasVal ? _green : _textLight),
                   const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      hasVal
-                          ? DateFormat('MM/dd/yyyy').format(value!)
-                          : s.selectDate,
-                      style: TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w600,
-                        color: hasVal ? AppColors.primary : _textLight,
-                      ),
+                  Text(
+                    hasVal
+                        ? DateFormat('MM/dd/yyyy').format(value!)
+                        : s.selectDate,
+                    style: TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w600,
+                      color: hasVal ? _green : _textLight,
                     ),
                   ),
-                  if (hasVal)
+                  if (hasVal) ...[
+                    const Spacer(),
                     GestureDetector(
                       onTap: () => onPicked(null),
-                      child: Icon(Icons.close_rounded,
-                          size: 14, color: AppColors.primary),
+                      child: const Icon(Icons.close_rounded, size: 14, color: _green),
                     ),
+                  ],
                 ]),
               ),
             ),
           ]);
         }
 
-        // ── Dropdown field ────────────────────────────────────────────
         Widget dropdownField(
             String label,
             String value,
@@ -496,48 +524,59 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
               String Function(String)? displayMapper,
             }) {
           final hasVal = value.isNotEmpty;
+
+          // ── Deduplicate options and ensure current value is always present ──
+          final seen = <String>{};
+          final dedupedOptions = <String>[];
+          for (final o in options) {
+            if (o.isNotEmpty && seen.add(o)) dedupedOptions.add(o);
+          }
+          // If the current value isn't in the list, append it so the
+          // DropdownButton never throws "exactly one item" assertion.
+          if (hasVal && !dedupedOptions.contains(value)) {
+            dedupedOptions.add(value);
+          }
+
+          // The DropdownButton value must be either '' (sentinel) or a valid option.
+          final dropdownValue = (hasVal && dedupedOptions.contains(value)) ? value : '';
+
           return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            if (label.isNotEmpty) ...[
+            if (label.isNotEmpty)
               Text(label, style: const TextStyle(
-                fontSize: 12, fontWeight: FontWeight.w700, color: _textLight,
+                fontSize: 11, fontWeight: FontWeight.w700, color: _textMid,
               )),
-              const SizedBox(height: 6),
-            ],
+            if (label.isNotEmpty) const SizedBox(height: 6),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               decoration: BoxDecoration(
-                color: hasVal
-                    ? AppColors.primary.withOpacity(0.06)
-                    : _cardBg,
+                color: hasVal ? _greenLight : _cardBg,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: hasVal
-                      ? AppColors.primary.withOpacity(0.4)
-                      : _border,
+                  color: hasVal ? _green.withOpacity(0.5) : _border,
+                  width: 1.5,
                 ),
               ),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
-                  value: value.isEmpty ? '' : value,
+                  value: dropdownValue,
                   isExpanded: true,
                   dropdownColor: _surface,
                   icon: Icon(Icons.keyboard_arrow_down_rounded,
-                      color: hasVal ? AppColors.primary : _textLight,
-                      size: 20),
+                      color: hasVal ? _green : _textLight, size: 20),
                   style: TextStyle(
-                    color: hasVal ? AppColors.primary : _textDark,
+                    color: hasVal ? _green : _textDark,
                     fontSize: 14, fontWeight: FontWeight.w500,
                   ),
                   items: [
                     DropdownMenuItem(
                       value: '',
-                      child: Text(allLabel,
-                          style: const TextStyle(color: _textLight)),
+                      child: Text(allLabel, style: const TextStyle(color: _textLight)),
                     ),
-                    ...options.map((o) => DropdownMenuItem(
+                    ...dedupedOptions.map((o) => DropdownMenuItem(
                       value: o,
                       child: Text(
                         displayMapper != null ? displayMapper(o) : o,
+                        style: const TextStyle(color: _textDark),
                       ),
                     )),
                   ],
@@ -548,7 +587,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
           ]);
         }
 
-        // ── Checkbox pill ─────────────────────────────────────────────
         Widget checkPill(String label, bool value, VoidCallback onTap) {
           return GestureDetector(
             onTap: onTap,
@@ -556,14 +594,10 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
               duration: const Duration(milliseconds: 150),
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
               decoration: BoxDecoration(
-                color: value
-                    ? AppColors.primary.withOpacity(0.08)
-                    : _cardBg,
+                color: value ? _greenLight : _cardBg,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
-                  color: value
-                      ? AppColors.primary.withOpacity(0.5)
-                      : _border,
+                  color: value ? _green.withOpacity(0.6) : _border,
                   width: 1.5,
                 ),
               ),
@@ -572,10 +606,10 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                   duration: const Duration(milliseconds: 150),
                   width: 15, height: 15,
                   decoration: BoxDecoration(
-                    color: value ? AppColors.primary : Colors.transparent,
+                    color: value ? _green : Colors.transparent,
                     borderRadius: BorderRadius.circular(4),
                     border: Border.all(
-                      color: value ? AppColors.primary : _border,
+                      color: value ? _green : _border,
                       width: 1.5,
                     ),
                   ),
@@ -586,14 +620,14 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                 const SizedBox(width: 8),
                 Text(label, style: TextStyle(
                   fontSize: 13, fontWeight: FontWeight.w600,
-                  color: value ? AppColors.primary : _textMid,
+                  color: value ? _green : _textMid,
                 )),
               ]),
             ),
           );
         }
 
-        // ── Modal shell ───────────────────────────────────────────────
+        // ── Modal container ──────────────────────────────────────────────
         return Container(
           constraints: BoxConstraints(
             maxHeight: MediaQuery.of(ctx).size.height * 0.92,
@@ -603,7 +637,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
             borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
           ),
           child: Column(children: [
-            // Drag handle
             Container(
               margin: const EdgeInsets.only(top: 12, bottom: 4),
               width: 36, height: 4,
@@ -613,7 +646,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
               ),
             ),
 
-            // Header
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 12, 12, 12),
               child: Row(children: [
@@ -624,15 +656,13 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                 const Spacer(),
                 if (_adv.isActive) ...[
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.1),
+                      color: _greenLight,
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: const Text('Active', style: TextStyle(
-                      fontSize: 11, fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
+                      fontSize: 11, fontWeight: FontWeight.w700, color: _green,
                     )),
                   ),
                   const SizedBox(width: 8),
@@ -645,15 +675,13 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                       color: _cardBg, shape: BoxShape.circle,
                       border: Border.all(color: _border),
                     ),
-                    child: const Icon(Icons.close_rounded,
-                        color: _textMid, size: 18),
+                    child: const Icon(Icons.close_rounded, color: _textMid, size: 18),
                   ),
                 ),
               ]),
             ),
             const Divider(height: 1, color: _border),
 
-            // Scrollable body
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
@@ -661,7 +689,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
 
-                    // ── DATE ──────────────────────────────────────────
+                    // ── DATE ─────────────────────────────────────────────
                     sectionLabel(s.dateSection),
                     Row(children: [
                       Expanded(child: datePicker(
@@ -677,7 +705,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
                     divider(),
 
-                    // ── LOCATION ──────────────────────────────────────
+                    // ── LOCATION ──────────────────────────────────────────
                     sectionLabel(s.locationSection),
                     Row(children: [
                       Expanded(child: dropdownField(
@@ -701,7 +729,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
                     divider(),
 
-                    // ── EVENT TYPE ────────────────────────────────────
+                    // ── EVENT TYPE ────────────────────────────────────────
                     sectionLabel(s.eventTypeSection),
                     dropdownField(
                       '', temp.type,
@@ -712,32 +740,33 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
                     divider(),
 
-                    // ── SKILL LEVELS ──────────────────────────────────
+                    // ── SKILL LEVELS ──────────────────────────────────────
                     sectionLabel(s.skillSection),
                     Wrap(spacing: 8, runSpacing: 8, children: [
                       checkPill(s.pro,      temp.skillPro,
-                              () => setS(() => temp = temp.copyWith(skillPro: !temp.skillPro))),
+                              () => setS(() => temp = temp.copyWith(skillPro:      !temp.skillPro))),
                       checkPill(s.amateur,  temp.skillAmateur,
-                              () => setS(() => temp = temp.copyWith(skillAmateur: !temp.skillAmateur))),
+                              () => setS(() => temp = temp.copyWith(skillAmateur:  !temp.skillAmateur))),
                       checkPill(s.beginner, temp.skillBeginner,
                               () => setS(() => temp = temp.copyWith(skillBeginner: !temp.skillBeginner))),
                     ]),
 
                     divider(),
 
-                    // ── CATEGORIES ────────────────────────────────────
-                    sectionLabel(s.categorySection),
+                    // ── CATEGORIES — with inline note ─────────────────────
+                    sectionLabelWithNote(s.categorySection, s.categoryNote),
                     Wrap(spacing: 8, runSpacing: 8, children: [
-                      checkPill(s.mixedDoubles,  temp.catMx,
-                              () => setS(() => temp = temp.copyWith(catMx: !temp.catMx))),
+                      // Order: M Doubles → M Singles → W Doubles → W Singles → Mixed Doubles
                       checkPill(s.mensDoubles,   temp.catMd,
                               () => setS(() => temp = temp.copyWith(catMd: !temp.catMd))),
-                      checkPill(s.womensDoubles, temp.catWd,
-                              () => setS(() => temp = temp.copyWith(catWd: !temp.catWd))),
                       checkPill(s.mensSingles,   temp.catMs,
                               () => setS(() => temp = temp.copyWith(catMs: !temp.catMs))),
+                      checkPill(s.womensDoubles, temp.catWd,
+                              () => setS(() => temp = temp.copyWith(catWd: !temp.catWd))),
                       checkPill(s.womensSingles, temp.catWs,
                               () => setS(() => temp = temp.copyWith(catWs: !temp.catWs))),
+                      checkPill(s.mixedDoubles,  temp.catMx,
+                              () => setS(() => temp = temp.copyWith(catMx: !temp.catMx))),
                       checkPill(s.seniors,       temp.catSe,
                               () => setS(() => temp = temp.copyWith(catSe: !temp.catSe))),
                       checkPill(s.juniors,       temp.catJu,
@@ -748,14 +777,14 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
                     divider(),
 
-                    // ── OTHER ─────────────────────────────────────────
+                    // ── OTHER ─────────────────────────────────────────────
                     sectionLabel(s.otherSection),
                     checkPill(s.touristFriendly, temp.tourist,
                             () => setS(() => temp = temp.copyWith(tourist: !temp.tourist))),
 
                     const SizedBox(height: 28),
 
-                    // ── Action buttons ────────────────────────────────
+                    // ── Action buttons ─────────────────────────────────────
                     Row(children: [
                       Expanded(
                         child: GestureDetector(
@@ -785,11 +814,11 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                           child: Container(
                             height: 52,
                             decoration: BoxDecoration(
-                              color: AppColors.primary,
+                              color: _green,
                               borderRadius: BorderRadius.circular(14),
                               boxShadow: [
                                 BoxShadow(
-                                  color: AppColors.primary.withOpacity(0.30),
+                                  color: _green.withOpacity(0.3),
                                   blurRadius: 14,
                                   offset: const Offset(0, 4),
                                 ),
@@ -816,7 +845,9 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
   // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
+    ref.watch(appLangProvider);
     final showAddButton = ref.watch(showAddEventButtonProvider);
+
     return Scaffold(
       backgroundColor: _bg,
       body: SafeArea(
@@ -835,19 +866,21 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
   Widget _buildHeader() {
-    final fmt = DateFormat('MMM d');
+    final fmt  = DateFormat('MMM d');
+    final lang = ref.watch(appLangProvider);
+
     return Container(
-      color: Colors.white,
+      color: _surface,
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(s.events, style: const TextStyle(
                 fontSize: 28, fontWeight: FontWeight.w800,
-                color: Color(0xFF0D0D0D), letterSpacing: -0.5,
+                color: _textDark, letterSpacing: -0.5,
               )),
               const SizedBox(height: 4),
               Wrap(spacing: 6, runSpacing: 4, children: [
@@ -859,8 +892,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                 if (_adv.dateStart != null)
                   _activeBadge(
                     icon: Icons.calendar_today_rounded,
-                    label: _adv.dateEnd != null &&
-                        !_isSameDay(_adv.dateStart!, _adv.dateEnd!)
+                    label: _adv.dateEnd != null && !_isSameDay(_adv.dateStart!, _adv.dateEnd!)
                         ? '${fmt.format(_adv.dateStart!)} – ${fmt.format(_adv.dateEnd!)}'
                         : fmt.format(_adv.dateStart!),
                     onTap: () => setState(() => _adv = _adv.copyWith(clearDates: true)),
@@ -884,8 +916,8 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
               ]),
             ]),
           ),
+
           Row(children: [
-            // ── Language switcher ────────────────────────────────────
             Container(
               height: 34,
               decoration: BoxDecoration(
@@ -894,26 +926,23 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                 border: Border.all(color: _border),
               ),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
-                _langBtn('EN',    AppLang.en),
-                _langBtn('日本語', AppLang.ja),
+                _langBtn('EN',   kLangEn, lang),
+                _langBtn('日本語', kLangJa, lang),
               ]),
             ),
             const SizedBox(width: 10),
-            // ── Filter icon ──────────────────────────────────────────
+
             GestureDetector(
               onTap: _showFilterModal,
               child: Stack(clipBehavior: Clip.none, children: [
                 Container(
                   width: 42, height: 42,
                   decoration: BoxDecoration(
-                    color: _adv.isActive
-                        ? AppColors.primary
-                        : AppColors.primary.withOpacity(0.08),
+                    color: _adv.isActive ? _green : _greenLight,
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(Icons.tune_rounded,
-                      color: _adv.isActive ? Colors.white : AppColors.primary,
-                      size: 20),
+                      color: _adv.isActive ? Colors.white : _green, size: 20),
                 ),
                 if (_adv.isActive)
                   Positioned(
@@ -921,12 +950,14 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                     child: Container(
                       width: 10, height: 10,
                       decoration: const BoxDecoration(
-                          color: Colors.white, shape: BoxShape.circle),
+                        color: _surface, shape: BoxShape.circle,
+                      ),
                       child: Center(
                         child: Container(
                           width: 7, height: 7,
                           decoration: const BoxDecoration(
-                              color: Colors.orange, shape: BoxShape.circle),
+                            color: Colors.orange, shape: BoxShape.circle,
+                          ),
                         ),
                       ),
                     ),
@@ -934,57 +965,51 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
               ]),
             ),
             const SizedBox(width: 10),
-            // ── Calendar icon ────────────────────────────────────────
+
             GestureDetector(
               onTap: () => Navigator.push(context,
-                  MaterialPageRoute(
-                      builder: (_) => const CalendarEventsScreen())),
+                  MaterialPageRoute(builder: (_) => const CalendarEventsScreen())),
               child: Container(
                 width: 42, height: 42,
                 decoration: BoxDecoration(
-                    color: AppColors.primary.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(12)),
-                child: Icon(Icons.calendar_month_rounded,
-                    color: AppColors.primary, size: 22),
+                  color: _greenLight,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.calendar_month_rounded, color: _green, size: 22),
               ),
             ),
           ]),
         ]),
         const SizedBox(height: 14),
 
-        // Search bar
         Container(
           height: 48,
           decoration: BoxDecoration(
-              color: const Color(0xFFF2F3F5),
-              borderRadius: BorderRadius.circular(14)),
+            color: _cardBg,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: _border),
+          ),
           child: TextField(
             controller: _searchController,
             onChanged: (_) => setState(() {}),
-            style: const TextStyle(fontSize: 15, color: Color(0xFF0D0D0D)),
+            style: const TextStyle(fontSize: 15, color: _textDark),
             decoration: InputDecoration(
               hintText: s.search,
-              hintStyle: TextStyle(
-                  color: Colors.black.withOpacity(0.35),
-                  fontSize: 15,
-                  fontWeight: FontWeight.w400),
-              prefixIcon: Icon(Icons.search_rounded,
-                  color: Colors.black.withOpacity(0.35), size: 22),
+              hintStyle: const TextStyle(color: _textLight, fontSize: 15, fontWeight: FontWeight.w400),
+              prefixIcon: const Icon(Icons.search_rounded, color: _textLight, size: 22),
               suffixIcon: _searchController.text.isNotEmpty
                   ? GestureDetector(
-                  onTap: () => setState(() => _searchController.clear()),
-                  child: Icon(Icons.close_rounded,
-                      color: Colors.black.withOpacity(0.35), size: 20))
+                onTap: () => setState(() => _searchController.clear()),
+                child: const Icon(Icons.close_rounded, color: _textLight, size: 20),
+              )
                   : null,
               border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 14),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             ),
           ),
         ),
         const SizedBox(height: 14),
 
-        // Filter chips
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           physics: const BouncingScrollPhysics(),
@@ -997,24 +1022,25 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
           ]),
         ),
         const SizedBox(height: 4),
-        Container(height: 1, color: const Color(0xFFEEEFF1)),
+        Container(height: 1, color: _border),
       ]),
     );
   }
 
-  Widget _langBtn(String label, AppLang l) {
-    final active = _lang == l;
+  Widget _langBtn(String label, String code, String currentLang) {
+    final active = currentLang == code;
     return GestureDetector(
-      onTap: () => setState(() => _lang = l),
+      onTap: () => ref.read(appLangProvider.notifier).setLang(code),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: active ? AppColors.primary : Colors.transparent,
+          color: active ? _green : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
         ),
         child: Text(label, style: TextStyle(
-          fontSize: 11, fontWeight: FontWeight.w800,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
           color: active ? Colors.white : _textLight,
         )),
       ),
@@ -1033,20 +1059,21 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
         decoration: BoxDecoration(
-            color: AppColors.primary.withOpacity(0.10),
-            borderRadius: BorderRadius.circular(20)),
+          color: _greenLight,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _green.withOpacity(0.25)),
+        ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 11, color: AppColors.primary),
+          Icon(icon, size: 11, color: _green),
           const SizedBox(width: 4),
           Text(label, style: const TextStyle(
-              fontSize: 11, fontWeight: FontWeight.w700,
-              color: AppColors.primary)),
+            fontSize: 11, fontWeight: FontWeight.w700, color: _green,
+          )),
           if (showClose) ...[
             const SizedBox(width: 4),
             GestureDetector(
               onTap: onClose ?? onTap,
-              child: Icon(Icons.close_rounded,
-                  size: 11, color: AppColors.primary),
+              child: const Icon(Icons.close_rounded, size: 11, color: _green),
             ),
           ],
         ]),
@@ -1066,19 +1093,18 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
         margin: const EdgeInsets.only(right: 8, bottom: 12),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
         decoration: BoxDecoration(
-          color: isSelected ? AppColors.primary : Colors.transparent,
+          color: isSelected ? _green : Colors.transparent,
           borderRadius: BorderRadius.circular(30),
           border: Border.all(
-            color: isSelected ? AppColors.primary : const Color(0xFFDDDEE1),
+            color: isSelected ? _green : _border,
             width: 1.5,
           ),
         ),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 15,
-              color: isSelected ? Colors.white : const Color(0xFF888A90)),
+          Icon(icon, size: 15, color: isSelected ? Colors.white : _textMid),
           const SizedBox(width: 6),
           Text(label, style: TextStyle(
-            color: isSelected ? Colors.white : const Color(0xFF555760),
+            color: isSelected ? Colors.white : _textMid,
             fontWeight: FontWeight.w600,
             fontSize: 13.5,
           )),
@@ -1087,25 +1113,23 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
   Widget _buildEventsList() {
     final eventsAsync = ref.watch(eventsProvider);
     final allLocs     = ref.watch(locationsProvider).asData?.value ?? [];
+    final isJa        = ref.watch(appLangProvider) == kLangJa;
+
     return eventsAsync.when(
       data: (events) {
         final filtered = _applyFilter(events, allLocs);
         if (filtered.isEmpty) {
           return Center(
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.event_busy_rounded, size: 56,
-                  color: Colors.black.withOpacity(0.12)),
+              Icon(Icons.event_busy_rounded, size: 56, color: _textLight),
               const SizedBox(height: 14),
               Text(
                 s.noEvents(_locationLabel),
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.black.withOpacity(0.35),
+                style: const TextStyle(fontSize: 16, color: _textLight,
                     fontWeight: FontWeight.w500),
               ),
               if (_adv.isActive) ...[
@@ -1113,46 +1137,50 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                 GestureDetector(
                   onTap: () => setState(() => _adv = _AdvFilter()),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(20)),
-                    child: Text(s.clearFilters,
-                        style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.primary)),
+                      color: _greenLight,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(s.clearFilters, style: const TextStyle(
+                      fontSize: 13, fontWeight: FontWeight.w600, color: _green,
+                    )),
                   ),
                 ),
               ],
             ]),
           );
         }
+
         return ListView.builder(
           controller: _scrollController,
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 110),
           itemCount: filtered.length,
-          itemBuilder: (context, index) =>
-              EventCardFull(event: filtered[index]),
+          itemBuilder: (context, index) {
+            final event = filtered[index];
+            return EventCardFull(
+              event: event,
+              lang: isJa ? 'ja' : 'en',
+            );
+          },
         );
       },
       loading: () => Center(
-          child: CircularProgressIndicator(
-              color: AppColors.primary, strokeWidth: 2.5)),
+        child: CircularProgressIndicator(color: _green, strokeWidth: 2.5),
+      ),
       error: (error, _) => Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text('Something went wrong.\n$error',
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.black45, fontSize: 14)),
+              style: const TextStyle(color: _textLight, fontSize: 14)),
         ),
       ),
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
   Widget _buildAddEventButton() {
+    final isJa = ref.watch(appLangProvider) == kLangJa;
     return Stack(clipBehavior: Clip.none, children: [
       GestureDetector(
         onTap: () => Navigator.push(context,
@@ -1161,23 +1189,25 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
           height: 54,
           padding: const EdgeInsets.symmetric(horizontal: 36),
           decoration: BoxDecoration(
-            color: const Color(0xFF0D0D0D),
+            color: _green,
             borderRadius: BorderRadius.circular(30),
             boxShadow: [
               BoxShadow(
-                  color: Colors.black.withOpacity(0.22),
-                  blurRadius: 20,
-                  offset: const Offset(0, 8))
+                color: _green.withOpacity(0.35),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
+              ),
             ],
           ),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             const Icon(Icons.add_rounded, color: Colors.white, size: 20),
             const SizedBox(width: 8),
             Text(
-              _lang == AppLang.en ? 'Add an Event' : 'イベント追加',
+              isJa ? 'イベント追加' : 'Add an Event',
               style: const TextStyle(
-                  color: Colors.white, fontSize: 15,
-                  fontWeight: FontWeight.w700, letterSpacing: 0.2),
+                color: Colors.white, fontSize: 15,
+                fontWeight: FontWeight.w700, letterSpacing: 0.2,
+              ),
             ),
           ]),
         ),
@@ -1190,19 +1220,18 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
           child: Container(
             width: 28, height: 28,
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: _surface,
               shape: BoxShape.circle,
-              border: Border.all(
-                  color: const Color(0xFF0D0D0D), width: 1.5),
+              border: Border.all(color: _green.withOpacity(0.5), width: 1.5),
               boxShadow: [
                 BoxShadow(
-                    color: Colors.black.withOpacity(0.12),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2))
+                  color: Colors.black.withOpacity(0.08),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
               ],
             ),
-            child: const Icon(Icons.close_rounded,
-                size: 16, color: Color(0xFF0D0D0D)),
+            child: const Icon(Icons.close_rounded, size: 16, color: _textMid),
           ),
         ),
       ),

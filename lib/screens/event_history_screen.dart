@@ -2,17 +2,79 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/screens/event_detail_screen.dart';
 import 'package:intl/intl.dart';
 
-class EventHistoryScreen extends StatefulWidget {
+// ═══════════════════════════════════════════════════════════════════
+// Translations
+// ═══════════════════════════════════════════════════════════════════
+const _T = {
+  'en': {
+    'pageTitle': 'Events History',
+    'tabMyEvents': 'My Events',
+    'tabInterested': 'Interested Events',
+    'noMyEvents': 'No saved events yet',
+    'noMyEventsSub': 'Events you plan to join will appear here',
+    'noInterested': 'No interested events yet',
+    'noInterestedSub': 'Events you want to keep an eye on will appear here',
+    'markMyEvent': 'Mark as My Event',
+    'markInterested': 'Mark as Interested',
+    'movedTo': 'Moved to',
+    'removeTitle': 'Remove Event?',
+    'removeDesc': 'This event will be removed from your saved list.',
+    'cancel': 'Cancel',
+    'remove': 'Remove',
+    'notSignedIn': 'Not signed in',
+    'errLoad': 'Something went wrong',
+    'myEventsLabel': 'My Events',
+    'interestedLabel': 'Interested',
+  },
+  'ja': {
+    'pageTitle': 'イベント履歴',
+    'tabMyEvents': '参加イベント',
+    'tabInterested': '興味あり',
+    'noMyEvents': '保存したイベントはまだありません',
+    'noMyEventsSub': '参加予定のイベントがここに表示されます',
+    'noInterested': '興味のあるイベントはまだありません',
+    'noInterestedSub': '気になるイベントがここに表示されます',
+    'markMyEvent': '参加イベントにする',
+    'markInterested': '興味ありにする',
+    'movedTo': '移動しました：',
+    'removeTitle': 'イベントを削除しますか？',
+    'removeDesc': 'このイベントは保存リストから削除されます。',
+    'cancel': 'キャンセル',
+    'remove': '削除',
+    'notSignedIn': 'ログインしていません',
+    'errLoad': '読み込みに失敗しました',
+    'myEventsLabel': '参加イベント',
+    'interestedLabel': '興味あり',
+  },
+};
+
+String _t(String lang, String key) =>
+    (_T[lang]?[key] ?? _T['en']![key]) ?? key;
+
+// Japanese weekday names — no locale initialization needed
+const _jaWeekdays = ['月', '火', '水', '木', '金', '土', '日'];
+
+/// Formats a [DateTime] as Japanese date string without requiring
+/// initializeDateFormatting — e.g. "2025年4月20日(日)"
+String _jaDateString(DateTime d) {
+  final wd = _jaWeekdays[d.weekday - 1]; // weekday: 1=Mon … 7=Sun
+  return '${d.year}年${d.month}月${d.day}日($wd)';
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Screen
+// ═══════════════════════════════════════════════════════════════════
+class EventHistoryScreen extends ConsumerStatefulWidget {
   /// Which tab to open on: 0 = My Events, 1 = Interested Events.
   final int initialTab;
 
   /// Called when the user taps the back button.
-  /// When embedded inside MainNavigation this switches back to the Account tab
-  /// (index 4) instead of popping the route — keeping the bottom bar visible.
   final VoidCallback? onBack;
 
   const EventHistoryScreen({
@@ -22,10 +84,11 @@ class EventHistoryScreen extends StatefulWidget {
   });
 
   @override
-  State<EventHistoryScreen> createState() => _EventHistoryScreenState();
+  ConsumerState<EventHistoryScreen> createState() =>
+      _EventHistoryScreenState();
 }
 
-class _EventHistoryScreenState extends State<EventHistoryScreen>
+class _EventHistoryScreenState extends ConsumerState<EventHistoryScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
 
@@ -55,6 +118,8 @@ class _EventHistoryScreenState extends State<EventHistoryScreen>
 
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(appLangProvider);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF4F9F5),
       body: NestedScrollView(
@@ -76,9 +141,9 @@ class _EventHistoryScreenState extends State<EventHistoryScreen>
                     color: Colors.white, size: 20),
               ),
             ),
-            title: const Text(
-              'Events History',
-              style: TextStyle(
+            title: Text(
+              _t(lang, 'pageTitle'),
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 20,
                 fontWeight: FontWeight.w800,
@@ -106,9 +171,9 @@ class _EventHistoryScreenState extends State<EventHistoryScreen>
                   unselectedLabelColor: Colors.white,
                   labelStyle: const TextStyle(
                       fontSize: 13, fontWeight: FontWeight.w700),
-                  tabs: const [
-                    Tab(text: 'My Events'),
-                    Tab(text: 'Interested Events'),
+                  tabs: [
+                    Tab(text: _t(lang, 'tabMyEvents')),
+                    Tab(text: _t(lang, 'tabInterested')),
                   ],
                 ),
               ),
@@ -117,9 +182,9 @@ class _EventHistoryScreenState extends State<EventHistoryScreen>
         ],
         body: TabBarView(
           controller: _tabController,
-          children: const [
-            _EventList(status: 'my_events'),
-            _EventList(status: 'interested'),
+          children: [
+            _EventList(status: 'my_events', lang: lang),
+            _EventList(status: 'interested', lang: lang),
           ],
         ),
       ),
@@ -132,12 +197,21 @@ class _EventHistoryScreenState extends State<EventHistoryScreen>
 // ═══════════════════════════════════════════════════════════════════
 class _EventList extends StatelessWidget {
   final String status;
-  const _EventList({required this.status});
+  final String lang;
+
+  const _EventList({required this.status, required this.lang});
 
   @override
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return const Center(child: Text('Not signed in'));
+    if (uid == null) {
+      return Center(
+        child: Text(
+          _t(lang, 'notSignedIn'),
+          style: const TextStyle(color: Colors.black54),
+        ),
+      );
+    }
 
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
@@ -155,7 +229,7 @@ class _EventList extends StatelessWidget {
         if (snap.hasError) {
           return _EmptyState(
             icon: Icons.error_outline_rounded,
-            title: 'Something went wrong',
+            title: _t(lang, 'errLoad'),
             subtitle: snap.error.toString(),
           );
         }
@@ -166,11 +240,11 @@ class _EventList extends StatelessWidget {
                 ? Icons.bookmark_outline_rounded
                 : Icons.star_outline_rounded,
             title: status == 'my_events'
-                ? 'No saved events yet'
-                : 'No interested events yet',
+                ? _t(lang, 'noMyEvents')
+                : _t(lang, 'noInterested'),
             subtitle: status == 'my_events'
-                ? 'Events you plan to join will appear here'
-                : 'Events you want to keep an eye on will appear here',
+                ? _t(lang, 'noMyEventsSub')
+                : _t(lang, 'noInterestedSub'),
           );
         }
         return ListView.builder(
@@ -183,6 +257,7 @@ class _EventList extends StatelessWidget {
               savedData: data,
               otherStatus:
               status == 'my_events' ? 'interested' : 'my_events',
+              lang: lang,
             );
           },
         );
@@ -198,24 +273,26 @@ class _EventCard extends StatelessWidget {
   final QueryDocumentSnapshot userEventDoc;
   final Map<String, dynamic> savedData;
   final String otherStatus;
+  final String lang;
 
   const _EventCard({
     required this.userEventDoc,
     required this.savedData,
     required this.otherStatus,
+    required this.lang,
   });
 
   Future<Map<String, dynamic>?> _fetchEvent() async {
     final eventId = (savedData['event_id'] ?? '').toString();
     if (eventId.isEmpty) return null;
     try {
-      final doc = await FirebaseFirestore.instance
+      final docSnap = await FirebaseFirestore.instance
           .collection('events')
           .doc(eventId)
           .get();
-      if (doc.exists) {
-        final d = doc.data()!;
-        d['_doc_id'] = doc.id;
+      if (docSnap.exists) {
+        final d = docSnap.data()!;
+        d['_doc_id'] = docSnap.id;
         return d;
       }
       final q = await FirebaseFirestore.instance
@@ -232,34 +309,64 @@ class _EventCard extends StatelessWidget {
     return null;
   }
 
+  /// Picks the localised title: uses `event_title_jp` when lang is 'ja'
+  /// and the field is non-empty, otherwise falls back to `event_title`.
+  String _localTitle(Map<String, dynamic>? eventData) {
+    if (lang == kLangJa) {
+      final jp = (eventData?['event_title_jp'] ?? '').toString().trim();
+      if (jp.isNotEmpty) return jp;
+    }
+    return (eventData?['event_title'] ??
+        savedData['event_title'] ??
+        'Loading...')
+        .toString();
+  }
+
+  /// Converts raw Firestore date to a display string.
+  /// Uses plain DateFormat for English, manual string for Japanese
+  /// (avoids initializeDateFormatting requirement).
   String _formatDate(dynamic raw) {
+    DateTime? d;
     if (raw is Timestamp) {
-      return DateFormat('MMM d, yyyy').format(raw.toDate());
+      d = raw.toDate();
     } else if (raw is String && raw.isNotEmpty) {
       try {
-        return DateFormat('MMM d, yyyy').format(DateTime.parse(raw));
+        d = DateTime.parse(raw);
       } catch (_) {
-        return raw;
+        return raw; // return as-is if unparseable
       }
     }
-    return '';
+    if (d == null) return '';
+
+    if (lang == kLangJa) {
+      return _jaDateString(d);
+    }
+    return DateFormat('MMM d, yyyy').format(d);
   }
 
   String _formatTime(dynamic raw) {
-    if (raw is Timestamp) return DateFormat('h:mm a').format(raw.toDate());
+    if (raw is Timestamp) {
+      final d = raw.toDate();
+      // Use 24-hour format for Japanese, 12-hour for English — no locale needed
+      if (lang == kLangJa) {
+        return DateFormat('H:mm').format(d);
+      }
+      return DateFormat('h:mm a').format(d);
+    }
     if (raw is String && raw.isNotEmpty) return raw;
     return '';
   }
 
   Future<void> _switchStatus(BuildContext context) async {
     HapticFeedback.lightImpact();
-    final label =
-    otherStatus == 'my_events' ? 'My Events' : 'Interested';
+    final label = otherStatus == 'my_events'
+        ? _t(lang, 'myEventsLabel')
+        : _t(lang, 'interestedLabel');
     try {
       await userEventDoc.reference.update({'status': otherStatus});
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Moved to $label'),
+          content: Text('${_t(lang, 'movedTo')} $label'),
           behavior: SnackBarBehavior.floating,
           backgroundColor: AppColors.primary,
           shape: RoundedRectangleBorder(
@@ -277,14 +384,17 @@ class _EventCard extends StatelessWidget {
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20)),
         backgroundColor: Colors.white,
-        title: const Text('Remove Event?',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            textAlign: TextAlign.center),
-        content: const Text(
-          'This event will be removed from your saved list.',
-          textAlign: TextAlign.center,
+        title: Text(
+          _t(lang, 'removeTitle'),
           style:
-          TextStyle(fontSize: 14, color: Colors.black54, height: 1.5),
+          const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          textAlign: TextAlign.center,
+        ),
+        content: Text(
+          _t(lang, 'removeDesc'),
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+              fontSize: 14, color: Colors.black54, height: 1.5),
         ),
         actionsAlignment: MainAxisAlignment.spaceEvenly,
         actionsPadding:
@@ -299,8 +409,8 @@ class _EventCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12)),
               side: BorderSide(color: Colors.grey.shade300),
             ),
-            child: const Text('Cancel',
-                style: TextStyle(
+            child: Text(_t(lang, 'cancel'),
+                style: const TextStyle(
                     fontWeight: FontWeight.w600,
                     color: Colors.black54)),
           ),
@@ -314,8 +424,8 @@ class _EventCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12)),
               elevation: 0,
             ),
-            child: const Text('Remove',
-                style: TextStyle(
+            child: Text(_t(lang, 'remove'),
+                style: const TextStyle(
                     fontWeight: FontWeight.bold, color: Colors.white)),
           ),
         ],
@@ -333,10 +443,7 @@ class _EventCard extends StatelessWidget {
     return FutureBuilder<Map<String, dynamic>?>(
       future: _fetchEvent(),
       builder: (context, snap) {
-        final title = (snap.data?['event_title'] ??
-            savedData['event_title'] ??
-            'Loading...')
-            .toString();
+        final title = _localTitle(snap.data);
         final imageUrl =
         (snap.data?['event_pic'] ?? savedData['event_pic'] ?? '')
             .toString();
@@ -349,8 +456,8 @@ class _EventCard extends StatelessWidget {
             : '';
 
         final switchLabel = otherStatus == 'my_events'
-            ? 'Mark as My Event'
-            : 'Mark as Interested';
+            ? _t(lang, 'markMyEvent')
+            : _t(lang, 'markInterested');
         final switchIcon = otherStatus == 'my_events'
             ? Icons.bookmark_rounded
             : Icons.star_rounded;
@@ -423,15 +530,18 @@ class _EventCard extends StatelessWidget {
                                     color: AppColors.primary
                                         .withOpacity(0.7)),
                                 const SizedBox(width: 4),
-                                Text(
-                                  timeStr.isNotEmpty
-                                      ? '$dateStr · $timeStr'
-                                      : dateStr,
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      color:
-                                      Colors.black.withOpacity(0.5),
-                                      fontWeight: FontWeight.w500),
+                                Expanded(
+                                  child: Text(
+                                    timeStr.isNotEmpty
+                                        ? '$dateStr · $timeStr'
+                                        : dateStr,
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.black
+                                            .withOpacity(0.5),
+                                        fontWeight: FontWeight.w500),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
                               ]),
                             ],
@@ -443,11 +553,14 @@ class _EventCard extends StatelessWidget {
                                     color: AppColors.primary
                                         .withOpacity(0.7)),
                                 const SizedBox(width: 4),
-                                Text(locCity,
-                                    style: TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.black
-                                            .withOpacity(0.5))),
+                                Expanded(
+                                  child: Text(locCity,
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.black
+                                              .withOpacity(0.5)),
+                                      overflow: TextOverflow.ellipsis),
+                                ),
                               ]),
                             ],
                           ],
@@ -479,11 +592,14 @@ class _EventCard extends StatelessWidget {
                                 Icon(switchIcon,
                                     color: switchColor, size: 14),
                                 const SizedBox(width: 6),
-                                Text(switchLabel,
-                                    style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                        color: switchColor)),
+                                Flexible(
+                                  child: Text(switchLabel,
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: switchColor),
+                                      overflow: TextOverflow.ellipsis),
+                                ),
                               ],
                             ),
                           ),
@@ -548,7 +664,8 @@ class _EmptyState extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 80, height: 80,
+              width: 80,
+              height: 80,
               decoration: BoxDecoration(
                   color: AppColors.primary.withOpacity(0.08),
                   shape: BoxShape.circle),

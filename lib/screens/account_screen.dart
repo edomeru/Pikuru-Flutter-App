@@ -1,14 +1,80 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/loginpage.dart';
+import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:pikuru/screens/resources_screen.dart';
 import 'package:pikuru/screens/edit_profile_screen.dart';
 import 'package:pikuru/screens/settings_screen.dart';
 
-class AccountScreen extends StatefulWidget {
+// ─────────────────────────────────────────────────────────────────────────────
+// Localization
+// ─────────────────────────────────────────────────────────────────────────────
+const _L = {
+  kLangEn: {
+    'groupsJoined':     'Groups Joined',
+    'noGroups':         'No groups',
+    'join':             'Join',
+    'interestedGroups': 'Interested Groups',
+    'noneYet':          'None yet',
+    'browse':           'Browse',
+    'eventsJoined':     'Events Joined',
+    'noEvents':         'No events',
+    'find':             'Find',
+    'savedEvents':      'Saved Events',
+    'noneSaved':        'None saved',
+    'explore':          'Explore',
+    'sectionAccount':   'Account',
+    'editProfile':      'Edit Profile',
+    'eventsHistory':    'Events History',
+    'resources':        'Resources',
+    'sectionPrefs':     'Preferences',
+    'settings':         'Settings',
+    'sectionSession':   'Session',
+    'signOut':          'Sign Out',
+    'signOutTitle':     'Sign Out?',
+    'signOutBody':      'Are you sure you want to sign out of your account?',
+    'cancel':           'Cancel',
+    'signOutConfirm':   'Sign Out',
+  },
+  kLangJa: {
+    'groupsJoined':     '参加グループ',
+    'noGroups':         'グループなし',
+    'join':             '参加',
+    'interestedGroups': '興味あるグループ',
+    'noneYet':          'まだなし',
+    'browse':           '探す',
+    'eventsJoined':     '参加イベント',
+    'noEvents':         'イベントなし',
+    'find':             '探す',
+    'savedEvents':      '保存済みイベント',
+    'noneSaved':        '保存なし',
+    'explore':          '探索',
+    'sectionAccount':   'アカウント',
+    'editProfile':      'プロフィール編集',
+    'eventsHistory':    'イベント履歴',
+    'resources':        'リソース',
+    'sectionPrefs':     '設定',
+    'settings':         '設定',
+    'sectionSession':   'セッション',
+    'signOut':          'サインアウト',
+    'signOutTitle':     'サインアウトしますか？',
+    'signOutBody':      'アカウントからサインアウトしてもよろしいですか？',
+    'cancel':           'キャンセル',
+    'signOutConfirm':   'サインアウト',
+  },
+};
+
+String _t(String lang, String key) =>
+    _L[lang]?[key] ?? _L[kLangEn]![key]!;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Screen
+// ─────────────────────────────────────────────────────────────────────────────
+class AccountScreen extends ConsumerStatefulWidget {
   final void Function(int tabIndex)? onNavigateToTab;
   final void Function({int initialTab})? onOpenEventHistory;
 
@@ -19,21 +85,20 @@ class AccountScreen extends StatefulWidget {
   });
 
   @override
-  State<AccountScreen> createState() => _AccountScreenState();
+  ConsumerState<AccountScreen> createState() => _AccountScreenState();
 }
 
-class _AccountScreenState extends State<AccountScreen>
+class _AccountScreenState extends ConsumerState<AccountScreen>
     with TickerProviderStateMixin {
   late final AnimationController _fadeController;
-  late final Animation<double> _fadeAnim;
+  late final Animation<double>   _fadeAnim;
   late final AnimationController _slideController;
-  late final Animation<Offset> _slideAnim;
+  late final Animation<Offset>   _slideAnim;
   late final AnimationController _avatarController;
-  late final Animation<double> _avatarAnim;
+  late final Animation<double>   _avatarAnim;
 
   String? _firstName;
   String? _lastName;
-  // Stored exactly as Firestore has it — may be a data URL or raw base64
   String? _profileImgRaw;
 
   Stream<DocumentSnapshot<Map<String, dynamic>>>? _profileStream;
@@ -45,14 +110,16 @@ class _AccountScreenState extends State<AccountScreen>
     _fadeController = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 800))
       ..forward();
-    _fadeAnim = CurvedAnimation(parent: _fadeController, curve: Curves.easeOut);
+    _fadeAnim =
+        CurvedAnimation(parent: _fadeController, curve: Curves.easeOut);
 
     _slideController = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 700))
       ..forward();
-    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.08), end: Offset.zero)
-        .animate(CurvedAnimation(
-        parent: _slideController, curve: Curves.easeOutCubic));
+    _slideAnim =
+        Tween<Offset>(begin: const Offset(0, 0.08), end: Offset.zero).animate(
+            CurvedAnimation(
+                parent: _slideController, curve: Curves.easeOutCubic));
 
     _avatarController = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 600))
@@ -90,27 +157,21 @@ class _AccountScreenState extends State<AccountScreen>
     return user?.displayName ?? 'User';
   }
 
-  // ── Strip data URL prefix to get raw base64 ───────────────────────
-  // Web saves "data:image/jpeg;base64,/9j/..." — we need just "/9j/..."
   static String _rawBase64(String value) {
     if (value.contains(',')) return value.split(',').last;
     return value;
   }
 
-  // ── Build avatar that handles both data URLs and raw base64 ───────
   Widget _buildProfileAvatar({String? photoURLFromAuth}) {
     if (_profileImgRaw != null && _profileImgRaw!.isNotEmpty) {
       try {
-        final raw   = _rawBase64(_profileImgRaw!);
-        final bytes = base64Decode(raw);
+        final bytes = base64Decode(_rawBase64(_profileImgRaw!));
         return Image(
           image: MemoryImage(bytes),
           fit: BoxFit.cover,
           errorBuilder: (_, __, ___) => _avatarPlaceholder(),
         );
-      } catch (_) {
-        // Decoding failed — fall through to photoURL or placeholder
-      }
+      } catch (_) {}
     }
     if (photoURLFromAuth != null && photoURLFromAuth.isNotEmpty) {
       return Image.network(
@@ -124,6 +185,9 @@ class _AccountScreenState extends State<AccountScreen>
 
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(appLangProvider);
+    final t    = (String key) => _t(lang, key);
+
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, authSnapshot) {
@@ -146,6 +210,7 @@ class _AccountScreenState extends State<AccountScreen>
               backgroundColor: const Color(0xFFF4F9F5),
               body: CustomScrollView(
                 slivers: [
+                  // ── Hero App Bar ──────────────────────────────────
                   SliverAppBar(
                     expandedHeight: 230,
                     pinned: true,
@@ -168,54 +233,59 @@ class _AccountScreenState extends State<AccountScreen>
                               ),
                             ),
                           ),
-                          Positioned(top: -50, right: -30,
-                              child: Container(width: 200, height: 200,
-                                  decoration: BoxDecoration(shape: BoxShape.circle,
+                          Positioned(
+                              top: -50, right: -30,
+                              child: Container(
+                                  width: 200, height: 200,
+                                  decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
                                       color: Colors.white.withOpacity(0.06)))),
-                          Positioned(bottom: -30, left: -20,
-                              child: Container(width: 140, height: 140,
-                                  decoration: BoxDecoration(shape: BoxShape.circle,
+                          Positioned(
+                              bottom: -30, left: -20,
+                              child: Container(
+                                  width: 140, height: 140,
+                                  decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
                                       color: Colors.white.withOpacity(0.05)))),
                           Positioned(
                             bottom: 24, left: 0, right: 0,
                             child: FadeTransition(
                               opacity: _fadeAnim,
-                              child: Column(
-                                children: [
-                                  ScaleTransition(
-                                    scale: _avatarAnim,
-                                    child: Container(
-                                      width: 88, height: 88,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                            color: Colors.white, width: 3),
-                                        boxShadow: [BoxShadow(
-                                            color: Colors.black.withOpacity(0.2),
-                                            blurRadius: 14,
-                                            offset: const Offset(0, 4))],
-                                      ),
-                                      // ✅ Uses MemoryImage for base64, Network for URL
-                                      child: ClipOval(
-                                        child: _buildProfileAvatar(
-                                            photoURLFromAuth: authPhotoURL),
-                                      ),
+                              child: Column(children: [
+                                ScaleTransition(
+                                  scale: _avatarAnim,
+                                  child: Container(
+                                    width: 88, height: 88,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                          color: Colors.white, width: 3),
+                                      boxShadow: [BoxShadow(
+                                          color:
+                                          Colors.black.withOpacity(0.2),
+                                          blurRadius: 14,
+                                          offset: const Offset(0, 4))],
+                                    ),
+                                    child: ClipOval(
+                                      child: _buildProfileAvatar(
+                                          photoURLFromAuth: authPhotoURL),
                                     ),
                                   ),
-                                  const SizedBox(height: 10),
-                                  Text(displayName,
-                                      style: const TextStyle(
-                                          fontSize: 22,
-                                          fontWeight: FontWeight.w800,
-                                          color: Colors.white,
-                                          letterSpacing: -0.3)),
-                                  const SizedBox(height: 3),
-                                  Text(user?.email ?? '',
-                                      style: TextStyle(
-                                          fontSize: 13,
-                                          color: Colors.white.withOpacity(0.7))),
-                                ],
-                              ),
+                                ),
+                                const SizedBox(height: 10),
+                                Text(displayName,
+                                    style: const TextStyle(
+                                        fontSize: 22,
+                                        fontWeight: FontWeight.w800,
+                                        color: Colors.white,
+                                        letterSpacing: -0.3)),
+                                const SizedBox(height: 3),
+                                Text(user?.email ?? '',
+                                    style: TextStyle(
+                                        fontSize: 13,
+                                        color:
+                                        Colors.white.withOpacity(0.7))),
+                              ]),
                             ),
                           ),
                         ],
@@ -223,6 +293,7 @@ class _AccountScreenState extends State<AccountScreen>
                     ),
                   ),
 
+                  // ── Body ─────────────────────────────────────────
                   SliverToBoxAdapter(
                     child: FadeTransition(
                       opacity: _fadeAnim,
@@ -242,9 +313,9 @@ class _AccountScreenState extends State<AccountScreen>
                                   userField: 'user_id',
                                   statusFilter: 'active',
                                   icon: Icons.groups_rounded,
-                                  label: 'Groups Joined',
-                                  emptyLabel: 'No groups',
-                                  buttonLabel: 'Join',
+                                  label: t('groupsJoined'),
+                                  emptyLabel: t('noGroups'),
+                                  buttonLabel: t('join'),
                                   buttonIcon: Icons.add_rounded,
                                   onTap: _goToGroups,
                                 )),
@@ -255,9 +326,9 @@ class _AccountScreenState extends State<AccountScreen>
                                   userField: 'user_id',
                                   statusFilter: 'interested',
                                   icon: Icons.favorite_rounded,
-                                  label: 'Interested Groups',
-                                  emptyLabel: 'None yet',
-                                  buttonLabel: 'Browse',
+                                  label: t('interestedGroups'),
+                                  emptyLabel: t('noneYet'),
+                                  buttonLabel: t('browse'),
                                   buttonIcon: Icons.explore_rounded,
                                   onTap: _goToGroups,
                                 )),
@@ -272,9 +343,9 @@ class _AccountScreenState extends State<AccountScreen>
                                   userField: 'user_id',
                                   statusFilter: 'my_events',
                                   icon: Icons.event_available_rounded,
-                                  label: 'Events Joined',
-                                  emptyLabel: 'No events',
-                                  buttonLabel: 'Find',
+                                  label: t('eventsJoined'),
+                                  emptyLabel: t('noEvents'),
+                                  buttonLabel: t('find'),
                                   buttonIcon: Icons.search_rounded,
                                   onTap: () => _goToEventHistory(tabIndex: 0),
                                 )),
@@ -285,64 +356,73 @@ class _AccountScreenState extends State<AccountScreen>
                                   userField: 'user_id',
                                   statusFilter: 'interested',
                                   icon: Icons.bookmark_rounded,
-                                  label: 'Saved Events',
-                                  emptyLabel: 'None saved',
-                                  buttonLabel: 'Explore',
+                                  label: t('savedEvents'),
+                                  emptyLabel: t('noneSaved'),
+                                  buttonLabel: t('explore'),
                                   buttonIcon: Icons.explore_rounded,
                                   onTap: () => _goToEventHistory(tabIndex: 1),
                                 )),
                               ]),
                               const SizedBox(height: 28),
 
-                              const _SectionHeader(label: 'Account'),
+                              // ── Account ──────────────────────────
+                              _SectionHeader(label: t('sectionAccount')),
                               const SizedBox(height: 12),
                               _MenuCard(items: [
                                 _MenuItem(
                                   icon: Icons.person_outline_rounded,
-                                  label: 'Edit Profile',
+                                  label: t('editProfile'),
                                   onTap: () => Navigator.push(context,
                                       MaterialPageRoute(
-                                          builder: (_) => const EditProfileScreen())),
+                                          builder: (_) =>
+                                          const EditProfileScreen())),
                                 ),
                                 _MenuItem(
                                   icon: Icons.history_rounded,
-                                  label: 'Events History',
+                                  label: t('eventsHistory'),
                                   onTap: () => _goToEventHistory(),
                                 ),
                                 _MenuItem(
                                   icon: Icons.library_books_rounded,
-                                  label: 'Resources',
+                                  label: t('resources'),
                                   isLast: true,
                                   onTap: () => Navigator.push(context,
                                       MaterialPageRoute(
-                                          builder: (_) => const ResourcesScreen())),
+                                          builder: (_) =>
+                                          const ResourcesScreen())),
                                 ),
                               ]),
 
                               const SizedBox(height: 20),
-                              const _SectionHeader(label: 'Preferences'),
+
+                              // ── Preferences ──────────────────────
+                              _SectionHeader(label: t('sectionPrefs')),
                               const SizedBox(height: 12),
                               _MenuCard(items: [
                                 _MenuItem(
                                   icon: Icons.settings_rounded,
-                                  label: 'Settings',
+                                  label: t('settings'),
                                   isLast: true,
                                   onTap: () => Navigator.push(context,
                                       MaterialPageRoute(
-                                          builder: (_) => const SettingsScreen())),
+                                          builder: (_) =>
+                                          const SettingsScreen())),
                                 ),
                               ]),
 
                               const SizedBox(height: 20),
-                              const _SectionHeader(label: 'Session'),
+
+                              // ── Session ──────────────────────────
+                              _SectionHeader(label: t('sectionSession')),
                               const SizedBox(height: 12),
                               _MenuCard(items: [
                                 _MenuItem(
                                   icon: Icons.logout_rounded,
-                                  label: 'Sign Out',
+                                  label: t('signOut'),
                                   isDestructive: true,
                                   isLast: true,
-                                  onTap: () => _handleSignOut(context),
+                                  onTap: () =>
+                                      _handleSignOut(context, lang: lang),
                                 ),
                               ]),
 
@@ -364,47 +444,58 @@ class _AccountScreenState extends State<AccountScreen>
 
   Widget _avatarPlaceholder() => Container(
     color: AppColors.primary.withOpacity(0.2),
-    child: Center(child: Icon(Icons.person_rounded,
-        size: 44, color: Colors.white.withOpacity(0.9))),
+    child: Center(
+        child: Icon(Icons.person_rounded,
+            size: 44, color: Colors.white.withOpacity(0.9))),
   );
 
-  Future<void> _handleSignOut(BuildContext context) async {
+  Future<void> _handleSignOut(BuildContext context,
+      {String lang = kLangEn}) async {
     final shouldSignOut = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape:
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         backgroundColor: Colors.white,
-        title: const Text('Sign Out?',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+        title: Text(_t(lang, 'signOutTitle'),
+            style:
+            const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             textAlign: TextAlign.center),
-        content: const Text(
-            'Are you sure you want to sign out of your account?',
+        content: Text(_t(lang, 'signOutBody'),
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14, color: Colors.black54, height: 1.5)),
+            style: const TextStyle(
+                fontSize: 14, color: Colors.black54, height: 1.5)),
         actionsAlignment: MainAxisAlignment.spaceEvenly,
-        actionsPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        actionsPadding: const EdgeInsets.symmetric(
+            horizontal: 16, vertical: 14),
         actions: [
           OutlinedButton(
             onPressed: () => Navigator.of(ctx).pop(false),
             style: OutlinedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 28, vertical: 12),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
                 side: BorderSide(color: Colors.grey.shade300)),
-            child: const Text('Cancel',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
+            child: Text(_t(lang, 'cancel'),
+                style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
                     color: Colors.black54)),
           ),
           ElevatedButton(
             onPressed: () => Navigator.of(ctx).pop(true),
             style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
-                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 28, vertical: 12),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
                 elevation: 0),
-            child: const Text('Sign Out',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold,
+            child: Text(_t(lang, 'signOutConfirm'),
+                style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
                     color: Colors.white)),
           ),
         ],
@@ -441,10 +532,16 @@ class _StatBanner extends StatelessWidget {
   final VoidCallback onTap;
 
   const _StatBanner({
-    required this.uid, required this.collection, required this.userField,
-    required this.statusFilter, required this.icon, required this.label,
-    required this.emptyLabel, required this.buttonLabel,
-    required this.buttonIcon, required this.onTap,
+    required this.uid,
+    required this.collection,
+    required this.userField,
+    required this.statusFilter,
+    required this.icon,
+    required this.label,
+    required this.emptyLabel,
+    required this.buttonLabel,
+    required this.buttonIcon,
+    required this.onTap,
   });
 
   @override
@@ -467,14 +564,17 @@ class _StatBanner extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+        padding:
+        const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.primary.withOpacity(0.15)),
+          border:
+          Border.all(color: AppColors.primary.withOpacity(0.15)),
           boxShadow: [BoxShadow(
               color: AppColors.primary.withOpacity(0.07),
-              blurRadius: 14, offset: const Offset(0, 4))],
+              blurRadius: 14,
+              offset: const Offset(0, 4))],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -492,31 +592,41 @@ class _StatBanner extends StatelessWidget {
                   style: TextStyle(
                     fontSize: count == 0 ? 20 : 24,
                     fontWeight: FontWeight.w900,
-                    color: count == 0 ? Colors.black26 : AppColors.primary,
+                    color: count == 0
+                        ? Colors.black26
+                        : AppColors.primary,
                     letterSpacing: -0.5,
                   )),
             ]),
             const SizedBox(height: 10),
-            Text(label, style: const TextStyle(
-                fontSize: 12, fontWeight: FontWeight.w600,
-                color: Colors.black54, letterSpacing: 0.1)),
+            Text(label,
+                style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.black54,
+                    letterSpacing: 0.1)),
             const SizedBox(height: 2),
             Text(count == 0 ? emptyLabel : '',
-                style: const TextStyle(fontSize: 11, color: Colors.black38)),
+                style: const TextStyle(
+                    fontSize: 11, color: Colors.black38)),
             const SizedBox(height: 10),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
                   color: AppColors.primary.withOpacity(0.08),
                   borderRadius: BorderRadius.circular(20)),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(buttonIcon, color: AppColors.primary, size: 13),
+                  Icon(buttonIcon,
+                      color: AppColors.primary, size: 13),
                   const SizedBox(width: 4),
-                  Text(buttonLabel, style: const TextStyle(
-                      fontSize: 11, fontWeight: FontWeight.w700,
-                      color: AppColors.primary)),
+                  Text(buttonLabel,
+                      style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary)),
                 ],
               ),
             ),
@@ -531,15 +641,22 @@ class _StatBanner extends StatelessWidget {
 class _SectionHeader extends StatelessWidget {
   final String label;
   const _SectionHeader({required this.label});
+
   @override
   Widget build(BuildContext context) => Row(children: [
-    Container(width: 4, height: 18,
-        decoration: BoxDecoration(color: AppColors.primary,
+    Container(
+        width: 4,
+        height: 18,
+        decoration: BoxDecoration(
+            color: AppColors.primary,
             borderRadius: BorderRadius.circular(2))),
     const SizedBox(width: 8),
-    Text(label, style: const TextStyle(
-        fontSize: 15, fontWeight: FontWeight.w800,
-        color: AppColors.primary, letterSpacing: 0.1)),
+    Text(label,
+        style: const TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+            color: AppColors.primary,
+            letterSpacing: 0.1)),
   ]);
 }
 
@@ -549,67 +666,84 @@ class _MenuItem {
   final bool isLast;
   final bool isDestructive;
   final VoidCallback onTap;
+
   const _MenuItem({
-    required this.icon, required this.label, required this.onTap,
-    this.isLast = false, this.isDestructive = false,
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.isLast = false,
+    this.isDestructive = false,
   });
 }
 
 class _MenuCard extends StatelessWidget {
   final List<_MenuItem> items;
   const _MenuCard({required this.items});
+
   @override
   Widget build(BuildContext context) => Container(
     decoration: BoxDecoration(
       color: Colors.white,
       borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: AppColors.primary.withOpacity(0.12)),
+      border:
+      Border.all(color: AppColors.primary.withOpacity(0.12)),
       boxShadow: [BoxShadow(
           color: AppColors.primary.withOpacity(0.06),
-          blurRadius: 14, offset: const Offset(0, 4))],
+          blurRadius: 14,
+          offset: const Offset(0, 4))],
     ),
     child: Column(
-        children: items.map((item) => _MenuTile(item: item)).toList()),
+        children:
+        items.map((item) => _MenuTile(item: item)).toList()),
   );
 }
 
 class _MenuTile extends StatelessWidget {
   final _MenuItem item;
   const _MenuTile({required this.item});
+
   @override
   Widget build(BuildContext context) {
-    final color = item.isDestructive ? Colors.red.shade400 : AppColors.primary;
-    return Column(
-      children: [
-        InkWell(
-          onTap: item.onTap,
-          borderRadius: BorderRadius.vertical(
-              bottom: item.isLast ? const Radius.circular(16) : Radius.zero),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-            child: Row(children: [
-              Container(
-                  width: 38, height: 38,
-                  decoration: BoxDecoration(
-                      color: color.withOpacity(0.10),
-                      borderRadius: BorderRadius.circular(10)),
-                  child: Icon(item.icon, color: color, size: 20)),
-              const SizedBox(width: 14),
-              Expanded(child: Text(item.label,
-                  style: TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w600,
-                      color: item.isDestructive
-                          ? Colors.red.shade400
-                          : const Color(0xFF1A1A1A)))),
-              Icon(Icons.chevron_right_rounded,
-                  color: color.withOpacity(0.4), size: 20),
-            ]),
-          ),
+    final color =
+    item.isDestructive ? Colors.red.shade400 : AppColors.primary;
+    return Column(children: [
+      InkWell(
+        onTap: item.onTap,
+        borderRadius: BorderRadius.vertical(
+            bottom: item.isLast
+                ? const Radius.circular(16)
+                : Radius.zero),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+              horizontal: 16, vertical: 15),
+          child: Row(children: [
+            Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                    color: color.withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(10)),
+                child: Icon(item.icon, color: color, size: 20)),
+            const SizedBox(width: 14),
+            Expanded(
+                child: Text(item.label,
+                    style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: item.isDestructive
+                            ? Colors.red.shade400
+                            : const Color(0xFF1A1A1A)))),
+            Icon(Icons.chevron_right_rounded,
+                color: color.withOpacity(0.4), size: 20),
+          ]),
         ),
-        if (!item.isLast)
-          Divider(height: 1, thickness: 1, indent: 68,
-              color: AppColors.primary.withOpacity(0.08)),
-      ],
-    );
+      ),
+      if (!item.isLast)
+        Divider(
+            height: 1,
+            thickness: 1,
+            indent: 68,
+            color: AppColors.primary.withOpacity(0.08)),
+    ]);
   }
 }

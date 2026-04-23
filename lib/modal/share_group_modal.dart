@@ -2,29 +2,64 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:pikuru/theme/material.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ════════════════════════════════════════════════════════════════════════════
 // ShareGroupModal
-//
-// individual_chats/{chatId}
-//   participants: [uid1, uid2]
-//   participant_names: { uid: name }
-//   participant_avatars: { uid: url }
-//   last_message: String
-//   last_message_at: Timestamp
-//   last_message_by: String (uid)
-//   last_read: { uid: Timestamp }
-//   messages/ (subcollection)
-//     {msgId}/
-//       text: String
-//       sender_id: String
-//       timestamp: Timestamp
-//       type: "text"
-// ─────────────────────────────────────────────────────────────────────────────
+// Usage: ShareGroupModal.show(context, group: widget.group)
+// ════════════════════════════════════════════════════════════════════════════
 
-class ShareGroupModal extends StatefulWidget {
+// ── Static i18n strings ───────────────────────────────────────────────────────
+const _kEn = {
+  'title'       : 'Share Group',
+  'shareVia'    : 'Share via',
+  'people'      : 'People',
+  'groups'      : 'Groups',
+  'copyLink'    : 'Copy Link',
+  'instagram'   : 'Instagram',
+  'line'        : 'LINE',
+  'facebook'    : 'Facebook',
+  'messenger'   : 'Messenger',
+  'twitter'     : 'X / Twitter',
+  'whatsapp'    : 'WhatsApp',
+  'linkCopied'  : 'Link copied!',
+  'selectRecip' : 'Select recipients',
+  'sendTo'      : 'Send to',
+  'sent'        : 'Sent!',
+  'failedSend'  : 'Failed to send: ',
+  'signIn'      : 'Sign in to see contacts',
+  'noConvo'     : 'No recent conversations',
+  'noGroups'    : 'No group chats yet',
+  'sharedGroup' : 'Shared a group: ',
+};
+
+const _kJa = {
+  'title'       : 'グループをシェア',
+  'shareVia'    : 'シェア方法',
+  'people'      : 'ユーザー',
+  'groups'      : 'グループ',
+  'copyLink'    : 'リンクをコピー',
+  'instagram'   : 'Instagram',
+  'line'        : 'LINE',
+  'facebook'    : 'Facebook',
+  'messenger'   : 'Messenger',
+  'twitter'     : 'X / Twitter',
+  'whatsapp'    : 'WhatsApp',
+  'linkCopied'  : 'リンクをコピーしました！',
+  'selectRecip' : '送信先を選択',
+  'sendTo'      : '送信する（',
+  'sent'        : '送信済み！',
+  'failedSend'  : '送信に失敗しました: ',
+  'signIn'      : 'ログインして連絡先を表示',
+  'noConvo'     : '最近の会話はありません',
+  'noGroups'    : 'グループチャットはまだありません',
+  'sharedGroup' : 'グループをシェアしました: ',
+};
+
+class ShareGroupModal extends ConsumerStatefulWidget {
   final Map<String, dynamic> group;
 
   const ShareGroupModal({super.key, required this.group});
@@ -40,14 +75,14 @@ class ShareGroupModal extends StatefulWidget {
   }
 
   @override
-  State<ShareGroupModal> createState() => _ShareGroupModalState();
+  ConsumerState<ShareGroupModal> createState() => _ShareGroupModalState();
 }
 
-class _ShareGroupModalState extends State<ShareGroupModal>
+class _ShareGroupModalState extends ConsumerState<ShareGroupModal>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
   final Set<String> _selectedIds = {};
-  bool _sent = false;
+  bool _sent    = false;
   bool _sending = false;
 
   @override
@@ -62,26 +97,51 @@ class _ShareGroupModalState extends State<ShareGroupModal>
     super.dispose();
   }
 
+  // ── Lang helpers ──────────────────────────────────────────────────────────
+  bool get _isJa => ref.watch(appLangProvider) == kLangJa;
+  Map<String, String> get _t => _isJa ? _kJa : _kEn;
+
+  /// Returns the Japanese field value when lang is JA and it is non-empty,
+  /// otherwise falls back to the English field.
+  String _f(String enKey, [String? jpKey]) {
+    final jp = jpKey ?? '${enKey}_jp';
+    final jpVal = (widget.group[jp] ?? '').toString();
+    if (_isJa && jpVal.isNotEmpty) return jpVal;
+    return (widget.group[enKey] ?? '').toString();
+  }
+
+  // ── Derived group fields ──────────────────────────────────────────────────
   String get _groupName =>
-      (widget.group['org_name'] ?? widget.group['group_name'] ?? 'a group')
+      _isJa
+          ? (() {
+        final jp = (widget.group['org_name_jp'] ?? '').toString();
+        return jp.isNotEmpty
+            ? jp
+            : (widget.group['org_name'] ??
+            widget.group['group_name'] ??
+            'a group')
+            .toString();
+      })()
+          : (widget.group['org_name'] ??
+          widget.group['group_name'] ??
+          'a group')
           .toString();
 
   String get _groupImage =>
       (widget.group['org_image'] ?? widget.group['org_pic'] ?? '').toString();
 
-  String get _groupType =>
-      (widget.group['org_type'] ?? '').toString();
+  String get _groupType => _f('org_type');
 
   String get _groupId =>
-      (widget.group['org_id'] ?? widget.group['org_ID'] ??
-          widget.group['_doc_id'] ?? '').toString();
+      (widget.group['org_id'] ??
+          widget.group['org_ID'] ??
+          widget.group['_doc_id'] ??
+          '')
+          .toString();
 
-  // Plain text fallback for last_message preview in chat list
-  String get _shareText => 'Shared a group: $_groupName 🏓';
+  String get _shareText => '${_t['sharedGroup']}$_groupName 🏓';
 
-  // ── Real Firestore send ────────────────────────────────────────────
-  // _selectedIds contains individual_chat doc IDs (from _PeopleTab) or
-  // group_chat doc IDs (from _GroupsTab). We handle each type correctly.
+  // ── Send ──────────────────────────────────────────────────────────────────
   Future<void> _send() async {
     if (_selectedIds.isEmpty || _sending) return;
     final me = FirebaseAuth.instance.currentUser;
@@ -91,54 +151,42 @@ class _ShareGroupModalState extends State<ShareGroupModal>
 
     final db = FirebaseFirestore.instance;
 
-    // ── Structured group share message payload ─────────────────────────
-    // type: 'group_share' tells the chat screen to render a card, not plain text.
-    // group_data: full group map so GroupDetailScreen can be opened directly.
     final sharePayload = {
-      'sender_id': me.uid,
-      'sender_name': me.displayName ?? 'Anonymous',
-      'sender_avatar': me.photoURL ?? '',
-      'type': 'group_share',
-      'text': _shareText,           // plain text fallback
-      'group_id': _groupId,
-      'group_name': _groupName,
-      'group_image': _groupImage,
-      'group_type': _groupType,
-      'group_data': widget.group,   // full map → GroupDetailScreen(group: ...)
-      'sent_at': FieldValue.serverTimestamp(),
+      'sender_id'   : me.uid,
+      'sender_name' : me.displayName ?? 'Anonymous',
+      'sender_avatar': me.photoURL   ?? '',
+      'type'        : 'group_share',
+      'text'        : _shareText,
+      'group_id'    : _groupId,
+      'group_name'  : _groupName,
+      'group_image' : _groupImage,
+      'group_type'  : _groupType,
+      'group_data'  : widget.group,
+      'sent_at'     : FieldValue.serverTimestamp(),
     };
 
     try {
       await Future.wait(_selectedIds.map((chatId) async {
-        // ── Determine if this is individual or group chat ──────────────
-        // Individual chat IDs are "uid1_uid2" (two UIDs joined by underscore)
-        // Group chat IDs are Firestore auto-IDs (20 char alphanumeric)
-        final isIndividual = chatId.contains('_') && chatId.split('_').length == 2;
+        final isIndividual =
+            chatId.contains('_') && chatId.split('_').length == 2;
 
         if (isIndividual) {
-          // ── Individual chat ────────────────────────────────────────────
           final chatRef = db.collection('individual_chats').doc(chatId);
-
           await chatRef.collection('messages').add(sharePayload);
-
           await chatRef.update({
-            'last_message': _shareText,
-            'last_message_at': FieldValue.serverTimestamp(),
-            'last_message_by': me.uid,
-            'last_read.${me.uid}': FieldValue.serverTimestamp(),
+            'last_message'        : _shareText,
+            'last_message_at'     : FieldValue.serverTimestamp(),
+            'last_message_by'     : me.uid,
+            'last_read.${me.uid}' : FieldValue.serverTimestamp(),
           });
         } else {
-          // ── Group chat ─────────────────────────────────────────────────
           final chatRef = db.collection('group_chats').doc(chatId);
-
           await chatRef.collection('messages').add(sharePayload);
-
           await chatRef.update({
-            'last_message': _shareText,
+            'last_message'   : _shareText,
             'last_message_at': FieldValue.serverTimestamp(),
             'last_message_by': me.uid,
           });
-
           await chatRef
               .collection('participants')
               .doc(me.uid)
@@ -157,7 +205,7 @@ class _ShareGroupModalState extends State<ShareGroupModal>
         setState(() => _sending = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to send: $e'),
+            content: Text('${_t['failedSend']}$e'),
             backgroundColor: Colors.red.shade400,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
@@ -178,6 +226,10 @@ class _ShareGroupModalState extends State<ShareGroupModal>
 
   @override
   Widget build(BuildContext context) {
+    // Watch lang so the whole modal rebuilds on any global lang change.
+    final isJa = ref.watch(appLangProvider) == kLangJa;
+    final t = isJa ? _kJa : _kEn;
+
     final bottomPad = MediaQuery.of(context).padding.bottom;
 
     return Container(
@@ -205,8 +257,8 @@ class _ShareGroupModalState extends State<ShareGroupModal>
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Row(
               children: [
-                const Text('Share Group',
-                    style: TextStyle(
+                Text(t['title']!,
+                    style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w800,
                         color: Color(0xFF0D0D0D),
@@ -258,8 +310,8 @@ class _ShareGroupModalState extends State<ShareGroupModal>
                                 color: Color(0xFF0D0D0D)),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis),
-                        if ((widget.group['org_type'] ?? '').toString().isNotEmpty)
-                          Text(widget.group['org_type'].toString(),
+                        if (_groupType.isNotEmpty)
+                          Text(_groupType,
                               style: TextStyle(
                                   fontSize: 12,
                                   color: AppColors.primary,
@@ -276,7 +328,7 @@ class _ShareGroupModalState extends State<ShareGroupModal>
 
           const SizedBox(height: 14),
 
-          // ── Tab bar (People / Groups) ─────────────────────────────────
+          // ── Tab bar ───────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Container(
@@ -306,14 +358,14 @@ class _ShareGroupModalState extends State<ShareGroupModal>
                     fontSize: 13, fontWeight: FontWeight.w700),
                 unselectedLabelStyle: const TextStyle(
                     fontSize: 13, fontWeight: FontWeight.w500),
-                tabs: const [Tab(text: 'People'), Tab(text: 'Groups')],
+                tabs: [Tab(text: t['people']), Tab(text: t['groups'])],
               ),
             ),
           ),
 
           const SizedBox(height: 10),
 
-          // ── Tab content (fixed height) ────────────────────────────────
+          // ── Tab content ───────────────────────────────────────────────
           SizedBox(
             height: 140,
             child: TabBarView(
@@ -321,17 +373,17 @@ class _ShareGroupModalState extends State<ShareGroupModal>
               children: [
                 _PeopleTab(
                   selectedIds: _selectedIds,
-                  onToggle: (id) =>
-                      setState(() => _selectedIds.contains(id)
-                          ? _selectedIds.remove(id)
-                          : _selectedIds.add(id)),
+                  isJa: isJa,
+                  onToggle: (id) => setState(() => _selectedIds.contains(id)
+                      ? _selectedIds.remove(id)
+                      : _selectedIds.add(id)),
                 ),
                 _GroupsTab(
                   selectedIds: _selectedIds,
-                  onToggle: (id) =>
-                      setState(() => _selectedIds.contains(id)
-                          ? _selectedIds.remove(id)
-                          : _selectedIds.add(id)),
+                  isJa: isJa,
+                  onToggle: (id) => setState(() => _selectedIds.contains(id)
+                      ? _selectedIds.remove(id)
+                      : _selectedIds.add(id)),
                 ),
               ],
             ),
@@ -346,7 +398,7 @@ class _ShareGroupModalState extends State<ShareGroupModal>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Share via',
+                Text(t['shareVia']!,
                     style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -358,14 +410,14 @@ class _ShareGroupModalState extends State<ShareGroupModal>
                   child: Row(
                     children: [
                       _SocialButton(
-                        label: 'Copy Link',
+                        label: t['copyLink']!,
                         icon: Icons.link_rounded,
                         color: const Color(0xFF1C1C1E),
                         onTap: () {
                           Clipboard.setData(ClipboardData(text: _shareText));
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: const Text('Link copied!'),
+                              content: Text(t['linkCopied']!),
                               backgroundColor: AppColors.primary,
                               behavior: SnackBarBehavior.floating,
                               duration: const Duration(seconds: 2),
@@ -377,10 +429,14 @@ class _ShareGroupModalState extends State<ShareGroupModal>
                       ),
                       const SizedBox(width: 16),
                       _SocialButton(
-                        label: 'Instagram',
+                        label: t['instagram']!,
                         color: const Color(0xFFE1306C),
                         gradient: const LinearGradient(
-                          colors: [Color(0xFFF58529), Color(0xFFDD2A7B), Color(0xFF8134AF)],
+                          colors: [
+                            Color(0xFFF58529),
+                            Color(0xFFDD2A7B),
+                            Color(0xFF8134AF),
+                          ],
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
                         ),
@@ -389,7 +445,7 @@ class _ShareGroupModalState extends State<ShareGroupModal>
                       ),
                       const SizedBox(width: 16),
                       _SocialButton(
-                        label: 'LINE',
+                        label: t['line']!,
                         color: const Color(0xFF06C755),
                         iconWidget: _LineIcon(),
                         onTap: () => _launchSocial(
@@ -397,7 +453,7 @@ class _ShareGroupModalState extends State<ShareGroupModal>
                       ),
                       const SizedBox(width: 16),
                       _SocialButton(
-                        label: 'Facebook',
+                        label: t['facebook']!,
                         color: const Color(0xFF1877F2),
                         icon: Icons.facebook_rounded,
                         onTap: () => _launchSocial(
@@ -405,7 +461,7 @@ class _ShareGroupModalState extends State<ShareGroupModal>
                       ),
                       const SizedBox(width: 16),
                       _SocialButton(
-                        label: 'Messenger',
+                        label: t['messenger']!,
                         color: const Color(0xFF0084FF),
                         iconWidget: _MessengerIcon(),
                         onTap: () => _launchSocial(
@@ -413,7 +469,7 @@ class _ShareGroupModalState extends State<ShareGroupModal>
                       ),
                       const SizedBox(width: 16),
                       _SocialButton(
-                        label: 'X / Twitter',
+                        label: t['twitter']!,
                         color: const Color(0xFF000000),
                         icon: Icons.alternate_email_rounded,
                         onTap: () => _launchSocial(
@@ -421,7 +477,7 @@ class _ShareGroupModalState extends State<ShareGroupModal>
                       ),
                       const SizedBox(width: 16),
                       _SocialButton(
-                        label: 'WhatsApp',
+                        label: t['whatsapp']!,
                         color: const Color(0xFF25D366),
                         icon: Icons.chat_rounded,
                         onTap: () => _launchSocial(
@@ -462,25 +518,25 @@ class _ShareGroupModalState extends State<ShareGroupModal>
                       : [],
                 ),
                 child: Center(
-                  child: _sent
-                      ? const Row(
+                  child: _sending
+                      ? const SizedBox(
+                      width: 22, height: 22,
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2.5))
+                      : _sent
+                      ? Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.check_circle_rounded,
-                          color: Colors.white, size: 18),
-                      SizedBox(width: 7),
-                      Text('Sent!',
-                          style: TextStyle(
+                      const Icon(Icons.check_circle_rounded,
+                          size: 18, color: Colors.white),
+                      const SizedBox(width: 7),
+                      Text(t['sent']!,
+                          style: const TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w800,
                               color: Colors.white)),
                     ],
                   )
-                      : _sending
-                      ? const SizedBox(
-                      width: 20, height: 20,
-                      child: CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2.5))
                       : Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -492,8 +548,10 @@ class _ShareGroupModalState extends State<ShareGroupModal>
                       const SizedBox(width: 7),
                       Text(
                         _selectedIds.isEmpty
-                            ? 'Select recipients'
-                            : 'Send to ${_selectedIds.length}',
+                            ? t['selectRecip']!
+                            : isJa
+                            ? '${t['sendTo']}${_selectedIds.length}人）'
+                            : '${t['sendTo']} ${_selectedIds.length}',
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
@@ -515,18 +573,24 @@ class _ShareGroupModalState extends State<ShareGroupModal>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// People tab — reads individual_chats, resolves other user from maps
+// People tab
 // ─────────────────────────────────────────────────────────────────────────────
 class _PeopleTab extends StatelessWidget {
   final Set<String> selectedIds;
+  final bool isJa;
   final void Function(String) onToggle;
 
-  const _PeopleTab({required this.selectedIds, required this.onToggle});
+  const _PeopleTab({
+    required this.selectedIds,
+    required this.isJa,
+    required this.onToggle,
+  });
 
   @override
   Widget build(BuildContext context) {
     final me = FirebaseAuth.instance.currentUser;
-    if (me == null) return _empty('Sign in to see contacts');
+    final t  = isJa ? _kJa : _kEn;
+    if (me == null) return _empty(t['signIn']!);
 
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
@@ -545,7 +609,7 @@ class _PeopleTab extends StatelessWidget {
                 .snapshots(),
             builder: (_, snap2) {
               if (!snap2.hasData || snap2.data!.docs.isEmpty) {
-                return _empty('No recent conversations');
+                return _empty(t['noConvo']!);
               }
               return _buildList(snap2.data!.docs, me.uid);
             },
@@ -557,9 +621,7 @@ class _PeopleTab extends StatelessWidget {
               child: CircularProgressIndicator(strokeWidth: 2));
         }
 
-        if (snapshot.data!.docs.isEmpty) {
-          return _empty('No recent conversations');
-        }
+        if (snapshot.data!.docs.isEmpty) return _empty(t['noConvo']!);
 
         return _buildList(snapshot.data!.docs, me.uid);
       },
@@ -572,19 +634,14 @@ class _PeopleTab extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20),
       itemCount: docs.length,
       itemBuilder: (context, i) {
-        final data = docs[i].data() as Map<String, dynamic>;
-        final chatId = docs[i].id;
-
-        final participants = List<String>.from(data['participants'] ?? []);
-        final otherId =
-        participants.firstWhere((p) => p != myUid, orElse: () => '');
-
-        final names = Map<String, dynamic>.from(data['participant_names'] ?? {});
-        final avatars =
-        Map<String, dynamic>.from(data['participant_avatars'] ?? {});
-
-        final name = (names[otherId] ?? 'User').toString();
-        final avatar = (avatars[otherId] ?? '').toString();
+        final data    = docs[i].data() as Map<String, dynamic>;
+        final chatId  = docs[i].id;
+        final parts   = List<String>.from(data['participants'] ?? []);
+        final otherId = parts.firstWhere((p) => p != myUid, orElse: () => '');
+        final names   = Map<String, dynamic>.from(data['participant_names']   ?? {});
+        final avatars = Map<String, dynamic>.from(data['participant_avatars'] ?? {});
+        final name    = (names[otherId]   ?? 'User').toString();
+        final avatar  = (avatars[otherId] ?? '').toString();
         final selected = selectedIds.contains(chatId);
 
         return _AvatarTile(
@@ -601,19 +658,24 @@ class _PeopleTab extends StatelessWidget {
 
   Widget _empty(String msg) => Center(
     child: Text(msg,
-        style:
-        TextStyle(fontSize: 13, color: Colors.black.withOpacity(0.35))),
+        style: TextStyle(
+            fontSize: 13, color: Colors.black.withOpacity(0.35))),
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Groups tab — checks participants subcollection, resolves org name/image
+// Groups tab
 // ─────────────────────────────────────────────────────────────────────────────
 class _GroupsTab extends StatefulWidget {
   final Set<String> selectedIds;
+  final bool isJa;
   final void Function(String) onToggle;
 
-  const _GroupsTab({required this.selectedIds, required this.onToggle});
+  const _GroupsTab({
+    required this.selectedIds,
+    required this.isJa,
+    required this.onToggle,
+  });
 
   @override
   State<_GroupsTab> createState() => _GroupsTabState();
@@ -631,10 +693,7 @@ class _GroupsTabState extends State<_GroupsTab> {
 
   Future<void> _loadGroups() async {
     final me = FirebaseAuth.instance.currentUser;
-    if (me == null) {
-      setState(() => _loading = false);
-      return;
-    }
+    if (me == null) { setState(() => _loading = false); return; }
 
     try {
       final allChats = await FirebaseFirestore.instance
@@ -646,22 +705,26 @@ class _GroupsTabState extends State<_GroupsTab> {
       final List<_GroupChatItem> result = [];
 
       for (final doc in allChats.docs) {
-        final participantRef = await FirebaseFirestore.instance
+        final partRef = await FirebaseFirestore.instance
             .collection('group_chats')
             .doc(doc.id)
             .collection('participants')
             .doc(me.uid)
             .get();
+        if (!partRef.exists) continue;
 
-        if (!participantRef.exists) continue;
+        final data    = doc.data();
+        final orgId   = (data['org_id']    ?? '').toString();
+        String name   = (data['org_name']  ?? 'Group Chat').toString();
+        String avatar = (data['org_image'] ?? '').toString();
 
-        final data = doc.data();
-        final orgId = (data['org_id'] ?? '').toString();
+        // Prefer Japanese org name if lang is JA
+        if (widget.isJa) {
+          final jpName = (data['org_name_jp'] ?? '').toString();
+          if (jpName.isNotEmpty) name = jpName;
+        }
 
-        String name = (data['org_name'] ?? 'Group Chat').toString();
-        String avatarUrl = (data['org_image'] ?? '').toString();
-
-        if (orgId.isNotEmpty && (name == 'Group Chat' || avatarUrl.isEmpty)) {
+        if (orgId.isNotEmpty && (name == 'Group Chat' || avatar.isEmpty)) {
           try {
             final orgSnap = await FirebaseFirestore.instance
                 .collection('organizations')
@@ -670,27 +733,32 @@ class _GroupsTabState extends State<_GroupsTab> {
                 .get();
             if (orgSnap.docs.isNotEmpty) {
               final org = orgSnap.docs.first.data();
-              name = (org['org_name'] ?? name).toString();
-              avatarUrl = (org['org_image'] ?? avatarUrl).toString();
+              if (widget.isJa) {
+                final jpOrgName = (org['org_name_jp'] ?? '').toString();
+                name = jpOrgName.isNotEmpty
+                    ? jpOrgName
+                    : (org['org_name'] ?? name).toString();
+              } else {
+                name = (org['org_name'] ?? name).toString();
+              }
+              avatar = (org['org_image'] ?? avatar).toString();
             }
           } catch (_) {}
         }
 
-        result.add(_GroupChatItem(
-          chatId: doc.id,
-          name: name,
-          avatarUrl: avatarUrl,
-        ));
+        result.add(_GroupChatItem(chatId: doc.id, name: name, avatarUrl: avatar));
       }
 
       if (mounted) setState(() { _items = result; _loading = false; });
-    } catch (e) {
+    } catch (_) {
       if (mounted) setState(() { _items = []; _loading = false; });
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final t = widget.isJa ? _kJa : _kEn;
+
     if (_loading) {
       return const Center(child: CircularProgressIndicator(strokeWidth: 2));
     }
@@ -698,7 +766,7 @@ class _GroupsTabState extends State<_GroupsTab> {
     final items = _items ?? [];
     if (items.isEmpty) {
       return Center(
-        child: Text('No group chats yet',
+        child: Text(t['noGroups']!,
             style: TextStyle(
                 fontSize: 13, color: Colors.black.withOpacity(0.35))),
       );
@@ -709,7 +777,7 @@ class _GroupsTabState extends State<_GroupsTab> {
       padding: const EdgeInsets.symmetric(horizontal: 20),
       itemCount: items.length,
       itemBuilder: (context, i) {
-        final item = items[i];
+        final item     = items[i];
         final selected = widget.selectedIds.contains(item.chatId);
         return _AvatarTile(
           id: item.chatId,
@@ -765,8 +833,7 @@ class _AvatarTile extends StatelessWidget {
             Stack(
               children: [
                 Container(
-                  width: 58,
-                  height: 58,
+                  width: 58, height: 58,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(
@@ -784,11 +851,9 @@ class _AvatarTile extends StatelessWidget {
                 ),
                 if (selected)
                   Positioned(
-                    bottom: 0,
-                    right: 0,
+                    bottom: 0, right: 0,
                     child: Container(
-                      width: 20,
-                      height: 20,
+                      width: 20, height: 20,
                       decoration: BoxDecoration(
                         color: AppColors.primary,
                         shape: BoxShape.circle,
@@ -845,17 +910,14 @@ class _OrgThumb extends StatelessWidget {
     final url = (group['org_image'] ?? group['org_pic'] ?? '').toString();
     if (url.isNotEmpty) {
       return Image.network(url,
-          width: 44,
-          height: 44,
-          fit: BoxFit.cover,
+          width: 44, height: 44, fit: BoxFit.cover,
           errorBuilder: (_, __, ___) => _ph());
     }
     return _ph();
   }
 
   Widget _ph() => Container(
-      width: 44,
-      height: 44,
+      width: 44, height: 44,
       color: AppColors.primary.withOpacity(0.1),
       child: Icon(Icons.group_rounded,
           size: 22, color: AppColors.primary.withOpacity(0.5)));
@@ -870,7 +932,6 @@ class _SocialButton extends StatelessWidget {
   final IconData? icon;
   final Widget? iconWidget;
   final Gradient? gradient;
-  final String? svgAsset;
   final VoidCallback onTap;
 
   const _SocialButton({
@@ -880,7 +941,6 @@ class _SocialButton extends StatelessWidget {
     this.icon,
     this.iconWidget,
     this.gradient,
-    this.svgAsset,
   });
 
   @override
@@ -891,8 +951,7 @@ class _SocialButton extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 52,
-            height: 52,
+            width: 52, height: 52,
             decoration: BoxDecoration(
               color: gradient == null ? color : null,
               gradient: gradient,
@@ -923,7 +982,6 @@ class _SocialButton extends StatelessWidget {
   }
 }
 
-// ── LINE icon ─────────────────────────────────────────────────────────────────
 class _LineIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) => const Text('LINE',
@@ -934,7 +992,6 @@ class _LineIcon extends StatelessWidget {
           letterSpacing: -0.5));
 }
 
-// ── Messenger icon ────────────────────────────────────────────────────────────
 class _MessengerIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) => const Icon(

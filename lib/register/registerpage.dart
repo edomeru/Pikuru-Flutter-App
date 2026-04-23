@@ -1,58 +1,115 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pikuru/loginpage.dart';
 import 'package:pikuru/otp_verification_page.dart';
 import 'package:pikuru/theme/material.dart';
+import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:modal_progress_hud_nsn/modal_progress_hud_nsn.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'dart:math';
 
-class RegisterPage extends StatefulWidget {
+// ═══════════════════════════════════════════════════════════════════
+// Translations  (mirrors web app T object)
+// ═══════════════════════════════════════════════════════════════════
+const _T = {
+  'en': {
+    'title':           'Create\nAccount',
+    'nickname':        'Nickname / Username',
+    'email':           'Email',
+    'password':        'Password',
+    'confirmPassword': 'Confirm Password',
+    'agree':           'I agree to the Terms & Conditions and Privacy Policy',
+    'signUp':          'Sign up',
+    'alreadyHave':     'Already have an account?',
+    'login':           'Login',
+    'submitting':      'Sending code…',
+    'errorMatch':      'Passwords do not match',
+    'errorAgree':      'You must agree to the terms first',
+    'errorRequired':   'Required',
+    'errorMinPw':      'Min 6 characters',
+    'errorEmail':      'Invalid email',
+    'errorGeneric':    'Something went wrong. Please try again.',
+    'codeSent':        'Verification code sent!',
+    'errorSend':       'Failed to send code',
+  },
+  'ja': {
+    'title':           'アカウント\n作成',
+    'nickname':        'Nickname / Username',
+    'email':           'メールアドレス',
+    'password':        'パスワード',
+    'confirmPassword': 'パスワード確認',
+    'agree':           '利用規約とプライバシーポリシーに同意します',
+    'signUp':          '登録する',
+    'alreadyHave':     'すでにアカウントをお持ちですか？',
+    'login':           'ログイン',
+    'submitting':      'コードを送信中…',
+    'errorMatch':      'パスワードが一致しません',
+    'errorAgree':      '利用規約に同意してください',
+    'errorRequired':   '必須項目です',
+    'errorMinPw':      '6文字以上で入力してください',
+    'errorEmail':      'メールアドレスが無効です',
+    'errorGeneric':    'エラーが発生しました。もう一度お試しください。',
+    'codeSent':        '確認コードを送信しました！',
+    'errorSend':       'コードの送信に失敗しました',
+  },
+};
+
+String _t(String lang, String key) =>
+    (_T[lang]?[key] ?? _T['en']![key]) ?? key;
+
+// ═══════════════════════════════════════════════════════════════════
+// RegisterPage — ConsumerStatefulWidget
+// ═══════════════════════════════════════════════════════════════════
+class RegisterPage extends ConsumerStatefulWidget {
   const RegisterPage({super.key});
 
   @override
-  State<RegisterPage> createState() => _RegisterPageState();
+  ConsumerState<RegisterPage> createState() => _RegisterPageState();
 }
 
-class _RegisterPageState extends State<RegisterPage>
+class _RegisterPageState extends ConsumerState<RegisterPage>
     with SingleTickerProviderStateMixin {
-  final TextEditingController nicknameController    = TextEditingController();
-  final TextEditingController emailController       = TextEditingController();
-  final TextEditingController passwordController    = TextEditingController();
-  final TextEditingController confirmPasswordController = TextEditingController();
+  final TextEditingController _nicknameController        = TextEditingController();
+  final TextEditingController _emailController           = TextEditingController();
+  final TextEditingController _passwordController        = TextEditingController();
+  final TextEditingController _confirmPasswordController = TextEditingController();
 
   final _formKey = GlobalKey<FormState>();
-  late AnimationController _controller;
-  late Animation<double> _fadeAnimation;
+  late AnimationController _animController;
+  late Animation<double>   _fadeAnimation;
 
-  bool agree              = false;
-  bool showPassword       = false;
-  bool showConfirmPassword = false;
-  bool showSpinner        = false;
+  bool _agree               = false;
+  bool _showPassword        = false;
+  bool _showConfirmPassword = false;
+  bool _showSpinner         = false;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(
+    _animController = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 600));
-    _fadeAnimation = CurvedAnimation(parent: _controller, curve: Curves.easeIn);
-    _controller.forward();
+    _fadeAnimation = CurvedAnimation(
+        parent: _animController, curve: Curves.easeIn);
+    _animController.forward();
   }
 
   @override
   void dispose() {
-    nicknameController.dispose();
-    emailController.dispose();
-    passwordController.dispose();
-    confirmPasswordController.dispose();
-    _controller.dispose();
+    _nicknameController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    _animController.dispose();
     super.dispose();
   }
 
+  // ── OTP generator ─────────────────────────────────────────────────────────
   String _generateOtp() {
     final rand = Random.secure();
     return (100000 + rand.nextInt(900000)).toString();
   }
 
+  // ── Send OTP via Cloud Function ───────────────────────────────────────────
   Future<void> _sendOtpViaCloudFunction({
     required String toEmail,
     required String nickname,
@@ -61,33 +118,34 @@ class _RegisterPageState extends State<RegisterPage>
     final callable = FirebaseFunctions.instance.httpsCallable('sendOtp');
     await callable.call({
       'email':     toEmail,
-      'firstName': nickname, // Cloud Function expects 'firstName' for greeting
+      'firstName': nickname,
       'otp':       otp,
     });
   }
 
-  Future<void> _onSignUp() async {
+  // ── Submit handler ────────────────────────────────────────────────────────
+  Future<void> _onSignUp(String lang) async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (!agree) {
+    if (!_agree) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You must agree to the terms first')),
+        SnackBar(content: Text(_t(lang, 'errorAgree'))),
       );
       return;
     }
 
-    setState(() => showSpinner = true);
+    setState(() => _showSpinner = true);
 
     try {
-      final email    = emailController.text.trim();
-      final nickname = nicknameController.text.trim();
-      final password = passwordController.text;
+      final email    = _emailController.text.trim();
+      final nickname = _nicknameController.text.trim();
+      final password = _passwordController.text;
       final otp      = _generateOtp();
 
       await _sendOtpViaCloudFunction(
           toEmail: email, nickname: nickname, otp: otp);
 
-      setState(() => showSpinner = false);
+      setState(() => _showSpinner = false);
       if (!mounted) return;
 
       Navigator.push(
@@ -102,26 +160,32 @@ class _RegisterPageState extends State<RegisterPage>
         ),
       );
     } on FirebaseFunctionsException catch (e) {
-      setState(() => showSpinner = false);
+      setState(() => _showSpinner = false);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to send code: ${e.message}')),
+        SnackBar(
+            content: Text('${_t(lang, 'errorSend')}: ${e.message}')),
       );
     } catch (e) {
-      setState(() => showSpinner = false);
+      setState(() => _showSpinner = false);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: ${e.toString()}')),
+        SnackBar(content: Text('${_t(lang, 'errorGeneric')}: $e')),
       );
     }
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // BUILD
+  // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(appLangProvider);
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: ModalProgressHUD(
-        inAsyncCall: showSpinner,
+        inAsyncCall: _showSpinner,
         child: FadeTransition(
           opacity: _fadeAnimation,
           child: SingleChildScrollView(
@@ -129,7 +193,7 @@ class _RegisterPageState extends State<RegisterPage>
               key: _formKey,
               child: Column(
                 children: [
-                  _buildHeader(),
+                  _buildHeader(lang),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24.0),
                     child: Column(
@@ -137,88 +201,104 @@ class _RegisterPageState extends State<RegisterPage>
                       children: [
                         const SizedBox(height: 32),
 
-                        // ── Nickname / Username ────────────────────
+                        // ── Nickname ───────────────────────────────────────
                         TextFormField(
-                          controller: nicknameController,
-                          decoration: _inputDecoration('Nickname / Username'),
-                          validator: (v) =>
-                          v == null || v.trim().isEmpty ? 'Required' : null,
+                          controller: _nicknameController,
+                          decoration: _inputDecoration(
+                              _t(lang, 'nickname')),
+                          validator: (v) => v == null || v.trim().isEmpty
+                              ? _t(lang, 'errorRequired')
+                              : null,
                         ),
                         const SizedBox(height: 16),
 
-                        // ── Email ──────────────────────────────────
+                        // ── Email ──────────────────────────────────────────
                         TextFormField(
-                          controller: emailController,
+                          controller: _emailController,
                           keyboardType: TextInputType.emailAddress,
-                          decoration: _inputDecoration('Email'),
+                          decoration: _inputDecoration(_t(lang, 'email')),
                           validator: (v) {
-                            if (v == null || v.isEmpty) return 'Required';
-                            if (!v.contains('@')) return 'Invalid email';
+                            if (v == null || v.isEmpty) {
+                              return _t(lang, 'errorRequired');
+                            }
+                            if (!v.contains('@')) {
+                              return _t(lang, 'errorEmail');
+                            }
                             return null;
                           },
                         ),
                         const SizedBox(height: 16),
 
-                        // ── Password ───────────────────────────────
+                        // ── Password ───────────────────────────────────────
                         TextFormField(
-                          controller: passwordController,
-                          obscureText: !showPassword,
-                          decoration: _inputDecoration('Password').copyWith(
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                showPassword
-                                    ? Icons.visibility_outlined
-                                    : Icons.visibility_off_outlined,
-                                color: Colors.grey,
-                              ),
-                              onPressed: () =>
-                                  setState(() => showPassword = !showPassword),
-                            ),
-                          ),
-                          validator: (v) {
-                            if (v == null || v.isEmpty) return 'Required';
-                            if (v.length < 6) return 'Min 6 characters';
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 16),
-
-                        // ── Confirm Password ───────────────────────
-                        TextFormField(
-                          controller: confirmPasswordController,
-                          obscureText: !showConfirmPassword,
+                          controller: _passwordController,
+                          obscureText: !_showPassword,
                           decoration:
-                          _inputDecoration('Confirm Password').copyWith(
+                          _inputDecoration(_t(lang, 'password')).copyWith(
                             suffixIcon: IconButton(
                               icon: Icon(
-                                showConfirmPassword
+                                _showPassword
                                     ? Icons.visibility_outlined
                                     : Icons.visibility_off_outlined,
                                 color: Colors.grey,
                               ),
                               onPressed: () => setState(
-                                      () => showConfirmPassword = !showConfirmPassword),
+                                      () => _showPassword = !_showPassword),
                             ),
                           ),
                           validator: (v) {
-                            if (v == null || v.isEmpty) return 'Required';
-                            if (v != passwordController.text) {
-                              return 'Passwords do not match';
+                            if (v == null || v.isEmpty) {
+                              return _t(lang, 'errorRequired');
+                            }
+                            if (v.length < 6) {
+                              return _t(lang, 'errorMinPw');
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+
+                        // ── Confirm Password ───────────────────────────────
+                        TextFormField(
+                          controller: _confirmPasswordController,
+                          obscureText: !_showConfirmPassword,
+                          decoration: _inputDecoration(
+                              _t(lang, 'confirmPassword'))
+                              .copyWith(
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                _showConfirmPassword
+                                    ? Icons.visibility_outlined
+                                    : Icons.visibility_off_outlined,
+                                color: Colors.grey,
+                              ),
+                              onPressed: () => setState(() =>
+                              _showConfirmPassword =
+                              !_showConfirmPassword),
+                            ),
+                          ),
+                          validator: (v) {
+                            if (v == null || v.isEmpty) {
+                              return _t(lang, 'errorRequired');
+                            }
+                            if (v != _passwordController.text) {
+                              return _t(lang, 'errorMatch');
                             }
                             return null;
                           },
                         ),
                         const SizedBox(height: 12),
 
-                        // ── Terms checkbox ─────────────────────────
+                        // ── Terms checkbox ─────────────────────────────────
                         Row(
                           children: [
                             SizedBox(
-                              width: 24, height: 24,
+                              width: 24,
+                              height: 24,
                               child: Checkbox(
-                                value: agree,
+                                value: _agree,
                                 onChanged: (v) =>
-                                    setState(() => agree = v ?? false),
+                                    setState(() => _agree = v ?? false),
                                 shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(4)),
                                 side: const BorderSide(color: Colors.grey),
@@ -226,30 +306,33 @@ class _RegisterPageState extends State<RegisterPage>
                               ),
                             ),
                             const SizedBox(width: 8),
-                            const Expanded(
+                            Expanded(
                               child: Text(
-                                'I agree to the Terms & Conditions and Privacy Policy',
-                                style: TextStyle(fontSize: 13, color: Colors.black87),
+                                _t(lang, 'agree'),
+                                style: const TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.black87),
                               ),
                             ),
                           ],
                         ),
                         const SizedBox(height: 24),
 
-                        // ── Sign up row ────────────────────────────
+                        // ── Sign up row ────────────────────────────────────
                         Row(
                           mainAxisAlignment: MainAxisAlignment.end,
                           children: [
-                            const Text('Sign up',
-                                style: TextStyle(
+                            Text(_t(lang, 'signUp'),
+                                style: const TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
                                     color: Colors.black87)),
                             const SizedBox(width: 10),
                             GestureDetector(
-                              onTap: _onSignUp,
+                              onTap: () => _onSignUp(lang),
                               child: Container(
-                                width: 48, height: 48,
+                                width: 48,
+                                height: 48,
                                 decoration: BoxDecoration(
                                     shape: BoxShape.circle,
                                     border: Border.all(
@@ -264,7 +347,7 @@ class _RegisterPageState extends State<RegisterPage>
                       ],
                     ),
                   ),
-                  _buildFooter(context),
+                  _buildFooter(context, lang),
                 ],
               ),
             ),
@@ -274,9 +357,10 @@ class _RegisterPageState extends State<RegisterPage>
     );
   }
 
-  Widget _buildHeader() {
+  // ── Header ────────────────────────────────────────────────────────────────
+  Widget _buildHeader(String lang) {
     return ClipPath(
-      clipper: RegisterHeaderClipper(),
+      clipper: _RegisterHeaderClipper(),
       child: Container(
         width: double.infinity,
         height: 280,
@@ -284,20 +368,24 @@ class _RegisterPageState extends State<RegisterPage>
         child: Stack(
           children: [
             Positioned(
-              right: 24, bottom: 40,
+              right: 24,
+              bottom: 40,
               child: SizedBox(
                 height: 160,
                 child: Image.asset('assets/pikuru_logo_dog.png',
                     fit: BoxFit.contain),
               ),
             ),
-            const Positioned(
-              left: 28, bottom: 56,
+            Positioned(
+              left: 28,
+              bottom: 56,
               child: Text(
-                'Create\nAccount',
-                style: TextStyle(
-                    fontSize: 44, fontWeight: FontWeight.bold,
-                    color: Colors.white, height: 1.1),
+                _t(lang, 'title'),
+                style: const TextStyle(
+                    fontSize: 44,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                    height: 1.1),
               ),
             ),
           ],
@@ -306,36 +394,41 @@ class _RegisterPageState extends State<RegisterPage>
     );
   }
 
-  Widget _buildFooter(BuildContext context) {
+  // ── Footer ────────────────────────────────────────────────────────────────
+  Widget _buildFooter(BuildContext context, String lang) {
     return ClipPath(
-      clipper: BottomCurveClipper(),
+      clipper: _BottomCurveClipper(),
       child: Container(
         width: double.infinity,
         color: AppColors.primary,
         padding: const EdgeInsets.only(top: 56, bottom: 40),
         child: Column(
           children: [
-            const Text('Already have an account?',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500)),
+            Text(
+              _t(lang, 'alreadyHave'),
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500),
+            ),
             const SizedBox(height: 8),
             GestureDetector(
-              onTap: () => Navigator.push(
-                  context,
+              onTap: () => Navigator.push(context,
                   MaterialPageRoute(builder: (_) => LoginScreen())),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Text('Login',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 26,
-                          fontWeight: FontWeight.bold)),
+                  Text(
+                    _t(lang, 'login'),
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 26,
+                        fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(width: 10),
                   Container(
-                    width: 44, height: 44,
+                    width: 44,
+                    height: 44,
                     decoration: BoxDecoration(
                         shape: BoxShape.circle,
                         border: Border.all(color: Colors.white, width: 2)),
@@ -352,19 +445,26 @@ class _RegisterPageState extends State<RegisterPage>
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// Input decoration helper (file-level, matches original)
+// ═══════════════════════════════════════════════════════════════════
 InputDecoration _inputDecoration(String hint) {
   return InputDecoration(
     hintText: hint,
-    hintStyle: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+    hintStyle: const TextStyle(
+        color: Colors.black, fontWeight: FontWeight.bold),
     filled: true,
     fillColor: Colors.white,
-    contentPadding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+    contentPadding:
+    const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
     enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
+        borderSide:
+        const BorderSide(color: AppColors.primary, width: 1.5)),
     focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: AppColors.primary, width: 2)),
+        borderSide:
+        const BorderSide(color: AppColors.primary, width: 2)),
     errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: const BorderSide(color: Colors.red, width: 1.5)),
@@ -374,13 +474,16 @@ InputDecoration _inputDecoration(String hint) {
   );
 }
 
-class RegisterHeaderClipper extends CustomClipper<Path> {
+// ═══════════════════════════════════════════════════════════════════
+// Clippers
+// ═══════════════════════════════════════════════════════════════════
+class _RegisterHeaderClipper extends CustomClipper<Path> {
   @override
   Path getClip(Size size) {
-    Path path = Path();
+    final path = Path();
     path.lineTo(0, size.height - 80);
-    path.quadraticBezierTo(
-        size.width * 0.9, size.height * 1.5, size.width + 300, size.height - 250);
+    path.quadraticBezierTo(size.width * 0.9, size.height * 1.5,
+        size.width + 300, size.height - 250);
     path.lineTo(size.width, 0);
     path.close();
     return path;
@@ -390,14 +493,14 @@ class RegisterHeaderClipper extends CustomClipper<Path> {
   bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }
 
-class BottomCurveClipper extends CustomClipper<Path> {
+class _BottomCurveClipper extends CustomClipper<Path> {
   @override
   Path getClip(Size size) {
-    Path path = Path();
+    final path = Path();
     path.moveTo(0, size.height);
     path.lineTo(0, size.height * 0.5);
-    path.quadraticBezierTo(
-        size.width * 0.55, -size.height * 0.15, size.width, size.height * 0.1);
+    path.quadraticBezierTo(size.width * 0.55, -size.height * 0.15,
+        size.width, size.height * 0.1);
     path.lineTo(size.width, size.height);
     path.close();
     return path;

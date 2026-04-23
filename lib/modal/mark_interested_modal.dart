@@ -2,9 +2,42 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:pikuru/theme/material.dart';
+import 'package:pikuru/providers/app_language_provider.dart';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Localization strings — mirrors web app T object
+// ─────────────────────────────────────────────────────────────────────────────
+const _L = {
+  kLangEn: {
+    'alreadyInterested': 'You have already marked this group as interested',
+    'markTitle':         'Mark as Interested?',
+    'markBody':          'Save this group to your interests and stay updated on their events.',
+    'cancel':            'Cancel',
+    'mark':              'Mark',
+    'pleaseSignIn':      'Please sign in to mark groups as interested',
+    'failedMark':        'Failed to mark as interested. Please try again.',
+    'successMsg':        'Group added to your interests!',
+  },
+  kLangJa: {
+    'alreadyInterested': 'このグループはすでに興味ありに設定されています',
+    'markTitle':         '興味ありにしますか？',
+    'markBody':          'このグループを興味リストに保存し、イベント情報を受け取ることができます。',
+    'cancel':            'キャンセル',
+    'mark':              '設定する',
+    'pleaseSignIn':      'グループに興味ありを設定するにはサインインしてください',
+    'failedMark':        '興味ありの設定に失敗しました。もう一度お試しください。',
+    'successMsg':        'グループを興味リストに追加しました！',
+  },
+};
+
+String _t(String lang, String key) =>
+    _L[lang]?[key] ?? _L[kLangEn]![key]!;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Modal
+// ─────────────────────────────────────────────────────────────────────────────
 class MarkInterestedModal {
-  // ── Resolve group ID (mirrors JoinGroupModal logic) ───────────────────
+  // ── Resolve group ID (mirrors JoinGroupModal logic) ───────────────────────
   static String _resolveGroupId(Map<String, dynamic> group) {
     final docId = group['_doc_id']?.toString() ?? '';
     if (docId.isNotEmpty) return docId;
@@ -12,7 +45,6 @@ class MarkInterestedModal {
     final orgId = group['org_id']?.toString() ?? '';
     if (orgId.isNotEmpty) return orgId;
 
-    // Also check group_id for cases where event data is passed in
     final altId = group['org_org_id']?.toString() ??
         group['group_id']?.toString() ??
         group['id']?.toString() ??
@@ -28,20 +60,25 @@ class MarkInterestedModal {
         .replaceAll(RegExp(r'[^a-z0-9_]'), '');
   }
 
+  /// [lang] — reads from appLangProvider at the call-site automatically.
   static Future<void> show(
       BuildContext context,
-      Map<String, dynamic> group,
-      ) async {
+      Map<String, dynamic> group, {
+        String lang = kLangEn,
+      }) async {
+    // ── Always read the latest persisted language ─────────────────────────
+    final resolvedLang   = (await loadSavedLang());
+    final effectiveLang  = lang != kLangEn ? lang : resolvedLang;
+
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
     final groupId = _resolveGroupId(group);
-    final docId = '${user.uid}_$groupId';
+    final docId   = '${user.uid}_$groupId';
 
-    debugPrint('MarkInterestedModal — groupId: $groupId | docId: $docId');
+    debugPrint(
+        'MarkInterestedModal — groupId: $groupId | docId: $docId');
 
-    // ── Only block if already marked as 'interested' ─────────────────
-    // If 'active' (joined), still allow marking interested
     final existingDoc = await FirebaseFirestore.instance
         .collection('user_groups')
         .doc(docId)
@@ -51,7 +88,7 @@ class MarkInterestedModal {
         existingDoc.data()?['status']?.toString() == 'interested') {
       if (context.mounted) {
         _showSnackBar(
-            context, 'You have already marked this group as interested', false);
+            context, _t(effectiveLang, 'alreadyInterested'), false);
       }
       return;
     }
@@ -62,8 +99,8 @@ class MarkInterestedModal {
       context: context,
       barrierDismissible: true,
       builder: (ctx) => Dialog(
-        shape:
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24)),
         child: Container(
           padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
@@ -81,15 +118,17 @@ class MarkInterestedModal {
                     color: AppColors.primary, size: 32),
               ),
               const SizedBox(height: 20),
-              const Text('Mark as Interested?',
-                  style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primary),
-                  textAlign: TextAlign.center),
+              Text(
+                _t(effectiveLang, 'markTitle'),
+                style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primary),
+                textAlign: TextAlign.center,
+              ),
               const SizedBox(height: 12),
               Text(
-                'Save this group to your interests and stay updated on their events.',
+                _t(effectiveLang, 'markBody'),
                 style: TextStyle(
                     fontSize: 14,
                     color: Colors.grey.shade600,
@@ -97,47 +136,47 @@ class MarkInterestedModal {
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 28),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.pop(ctx, false),
-                      style: OutlinedButton.styleFrom(
-                        padding:
-                        const EdgeInsets.symmetric(vertical: 14),
-                        side: BorderSide(
-                            color: Colors.grey.shade300, width: 1.5),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                      ),
-                      child: Text('Cancel',
-                          style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.grey.shade600)),
+              Row(children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      side: BorderSide(
+                          color: Colors.grey.shade300, width: 1.5),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: Text(
+                      _t(effectiveLang, 'cancel'),
+                      style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey.shade600),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () => Navigator.pop(ctx, true),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        padding:
-                        const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                        elevation: 0,
-                      ),
-                      child: const Text('Mark',
-                          style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(ctx, true),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
+                      elevation: 0,
+                    ),
+                    child: Text(
+                      _t(effectiveLang, 'mark'),
+                      style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white),
                     ),
                   ),
-                ],
-              ),
+                ),
+              ]),
             ],
           ),
         ),
@@ -145,7 +184,8 @@ class MarkInterestedModal {
     );
 
     if (shouldMark == true && context.mounted) {
-      await _markInterested(context, group, groupId, docId);
+      await _markInterested(context, group, groupId, docId,
+          lang: effectiveLang);
     }
   }
 
@@ -153,12 +193,12 @@ class MarkInterestedModal {
       BuildContext context,
       Map<String, dynamic> group,
       String groupId,
-      String docId,
-      ) async {
+      String docId, {
+        String lang = kLangEn,
+      }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      _showSnackBar(
-          context, 'Please sign in to mark groups as interested', true);
+      _showSnackBar(context, _t(lang, 'pleaseSignIn'), true);
       return;
     }
 
@@ -173,37 +213,35 @@ class MarkInterestedModal {
         );
       }
 
-      // Support both org_ and group_ field name conventions
       final groupName = (group['org_name'] ??
           group['group_name'] ??
           'Unnamed Group')
           .toString();
       final groupImage =
-      (group['org_image'] ?? group['group_image'] ?? '').toString();
+      (group['org_image'] ?? group['group_image'] ?? '')
+          .toString();
 
-      // merge: true so we don't wipe joined_at if they already joined
       await FirebaseFirestore.instance
           .collection('user_groups')
           .doc(docId)
           .set({
-        'user_id': user.uid,
-        'group_id': groupId,
+        'user_id':    user.uid,
+        'group_id':   groupId,
         'group_name': groupName,
         'group_image': groupImage,
-        'marked_at': FieldValue.serverTimestamp(),
-        'status': 'interested',
+        'marked_at':  FieldValue.serverTimestamp(),
+        'status':     'interested',
       }, SetOptions(merge: true));
 
       if (context.mounted) {
         Navigator.pop(context);
-        _showSnackBar(context, 'Group added to your interests!', false);
+        _showSnackBar(context, _t(lang, 'successMsg'), false);
       }
     } catch (e) {
       debugPrint('Mark interested error: $e');
       if (context.mounted) {
         Navigator.pop(context);
-        _showSnackBar(
-            context, 'Failed to mark as interested. Please try again.', true);
+        _showSnackBar(context, _t(lang, 'failedMark'), true);
       }
     }
   }
@@ -213,21 +251,21 @@ class MarkInterestedModal {
     if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Row(
-          children: [
-            Icon(
-              isError ? Icons.error_rounded : Icons.check_circle_rounded,
-              color: Colors.white,
-              size: 20,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(message,
-                  style: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w600)),
-            ),
-          ],
-        ),
+        content: Row(children: [
+          Icon(
+            isError
+                ? Icons.error_rounded
+                : Icons.check_circle_rounded,
+            color: Colors.white,
+            size: 20,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(message,
+                style: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w600)),
+          ),
+        ]),
         backgroundColor:
         isError ? Colors.red.shade400 : AppColors.primary,
         behavior: SnackBarBehavior.floating,

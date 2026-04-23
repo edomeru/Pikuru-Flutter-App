@@ -1,14 +1,67 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:pikuru/theme/material.dart';
+import 'package:pikuru/providers/app_language_provider.dart';
 
-/// Shown after ChangePasswordScreen verifies the current password.
-/// Sends an OTP to the user's email. On correct OTP, updates
-/// Firebase Auth password via user.updatePassword().
-class ChangePasswordVerificationScreen extends StatefulWidget {
+// ─────────────────────────────────────────────────────────────────────────────
+// Localised strings
+// ─────────────────────────────────────────────────────────────────────────────
+const _L = {
+  kLangEn: {
+    'appBarTitle':       'Verify Change',
+    'heroTitle':         'Check Your Inbox 📬',
+    'heroSub':           'Code sent to',
+    'screenTitle':       'Password Verification',
+    'screenSub':         'Enter the 6-digit code sent to your email to confirm the password change',
+    'verifyBtn':         'Verify & Update Password',
+    'dontReceive':       "Don't receive code?",
+    'resendIn':          'Resend in ',
+    'resendBtn':         'Resend Code',
+    'successTitle':      'Password Updated!',
+    'successSub':        'Your password has been changed successfully.',
+    'doneBtn':           'Done',
+    'errAllDigits':      'Please enter all 6 digits.',
+    'errIncorrect':      'Incorrect code. Please try again.',
+    'errSendFailed':     'Failed to send code. Please try again.',
+    'errWeakPassword':   'Password is too weak. Please choose a stronger one.',
+    'errSessionExpired': 'Session expired. Please sign out and sign back in, then try again.',
+    'errUpdateFailed':   'Failed to update password. Please try again.',
+    'errGeneric':        'Something went wrong. Please try again.',
+  },
+  kLangJa: {
+    'appBarTitle':       '変更を確認',
+    'heroTitle':         'メールをご確認ください 📬',
+    'heroSub':           '認証コードを送信しました：',
+    'screenTitle':       'パスワード確認',
+    'screenSub':         'パスワード変更を確認するために、メールに送信された6桁のコードを入力してください',
+    'verifyBtn':         '確認してパスワードを更新',
+    'dontReceive':       'コードが届きませんか？',
+    'resendIn':          '再送信まで ',
+    'resendBtn':         'コードを再送信',
+    'successTitle':      'パスワードを更新しました！',
+    'successSub':        'パスワードが正常に変更されました。',
+    'doneBtn':           '完了',
+    'errAllDigits':      '6桁すべて入力してください。',
+    'errIncorrect':      'コードが正しくありません。もう一度お試しください。',
+    'errSendFailed':     'コードの送信に失敗しました。もう一度お試しください。',
+    'errWeakPassword':   'パスワードが弱すぎます。より強力なパスワードを選んでください。',
+    'errSessionExpired': 'セッションが期限切れです。サインアウトして再度サインインしてからお試しください。',
+    'errUpdateFailed':   'パスワードの更新に失敗しました。もう一度お試しください。',
+    'errGeneric':        'エラーが発生しました。もう一度お試しください。',
+  },
+};
+
+String _t(String lang, String key) =>
+    _L[lang]?[key] ?? _L[kLangEn]![key]!;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ChangePasswordVerificationScreen — ConsumerStatefulWidget
+// ─────────────────────────────────────────────────────────────────────────────
+class ChangePasswordVerificationScreen extends ConsumerStatefulWidget {
   final String email;
   final String firstName;
   final String newPassword;
@@ -21,33 +74,33 @@ class ChangePasswordVerificationScreen extends StatefulWidget {
   });
 
   @override
-  State<ChangePasswordVerificationScreen> createState() =>
+  ConsumerState<ChangePasswordVerificationScreen> createState() =>
       _ChangePasswordVerificationScreenState();
 }
 
 class _ChangePasswordVerificationScreenState
-    extends State<ChangePasswordVerificationScreen>
+    extends ConsumerState<ChangePasswordVerificationScreen>
     with TickerProviderStateMixin {
-  // ── OTP state ────────────────────────────────────────────────────
+  // ── OTP state ─────────────────────────────────────────────────────────────
   final List<TextEditingController> _controllers =
   List.generate(6, (_) => TextEditingController());
   final List<FocusNode> _focusNodes =
   List.generate(6, (_) => FocusNode());
 
   String _generatedOtp = '';
-  bool _isVerifying = false;
-  bool _isSending = false;
+  bool   _isVerifying  = false;
+  bool   _isSending    = false;
   String? _errorMsg;
 
-  // ── Countdown ────────────────────────────────────────────────────
-  int _secondsLeft = 60;
+  // ── Countdown ─────────────────────────────────────────────────────────────
+  int    _secondsLeft = 60;
   Timer? _timer;
 
-  // ── Animations ───────────────────────────────────────────────────
+  // ── Animations ────────────────────────────────────────────────────────────
   late final AnimationController _fadeController;
-  late final Animation<double> _fadeAnim;
+  late final Animation<double>   _fadeAnim;
   late final AnimationController _shakeController;
-  late final Animation<double> _shakeAnim;
+  late final Animation<double>   _shakeAnim;
 
   @override
   void initState() {
@@ -70,23 +123,25 @@ class _ChangePasswordVerificationScreenState
   @override
   void dispose() {
     for (final c in _controllers) c.dispose();
-    for (final f in _focusNodes) f.dispose();
+    for (final f in _focusNodes)  f.dispose();
     _timer?.cancel();
     _fadeController.dispose();
     _shakeController.dispose();
     super.dispose();
   }
 
-  // ── Generate & send OTP ──────────────────────────────────────────
+  // ── Generate & send OTP ───────────────────────────────────────────────────
   String _generateOtp() {
     final rand = DateTime.now().millisecondsSinceEpoch % 1000000;
     return rand.toString().padLeft(6, '0');
   }
 
   Future<void> _sendOtp() async {
+    // Read lang at call time — safe because we only need it for error strings
+    final lang = ref.read(appLangProvider);
     setState(() {
       _isSending = true;
-      _errorMsg = null;
+      _errorMsg  = null;
     });
 
     _generatedOtp = _generateOtp();
@@ -94,14 +149,13 @@ class _ChangePasswordVerificationScreenState
     try {
       final fn = FirebaseFunctions.instance.httpsCallable('sendOtp');
       await fn.call({
-        'email': widget.email,
+        'email':     widget.email,
         'firstName': widget.firstName,
-        'otp': _generatedOtp,
+        'otp':       _generatedOtp,
       });
       _startCountdown();
     } catch (e) {
-      setState(
-              () => _errorMsg = 'Failed to send code. Please try again.');
+      setState(() => _errorMsg = _t(lang, 'errSendFailed'));
     } finally {
       if (mounted) setState(() => _isSending = false);
     }
@@ -111,10 +165,7 @@ class _ChangePasswordVerificationScreenState
     _timer?.cancel();
     setState(() => _secondsLeft = 60);
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (!mounted) {
-        t.cancel();
-        return;
-      }
+      if (!mounted) { t.cancel(); return; }
       setState(() {
         if (_secondsLeft > 0) {
           _secondsLeft--;
@@ -125,7 +176,7 @@ class _ChangePasswordVerificationScreenState
     });
   }
 
-  // ── OTP entry helpers ─────────────────────────────────────────────
+  // ── OTP entry helpers ─────────────────────────────────────────────────────
   String get _enteredOtp => _controllers.map((c) => c.text).join();
 
   void _onDigitChanged(int index, String value) {
@@ -153,16 +204,16 @@ class _ChangePasswordVerificationScreenState
     }
   }
 
-  // ── Verify OTP then update password ───────────────────────────────
-  Future<void> _verify() async {
+  // ── Verify OTP then update password ──────────────────────────────────────
+  Future<void> _verify(String lang) async {
     if (_enteredOtp.length < 6) {
-      setState(() => _errorMsg = 'Please enter all 6 digits.');
+      setState(() => _errorMsg = _t(lang, 'errAllDigits'));
       _shakeController.forward(from: 0);
       return;
     }
 
     if (_enteredOtp != _generatedOtp) {
-      setState(() => _errorMsg = 'Incorrect code. Please try again.');
+      setState(() => _errorMsg = _t(lang, 'errIncorrect'));
       _shakeController.forward(from: 0);
       HapticFeedback.heavyImpact();
       for (final c in _controllers) c.clear();
@@ -172,38 +223,36 @@ class _ChangePasswordVerificationScreenState
 
     setState(() {
       _isVerifying = true;
-      _errorMsg = null;
+      _errorMsg    = null;
     });
     HapticFeedback.lightImpact();
 
     try {
-      // ✅ OTP correct — now update Firebase Auth password
       final user = FirebaseAuth.instance.currentUser!;
       await user.updatePassword(widget.newPassword);
-
       setState(() => _isVerifying = false);
       HapticFeedback.mediumImpact();
-
-      if (mounted) _showSuccessDialog();
+      if (mounted) _showSuccessDialog(lang);
     } on FirebaseAuthException catch (e) {
       setState(() => _isVerifying = false);
-      String msg = 'Failed to update password. Please try again.';
+      String msg;
       if (e.code == 'requires-recent-login') {
-        msg =
-        'Session expired. Please sign out and sign back in, then try again.';
+        msg = _t(lang, 'errSessionExpired');
       } else if (e.code == 'weak-password') {
-        msg = 'Password is too weak. Please choose a stronger one.';
+        msg = _t(lang, 'errWeakPassword');
+      } else {
+        msg = _t(lang, 'errUpdateFailed');
       }
       setState(() => _errorMsg = msg);
     } catch (e) {
       setState(() {
         _isVerifying = false;
-        _errorMsg = 'Something went wrong. Please try again.';
+        _errorMsg    = _t(lang, 'errGeneric');
       });
     }
   }
 
-  void _showSuccessDialog() {
+  void _showSuccessDialog(String lang) {
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -216,8 +265,7 @@ class _ChangePasswordVerificationScreenState
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 72,
-                height: 72,
+                width: 72, height: 72,
                 decoration: BoxDecoration(
                   color: AppColors.primary.withOpacity(0.10),
                   shape: BoxShape.circle,
@@ -226,16 +274,16 @@ class _ChangePasswordVerificationScreenState
                     color: AppColors.primary, size: 36),
               ),
               const SizedBox(height: 20),
-              const Text(
-                'Password Updated!',
-                style: TextStyle(
+              Text(
+                _t(lang, 'successTitle'),
+                style: const TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w800,
                     color: Color(0xFF0D0D0D)),
               ),
               const SizedBox(height: 10),
               Text(
-                'Your password has been changed successfully.',
+                _t(lang, 'successSub'),
                 textAlign: TextAlign.center,
                 style: TextStyle(
                     fontSize: 14,
@@ -248,9 +296,9 @@ class _ChangePasswordVerificationScreenState
                 height: 48,
                 child: ElevatedButton(
                   onPressed: () {
-                    // Close dialog + verification screen + password screen
                     Navigator.of(context).popUntil(
-                            (r) => r.isFirst || r.settings.name == '/settings');
+                            (r) => r.isFirst ||
+                            r.settings.name == '/settings');
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
@@ -258,11 +306,13 @@ class _ChangePasswordVerificationScreenState
                         borderRadius: BorderRadius.circular(14)),
                     elevation: 0,
                   ),
-                  child: const Text('Done',
-                      style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white)),
+                  child: Text(
+                    _t(lang, 'doneBtn'),
+                    style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white),
+                  ),
                 ),
               ),
             ],
@@ -280,11 +330,14 @@ class _ChangePasswordVerificationScreenState
 
   @override
   Widget build(BuildContext context) {
+    // ✅ Watch global lang provider — rebuilds whenever lang changes anywhere
+    final lang = ref.watch(appLangProvider);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF4F9F5),
       body: CustomScrollView(
         slivers: [
-          // ── Hero App Bar ────────────────────────────────────────
+          // ── Hero App Bar ──────────────────────────────────────────────────
           SliverAppBar(
             expandedHeight: 160,
             pinned: true,
@@ -301,11 +354,13 @@ class _ChangePasswordVerificationScreenState
                     color: Colors.white, size: 20),
               ),
             ),
-            title: const Text('Verify Change',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 18)),
+            title: Text(
+              _t(lang, 'appBarTitle'),
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 18),
+            ),
             flexibleSpace: FlexibleSpaceBar(
               background: Stack(
                 fit: StackFit.expand,
@@ -349,15 +404,17 @@ class _ChangePasswordVerificationScreenState
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Text('Check Your Inbox 📬',
-                              style: TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.w900,
-                                  color: Colors.white,
-                                  letterSpacing: -0.3)),
+                          Text(
+                            _t(lang, 'heroTitle'),
+                            style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.white,
+                                letterSpacing: -0.3),
+                          ),
                           const SizedBox(height: 4),
                           Text(
-                            'Code sent to ${widget.email}',
+                            '${_t(lang, 'heroSub')} ${widget.email}',
                             style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.white.withOpacity(0.72)),
@@ -372,6 +429,7 @@ class _ChangePasswordVerificationScreenState
             ),
           ),
 
+          // ── Body ─────────────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: FadeTransition(
               opacity: _fadeAnim,
@@ -381,10 +439,9 @@ class _ChangePasswordVerificationScreenState
                   children: [
                     const SizedBox(height: 16),
 
-                    // ── Icon ────────────────────────────────────
+                    // Icon
                     Container(
-                      width: 80,
-                      height: 80,
+                      width: 80, height: 80,
                       decoration: BoxDecoration(
                         color: AppColors.primary.withOpacity(0.10),
                         shape: BoxShape.circle,
@@ -402,17 +459,19 @@ class _ChangePasswordVerificationScreenState
 
                     const SizedBox(height: 20),
 
-                    const Text('Password Verification',
-                        style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF0D0D0D),
-                            letterSpacing: -0.3)),
+                    Text(
+                      _t(lang, 'screenTitle'),
+                      style: const TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF0D0D0D),
+                          letterSpacing: -0.3),
+                    ),
 
                     const SizedBox(height: 8),
 
                     Text(
-                      'Enter the 6-digit code sent to your email to confirm the password change',
+                      _t(lang, 'screenSub'),
                       textAlign: TextAlign.center,
                       style: TextStyle(
                           fontSize: 14,
@@ -422,7 +481,7 @@ class _ChangePasswordVerificationScreenState
 
                     const SizedBox(height: 36),
 
-                    // ── OTP boxes ────────────────────────────────
+                    // OTP boxes
                     AnimatedBuilder(
                       animation: _shakeAnim,
                       builder: (context, child) {
@@ -441,17 +500,17 @@ class _ChangePasswordVerificationScreenState
                                 horizontal: 5),
                             child: _OtpBox(
                               controller: _controllers[i],
-                              focusNode: _focusNodes[i],
-                              hasError: _errorMsg != null,
-                              onChanged: (v) => _onDigitChanged(i, v),
-                              onKeyDown: (e) => _onKeyDown(i, e),
+                              focusNode:  _focusNodes[i],
+                              hasError:   _errorMsg != null,
+                              onChanged:  (v) => _onDigitChanged(i, v),
+                              onKeyDown:  (e) => _onKeyDown(i, e),
                             ),
                           );
                         }),
                       ),
                     ),
 
-                    // ── Error message ────────────────────────────
+                    // Error message
                     if (_errorMsg != null) ...[
                       const SizedBox(height: 12),
                       Row(
@@ -476,13 +535,14 @@ class _ChangePasswordVerificationScreenState
 
                     const SizedBox(height: 32),
 
-                    // ── Verify button ────────────────────────────
+                    // Verify button
                     SizedBox(
                       width: double.infinity,
                       height: 56,
                       child: ElevatedButton(
-                        onPressed:
-                        (_isVerifying || _isSending) ? null : _verify,
+                        onPressed: (_isVerifying || _isSending)
+                            ? null
+                            : () => _verify(lang),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primary,
                           disabledBackgroundColor:
@@ -493,24 +553,25 @@ class _ChangePasswordVerificationScreenState
                         ),
                         child: _isVerifying
                             ? const SizedBox(
-                            width: 22,
-                            height: 22,
+                            width: 22, height: 22,
                             child: CircularProgressIndicator(
                                 color: Colors.white,
                                 strokeWidth: 2.5))
-                            : const Text('Verify & Update Password',
-                            style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white)),
+                            : Text(
+                          _t(lang, 'verifyBtn'),
+                          style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white),
+                        ),
                       ),
                     ),
 
                     const SizedBox(height: 24),
 
-                    // ── Resend ───────────────────────────────────
+                    // Resend section
                     Text(
-                      "Don't receive code?",
+                      _t(lang, 'dontReceive'),
                       style: TextStyle(
                           fontSize: 14,
                           color: Colors.black.withOpacity(0.45)),
@@ -519,7 +580,7 @@ class _ChangePasswordVerificationScreenState
                     _secondsLeft > 0
                         ? RichText(
                       text: TextSpan(
-                        text: 'Resend in ',
+                        text: _t(lang, 'resendIn'),
                         style: TextStyle(
                             fontSize: 14,
                             color: Colors.black.withOpacity(0.45)),
@@ -539,13 +600,12 @@ class _ChangePasswordVerificationScreenState
                         padding: const EdgeInsets.symmetric(
                             horizontal: 20, vertical: 8),
                         decoration: BoxDecoration(
-                          color:
-                          AppColors.primary.withOpacity(0.08),
+                          color: AppColors.primary.withOpacity(0.08),
                           borderRadius: BorderRadius.circular(20),
                         ),
-                        child: const Text(
-                          'Resend Code',
-                          style: TextStyle(
+                        child: Text(
+                          _t(lang, 'resendBtn'),
+                          style: const TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
                               color: AppColors.primary),
@@ -565,7 +625,9 @@ class _ChangePasswordVerificationScreenState
   }
 }
 
-// ── OTP Box ───────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// OTP Box (unchanged)
+// ─────────────────────────────────────────────────────────────────────────────
 class _OtpBox extends StatelessWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
@@ -587,12 +649,11 @@ class _OtpBox extends StatelessWidget {
       focusNode: FocusNode(),
       onKey: onKeyDown,
       child: SizedBox(
-        width: 46,
-        height: 56,
+        width: 46, height: 56,
         child: TextFormField(
           controller: controller,
-          focusNode: focusNode,
-          textAlign: TextAlign.center,
+          focusNode:  focusNode,
+          textAlign:  TextAlign.center,
           keyboardType: TextInputType.number,
           inputFormatters: [
             FilteringTextInputFormatter.digitsOnly,
@@ -626,9 +687,7 @@ class _OtpBox extends StatelessWidget {
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide(
-                  color: hasError
-                      ? Colors.red.shade400
-                      : AppColors.primary,
+                  color: hasError ? Colors.red.shade400 : AppColors.primary,
                   width: 2),
             ),
           ),

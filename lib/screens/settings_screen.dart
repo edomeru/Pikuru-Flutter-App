@@ -1,25 +1,84 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:pikuru/theme/material.dart';
-import 'package:pikuru/utils/app_language.dart';
+import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:pikuru/screens/language_screen.dart';
 import 'package:pikuru/screens/contact_us_screen.dart';
 import 'package:pikuru/screens/change_email_screen.dart';
 import 'package:pikuru/screens/change_password_screen.dart';
 
-class SettingsScreen extends StatefulWidget {
+// ─────────────────────────────────────────────────────────────────────────────
+// Localization strings
+// ─────────────────────────────────────────────────────────────────────────────
+const _L = {
+  kLangEn: {
+    'title':            'Settings',
+    'heroTitle':        'App Settings ⚙️',
+    'heroSub':          'Manage your account and preferences',
+    'sectionAccount':   'Account',
+    'sectionPrefs':     'Preferences',
+    'sectionHelp':      'Help & Support',
+    'sectionLegal':     'Legal',
+    'googleBanner':     'Signed in with Google. Email and password are managed by Google.',
+    'changeEmail':      'Change Email',
+    'changePassword':   'Change Password',
+    'language':         'Language',
+    'contactUs':        'Contact Us',
+    'terms':            'Terms & Conditions',
+    'privacy':          'Privacy Policy',
+    'version':          'Version 1.0.0',
+    'langLabel_en':     'English',
+    'langLabel_ja':     '日本語',
+    'googleDialogTitle':'Google Account',
+    'googleDialogEmail':'You signed in with Google. To change your email, please visit your Google account settings at myaccount.google.com.',
+    'googleDialogPass': 'You signed in with Google. To change your password, please visit your Google account settings at myaccount.google.com.',
+    'googleDialogBtn':  'Got it',
+  },
+  kLangJa: {
+    'title':            '設定',
+    'heroTitle':        'アプリ設定 ⚙️',
+    'heroSub':          'アカウントと設定を管理する',
+    'sectionAccount':   'アカウント',
+    'sectionPrefs':     '設定',
+    'sectionHelp':      'ヘルプ・サポート',
+    'sectionLegal':     '法的情報',
+    'googleBanner':     'Googleでログインしています。メールとパスワードはGoogleアカウントで管理されます。',
+    'changeEmail':      'メールアドレスを変更',
+    'changePassword':   'パスワードを変更',
+    'language':         '言語',
+    'contactUs':        'お問い合わせ',
+    'terms':            '利用規約',
+    'privacy':          'プライバシーポリシー',
+    'version':          'バージョン 1.0.0',
+    'langLabel_en':     'English',
+    'langLabel_ja':     '日本語',
+    'googleDialogTitle':'Googleアカウント',
+    'googleDialogEmail':'Googleでログインしています。メールアドレスを変更するには、myaccount.google.com のGoogleアカウント設定をご利用ください。',
+    'googleDialogPass': 'Googleでログインしています。パスワードを変更するには、myaccount.google.com のGoogleアカウント設定をご利用ください。',
+    'googleDialogBtn':  '了解',
+  },
+};
+
+String _t(String lang, String key) =>
+    _L[lang]?[key] ?? _L[kLangEn]![key]!;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Screen
+// ─────────────────────────────────────────────────────────────────────────────
+class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
 
   @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
+  ConsumerState<SettingsScreen> createState() => _SettingsScreenState();
 }
 
-class _SettingsScreenState extends State<SettingsScreen>
+class _SettingsScreenState extends ConsumerState<SettingsScreen>
     with TickerProviderStateMixin {
   late final AnimationController _fadeController;
-  late final Animation<double> _fadeAnim;
+  late final Animation<double>   _fadeAnim;
   late final AnimationController _slideController;
-  late final Animation<Offset> _slideAnim;
+  late final Animation<Offset>   _slideAnim;
 
   bool get _isGoogleUser {
     final user = FirebaseAuth.instance.currentUser;
@@ -30,21 +89,18 @@ class _SettingsScreenState extends State<SettingsScreen>
   void initState() {
     super.initState();
     _fadeController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 900),
-    )..forward();
+        vsync: this, duration: const Duration(milliseconds: 900))
+      ..forward();
     _fadeAnim =
         CurvedAnimation(parent: _fadeController, curve: Curves.easeOut);
 
     _slideController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 800),
-    )..forward();
-    _slideAnim = Tween<Offset>(
-      begin: const Offset(0, 0.08),
-      end: Offset.zero,
-    ).animate(
-        CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic));
+        vsync: this, duration: const Duration(milliseconds: 800))
+      ..forward();
+    _slideAnim =
+        Tween<Offset>(begin: const Offset(0, 0.08), end: Offset.zero).animate(
+            CurvedAnimation(
+                parent: _slideController, curve: Curves.easeOutCubic));
   }
 
   @override
@@ -54,38 +110,34 @@ class _SettingsScreenState extends State<SettingsScreen>
     super.dispose();
   }
 
-  void _showGoogleAccountDialog(String action) {
+  void _showGoogleAccountDialog(String message, String lang) {
     showDialog(
       context: context,
       builder: (_) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        shape:
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         child: Padding(
           padding: const EdgeInsets.all(28),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Google icon badge
               Container(
-                width: 64,
-                height: 64,
+                width: 64, height: 64,
                 decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.08),
-                  shape: BoxShape.circle,
-                ),
+                    color: Colors.blue.withOpacity(0.08),
+                    shape: BoxShape.circle),
                 child: const Icon(Icons.g_mobiledata_rounded,
                     color: Colors.blue, size: 40),
               ),
               const SizedBox(height: 18),
-              const Text(
-                'Google Account',
-                style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF0D0D0D)),
-              ),
+              Text(_t(lang, 'googleDialogTitle'),
+                  style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF0D0D0D))),
               const SizedBox(height: 10),
               Text(
-                'You signed in with Google. To $action, please visit your Google account settings at myaccount.google.com.',
+                message,
                 textAlign: TextAlign.center,
                 style: TextStyle(
                     fontSize: 13,
@@ -94,8 +146,7 @@ class _SettingsScreenState extends State<SettingsScreen>
               ),
               const SizedBox(height: 24),
               SizedBox(
-                width: double.infinity,
-                height: 46,
+                width: double.infinity, height: 46,
                 child: ElevatedButton(
                   onPressed: () => Navigator.pop(context),
                   style: ElevatedButton.styleFrom(
@@ -104,9 +155,10 @@ class _SettingsScreenState extends State<SettingsScreen>
                         borderRadius: BorderRadius.circular(12)),
                     elevation: 0,
                   ),
-                  child: const Text('Got it',
-                      style: TextStyle(
-                          color: Colors.white, fontWeight: FontWeight.w700)),
+                  child: Text(_t(lang, 'googleDialogBtn'),
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700)),
                 ),
               ),
             ],
@@ -116,15 +168,22 @@ class _SettingsScreenState extends State<SettingsScreen>
     );
   }
 
+  String _langLabel(String selectedCode) =>
+      selectedCode == kLangJa ? '日本語' : 'English';
+
   @override
   Widget build(BuildContext context) {
-    final isGoogle = _isGoogleUser;
+    final lang      = ref.watch(appLangProvider);
+    final isGoogle  = _isGoogleUser;
+
+    // Shorthand for current-language strings
+    final t = (String key) => _t(lang, key);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F9F5),
       body: CustomScrollView(
         slivers: [
-          // ── Hero App Bar ──────────────────────────────────────────
+          // ── Hero App Bar ────────────────────────────────────────────
           SliverAppBar(
             expandedHeight: 160,
             pinned: true,
@@ -134,53 +193,42 @@ class _SettingsScreenState extends State<SettingsScreen>
                   color: Colors.white, size: 20),
               onPressed: () => Navigator.maybePop(context),
             ),
-            title: const Text(
-              'Settings',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w600,
-                fontSize: 18,
-                letterSpacing: 0.3,
-              ),
-            ),
+            title: Text(t('title'),
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 18,
+                    letterSpacing: 0.3)),
             flexibleSpace: FlexibleSpaceBar(
-              background: Stack(
-                fit: StackFit.expand,
-                children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          AppColors.primary.withOpacity(0.85),
-                          AppColors.primary,
-                          AppColors.primary.withOpacity(0.7),
-                        ],
-                      ),
+              background: Stack(fit: StackFit.expand, children: [
+                Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        AppColors.primary.withOpacity(0.85),
+                        AppColors.primary,
+                        AppColors.primary.withOpacity(0.7),
+                      ],
                     ),
                   ),
-                  Positioned(
+                ),
+                Positioned(
                     top: -40, right: -30,
                     child: Container(
-                      width: 160, height: 160,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withOpacity(0.06),
-                      ),
-                    ),
-                  ),
-                  Positioned(
+                        width: 160, height: 160,
+                        decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white.withOpacity(0.06)))),
+                Positioned(
                     bottom: -20, left: -20,
                     child: Container(
-                      width: 110, height: 110,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withOpacity(0.05),
-                      ),
-                    ),
-                  ),
-                  Positioned(
+                        width: 110, height: 110,
+                        decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white.withOpacity(0.05)))),
+                Positioned(
                     bottom: 20, left: 24,
                     child: FadeTransition(
                       opacity: _fadeAnim,
@@ -188,33 +236,25 @@ class _SettingsScreenState extends State<SettingsScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Text(
-                            'App Settings ⚙️',
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w900,
-                              color: Colors.white,
-                              letterSpacing: -0.3,
-                            ),
-                          ),
+                          Text(t('heroTitle'),
+                              style: const TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w900,
+                                  color: Colors.white,
+                                  letterSpacing: -0.3)),
                           const SizedBox(height: 4),
-                          Text(
-                            'Manage your account and preferences',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.white.withOpacity(0.72),
-                            ),
-                          ),
+                          Text(t('heroSub'),
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.white.withOpacity(0.72))),
                         ],
                       ),
-                    ),
-                  ),
-                ],
-              ),
+                    )),
+              ]),
             ),
           ),
 
-          // ── Body ─────────────────────────────────────────────────
+          // ── Body ───────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: FadeTransition(
               opacity: _fadeAnim,
@@ -226,11 +266,11 @@ class _SettingsScreenState extends State<SettingsScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // ── Account ───────────────────────────────
-                      const _SectionHeader(label: 'Account'),
+
+                      // ── Account ─────────────────────────────────────
+                      _SectionHeader(label: t('sectionAccount')),
                       const SizedBox(height: 12),
 
-                      // Google badge shown when signed in with Google
                       if (isGoogle) ...[
                         Container(
                           padding: const EdgeInsets.symmetric(
@@ -241,23 +281,21 @@ class _SettingsScreenState extends State<SettingsScreen>
                             border: Border.all(
                                 color: Colors.blue.withOpacity(0.2)),
                           ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.g_mobiledata_rounded,
-                                  color: Colors.blue, size: 20),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'Signed in with Google. Email and password are managed by Google.',
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.blue.shade700,
-                                      fontWeight: FontWeight.w500,
-                                      height: 1.4),
-                                ),
+                          child: Row(children: [
+                            const Icon(Icons.g_mobiledata_rounded,
+                                color: Colors.blue, size: 20),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                t('googleBanner'),
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: Colors.blue.shade700,
+                                    fontWeight: FontWeight.w500,
+                                    height: 1.4),
                               ),
-                            ],
-                          ),
+                            ),
+                          ]),
                         ),
                         const SizedBox(height: 12),
                       ],
@@ -265,139 +303,123 @@ class _SettingsScreenState extends State<SettingsScreen>
                       _SettingsCard(items: [
                         _SettingsItem(
                           icon: Icons.email_rounded,
-                          label: 'Change Email',
+                          label: t('changeEmail'),
                           isGoogle: isGoogle,
                           onTap: () {
                             if (isGoogle) {
-                              _showGoogleAccountDialog('change your email');
+                              _showGoogleAccountDialog(
+                                  t('googleDialogEmail'), lang);
                               return;
                             }
                             Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) => const ChangeEmailScreen()),
-                            );
+                                context,
+                                MaterialPageRoute(
+                                    builder: (_) =>
+                                    const ChangeEmailScreen()));
                           },
                         ),
                         _SettingsItem(
                           icon: Icons.lock_rounded,
-                          label: 'Change Password',
+                          label: t('changePassword'),
                           isLast: true,
                           isGoogle: isGoogle,
                           onTap: () {
                             if (isGoogle) {
-                              _showGoogleAccountDialog('change your password');
+                              _showGoogleAccountDialog(
+                                  t('googleDialogPass'), lang);
                               return;
                             }
                             Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (_) => const ChangePasswordScreen()),
-                            );
+                                context,
+                                MaterialPageRoute(
+                                    builder: (_) =>
+                                    const ChangePasswordScreen()));
                           },
                         ),
                       ]),
 
                       const SizedBox(height: 24),
 
-                      // ── Preferences ───────────────────────────
-                      const _SectionHeader(label: 'Preferences'),
+                      // ── Preferences ──────────────────────────────────
+                      _SectionHeader(label: t('sectionPrefs')),
                       const SizedBox(height: 12),
-                      ValueListenableBuilder<String>(
-                        valueListenable: AppLanguage.current,
-                        builder: (context, _, __) {
-                          return _SettingsCard(items: [
-                            _SettingsItem(
-                              icon: Icons.language_rounded,
-                              label: 'Language',
-                              trailing: _TrailingTag(
-                                  label: AppLanguage.selectedLabel),
-                              isLast: true,
-                              onTap: () => Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                    builder: (_) => const LanguageScreen()),
-                              ),
-                            ),
-                          ]);
-                        },
-                      ),
+
+                      _SettingsCard(items: [
+                        _SettingsItem(
+                          icon: Icons.language_rounded,
+                          label: t('language'),
+                          trailing:
+                          _TrailingTag(label: _langLabel(lang)),
+                          isLast: true,
+                          onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) =>
+                                  const LanguageScreen())),
+                        ),
+                      ]),
 
                       const SizedBox(height: 24),
 
-                      // ── Help & Support ────────────────────────
-                      const _SectionHeader(label: 'Help & Support'),
+                      // ── Help & Support ────────────────────────────────
+                      _SectionHeader(label: t('sectionHelp')),
                       const SizedBox(height: 12),
                       _SettingsCard(items: [
                         _SettingsItem(
                           icon: Icons.chat_bubble_outline_rounded,
-                          label: 'Contact Us',
+                          label: t('contactUs'),
                           isLast: true,
                           onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const ContactUsScreen()),
-                          ),
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) =>
+                                  const ContactUsScreen())),
                         ),
                       ]),
 
                       const SizedBox(height: 24),
 
-                      // ── Legal ─────────────────────────────────
-                      const _SectionHeader(label: 'Legal'),
+                      // ── Legal ─────────────────────────────────────────
+                      _SectionHeader(label: t('sectionLegal')),
                       const SizedBox(height: 12),
                       _SettingsCard(items: [
                         _SettingsItem(
-                          icon: Icons.description_rounded,
-                          label: 'Terms & Conditions',
-                          onTap: () {},
-                        ),
+                            icon: Icons.description_rounded,
+                            label: t('terms'),
+                            onTap: () {}),
                         _SettingsItem(
-                          icon: Icons.privacy_tip_rounded,
-                          label: 'Privacy Policy',
-                          isLast: true,
-                          onTap: () {},
-                        ),
+                            icon: Icons.privacy_tip_rounded,
+                            label: t('privacy'),
+                            isLast: true,
+                            onTap: () {}),
                       ]),
 
                       const SizedBox(height: 24),
 
-                      // ── App Info ──────────────────────────────
                       Center(
-                        child: Column(
-                          children: [
-                            Container(
-                              width: 48,
-                              height: 48,
-                              decoration: BoxDecoration(
-                                color: AppColors.primary.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Icon(
+                        child: Column(children: [
+                          Container(
+                            width: 48, height: 48,
+                            decoration: BoxDecoration(
+                                color:
+                                AppColors.primary.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12)),
+                            child: const Icon(
                                 Icons.sports_tennis_rounded,
-                                color: AppColors.primary,
-                                size: 26,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            const Text(
-                              'Pikuru',
+                                color: AppColors.primary, size: 26),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text('Pikuru',
                               style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.primary,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Version 1.0.0',
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.primary)),
+                          const SizedBox(height: 2),
+                          Text(t('version'),
                               style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey.shade400,
-                              ),
-                            ),
-                          ],
-                        ),
+                                  fontSize: 12,
+                                  color: Colors.grey.shade400)),
+                        ]),
                       ),
 
                       const SizedBox(height: 40),
@@ -413,39 +435,31 @@ class _SettingsScreenState extends State<SettingsScreen>
   }
 }
 
-// ── Section Header ────────────────────────────────────────────────────
+// ── Section Header ─────────────────────────────────────────────────────────────
 class _SectionHeader extends StatelessWidget {
   final String label;
   const _SectionHeader({required this.label});
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Container(
-          width: 4,
-          height: 18,
+    return Row(children: [
+      Container(
+          width: 4, height: 18,
           decoration: BoxDecoration(
-            color: AppColors.primary,
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          label,
+              color: AppColors.primary,
+              borderRadius: BorderRadius.circular(2))),
+      const SizedBox(width: 8),
+      Text(label,
           style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w800,
-            color: AppColors.primary,
-            letterSpacing: 0.1,
-          ),
-        ),
-      ],
-    );
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: AppColors.primary,
+              letterSpacing: 0.1)),
+    ]);
   }
 }
 
-// ── Settings Item Data ────────────────────────────────────────────────
+// ── Settings Item Data ─────────────────────────────────────────────────────────
 class _SettingsItem {
   final IconData icon;
   final String label;
@@ -458,13 +472,13 @@ class _SettingsItem {
     required this.icon,
     required this.label,
     required this.onTap,
-    this.isLast = false,
-    this.isGoogle = false,
+    this.isLast   = false,
+    this.isGoogle  = false,
     this.trailing,
   });
 }
 
-// ── Settings Card ─────────────────────────────────────────────────────
+// ── Settings Card ──────────────────────────────────────────────────────────────
 class _SettingsCard extends StatelessWidget {
   final List<_SettingsItem> items;
   const _SettingsCard({required this.items});
@@ -478,116 +492,97 @@ class _SettingsCard extends StatelessWidget {
         border: Border.all(color: AppColors.primary.withOpacity(0.12)),
         boxShadow: [
           BoxShadow(
-            color: AppColors.primary.withOpacity(0.06),
-            blurRadius: 14,
-            offset: const Offset(0, 4),
-          ),
+              color: AppColors.primary.withOpacity(0.06),
+              blurRadius: 14,
+              offset: const Offset(0, 4))
         ],
       ),
-      child: Column(
-        children: items.map((item) => _SettingsTile(item: item)).toList(),
-      ),
+      child:
+      Column(children: items.map((i) => _SettingsTile(item: i)).toList()),
     );
   }
 }
 
-// ── Settings Tile ─────────────────────────────────────────────────────
+// ── Settings Tile ──────────────────────────────────────────────────────────────
 class _SettingsTile extends StatelessWidget {
   final _SettingsItem item;
   const _SettingsTile({required this.item});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        InkWell(
-          onTap: item.onTap,
-          borderRadius: BorderRadius.vertical(
-            bottom: item.isLast ? const Radius.circular(16) : Radius.zero,
-          ),
-          child: Padding(
-            padding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
-            child: Row(
-              children: [
-                Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: item.isGoogle
-                        ? Colors.grey.withOpacity(0.08)
-                        : AppColors.primary.withOpacity(0.09),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(item.icon,
-                      color: item.isGoogle
-                          ? Colors.grey.shade400
-                          : AppColors.primary,
-                      size: 20),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Text(
-                    item.label,
-                    style: TextStyle(
+    return Column(children: [
+      InkWell(
+        onTap: item.onTap,
+        borderRadius: BorderRadius.vertical(
+            bottom: item.isLast
+                ? const Radius.circular(16)
+                : Radius.zero),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+          child: Row(children: [
+            Container(
+              width: 38, height: 38,
+              decoration: BoxDecoration(
+                color: item.isGoogle
+                    ? Colors.grey.withOpacity(0.08)
+                    : AppColors.primary.withOpacity(0.09),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(item.icon,
+                  color: item.isGoogle
+                      ? Colors.grey.shade400
+                      : AppColors.primary,
+                  size: 20),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(item.label,
+                  style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
                       color: item.isGoogle
                           ? Colors.grey.shade400
-                          : const Color(0xFF1A1A1A),
-                    ),
-                  ),
-                ),
-                if (item.trailing != null) ...[
-                  item.trailing!,
-                  const SizedBox(width: 6),
-                ],
-                // Show Google badge instead of chevron for locked items
-                if (item.isGoogle)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.g_mobiledata_rounded,
-                            size: 14, color: Colors.blue.shade400),
-                        const SizedBox(width: 3),
-                        Text('Google',
-                            style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: Colors.blue.shade400)),
-                      ],
-                    ),
-                  )
-                else
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    color: AppColors.primary.withOpacity(0.4),
-                    size: 20,
-                  ),
-              ],
+                          : const Color(0xFF1A1A1A))),
             ),
-          ),
+            if (item.trailing != null) ...[
+              item.trailing!,
+              const SizedBox(width: 6)
+            ],
+            if (item.isGoogle)
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(20)),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.g_mobiledata_rounded,
+                      size: 14, color: Colors.blue.shade400),
+                  const SizedBox(width: 3),
+                  Text('Google',
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.blue.shade400)),
+                ]),
+              )
+            else
+              Icon(Icons.chevron_right_rounded,
+                  color: AppColors.primary.withOpacity(0.4), size: 20),
+          ]),
         ),
-        if (!item.isLast)
-          Divider(
+      ),
+      if (!item.isLast)
+        Divider(
             height: 1,
             thickness: 1,
             indent: 68,
-            color: AppColors.primary.withOpacity(0.08),
-          ),
-      ],
-    );
+            color: AppColors.primary.withOpacity(0.08)),
+    ]);
   }
 }
 
-// ── Trailing Tag ──────────────────────────────────────────────────────
+// ── Trailing Tag ───────────────────────────────────────────────────────────────
 class _TrailingTag extends StatelessWidget {
   final String label;
   const _TrailingTag({required this.label});
@@ -597,17 +592,13 @@ class _TrailingTag extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: AppColors.primary.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: AppColors.primary,
-        ),
-      ),
+          color: AppColors.primary.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(20)),
+      child: Text(label,
+          style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.primary)),
     );
   }
 }

@@ -1,19 +1,55 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:pikuru/theme/material.dart';
+import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:pikuru/services/individual_chat_service.dart';
 import 'package:pikuru/screens/group_detail_screen.dart';
 import 'package:pikuru/screens/event_detail_screen.dart';
 import 'package:pikuru/modal/user_profile_modal.dart';
 
-// ════════════════════════════════════════════════════════════════════════════
-// Individual Chat Screen
-// ════════════════════════════════════════════════════════════════════════════
+// ─────────────────────────────────────────────────────────────────────────────
+// Localised strings — mirrors the web app's T map in individual chat
+// ─────────────────────────────────────────────────────────────────────────────
+const _L = {
+  kLangEn: {
+    'today':            'Today',
+    'yesterday':        'Yesterday',
+    'noMessages':       'No messages yet',
+    'firstHello':       'Say hi to start the conversation 👋',
+    'tapToViewProfile': 'Tap to view profile',
+    'tapToViewGroup':   'Tap to view group',
+    'tapToViewEvent':   'Tap to view event',
+    'messagePh':        'Message…',
+    'unknown':          'Unknown',
+    'untitledEvent':    'Untitled Event',
+    'unknownGroup':     'Unknown Group',
+  },
+  kLangJa: {
+    'today':            '今日',
+    'yesterday':        '昨日',
+    'noMessages':       'メッセージはまだありません',
+    'firstHello':       '挨拶をして会話を始めましょう 👋',
+    'tapToViewProfile': 'タップしてプロフィールを表示',
+    'tapToViewGroup':   'タップしてグループを表示',
+    'tapToViewEvent':   'タップしてイベントを表示',
+    'messagePh':        'メッセージ...',
+    'unknown':          '不明',
+    'untitledEvent':    '無題のイベント',
+    'unknownGroup':     '不明なグループ',
+  },
+};
 
-class IndividualChatScreen extends StatefulWidget {
+String _t(String lang, String key) =>
+    _L[lang]?[key] ?? _L[kLangEn]![key]!;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// IndividualChatScreen — ConsumerStatefulWidget
+// ─────────────────────────────────────────────────────────────────────────────
+class IndividualChatScreen extends ConsumerStatefulWidget {
   final String otherUserId;
   final String otherUserName;
   final String otherUserAvatar;
@@ -26,19 +62,20 @@ class IndividualChatScreen extends StatefulWidget {
   });
 
   @override
-  State<IndividualChatScreen> createState() => _IndividualChatScreenState();
+  ConsumerState<IndividualChatScreen> createState() =>
+      _IndividualChatScreenState();
 }
 
-class _IndividualChatScreenState extends State<IndividualChatScreen>
+class _IndividualChatScreenState extends ConsumerState<IndividualChatScreen>
     with TickerProviderStateMixin {
   final TextEditingController _messageController = TextEditingController();
-  final ScrollController _scrollController = ScrollController();
-  final FocusNode _focusNode = FocusNode();
+  final ScrollController      _scrollController  = ScrollController();
+  final FocusNode             _focusNode         = FocusNode();
   final currentUser = FirebaseAuth.instance.currentUser;
 
   String? _chatId;
   bool _isLoading = true;
-  bool _isTyping = false;
+  bool _isTyping  = false;
 
   late final AnimationController _sendBtnController;
 
@@ -75,13 +112,13 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
 
   Future<void> _initChat() async {
     final chatId = await IndividualChatService.getOrCreateChat(
-      otherUserId: widget.otherUserId,
-      otherUserName: widget.otherUserName,
+      otherUserId:    widget.otherUserId,
+      otherUserName:  widget.otherUserName,
       otherUserAvatar: widget.otherUserAvatar,
     );
     if (mounted) {
       setState(() {
-        _chatId = chatId;
+        _chatId    = chatId;
         _isLoading = false;
       });
     }
@@ -113,10 +150,10 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
     HapticFeedback.lightImpact();
     Navigator.of(context).push(
       UserProfileModal.route(
-        userId: widget.otherUserId,
-        userName: widget.otherUserName,
+        userId:    widget.otherUserId,
+        userName:  widget.otherUserName,
         avatarUrl: widget.otherUserAvatar,
-        onChat: () {},
+        onChat:    () {},
         onGroupTap: (group) {
           final mapped = {
             ...group,
@@ -136,14 +173,35 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
     );
   }
 
+  // ── Localised group name — mirrors web app's org_name_jp fallback ──────────
+  String _groupName(Map<String, dynamic> msg, String lang) {
+    if (lang == kLangJa) {
+      final jp = (msg['group_name_jp'] ?? '').toString().trim();
+      if (jp.isNotEmpty) return jp;
+    }
+    return (msg['group_name'] ?? '').toString();
+  }
+
+  // ── Localised event title — mirrors web app's event_title_jp fallback ──────
+  String _eventTitle(Map<String, dynamic> msg, String lang) {
+    if (lang == kLangJa) {
+      final jp = (msg['event_title_jp'] ?? '').toString().trim();
+      if (jp.isNotEmpty) return jp;
+    }
+    return (msg['event_title'] ?? '').toString();
+  }
+
   @override
   Widget build(BuildContext context) {
+    // ✅ Watch global lang provider — rebuilds when lang changes anywhere
+    final lang = ref.watch(appLangProvider);
+
     return Scaffold(
       resizeToAvoidBottomInset: true,
       backgroundColor: const Color(0xFFF7F7F9),
       body: Column(
         children: [
-          SafeArea(bottom: false, child: _buildAppBar()),
+          SafeArea(bottom: false, child: _buildAppBar(lang)),
           Expanded(
             child: GestureDetector(
               onTap: () => FocusScope.of(context).unfocus(),
@@ -151,17 +209,17 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
                   ? Center(
                   child: CircularProgressIndicator(
                       color: AppColors.primary, strokeWidth: 2))
-                  : _buildMessageList(),
+                  : _buildMessageList(lang),
             ),
           ),
-          SafeArea(top: false, child: _buildInputBar()),
+          SafeArea(top: false, child: _buildInputBar(lang)),
         ],
       ),
     );
   }
 
-  // ── App Bar ──────────────────────────────────────────────────────────────
-  Widget _buildAppBar() {
+  // ── App Bar ───────────────────────────────────────────────────────────────
+  Widget _buildAppBar(String lang) {
     final hiResAvatar = hiRes(widget.otherUserAvatar);
     return Container(
       color: Colors.white,
@@ -214,8 +272,9 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
                                 overflow: TextOverflow.ellipsis,
                               ),
                               const SizedBox(height: 1),
+                              // Localised "Tap to view profile"
                               Text(
-                                'Tap to view profile',
+                                _t(lang, 'tapToViewProfile'),
                                 style: TextStyle(
                                   fontSize: 11.5,
                                   color: Colors.black.withOpacity(0.35),
@@ -261,8 +320,8 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
     );
   }
 
-  // ── Message List ─────────────────────────────────────────────────────────
-  Widget _buildMessageList() {
+  // ── Message List ──────────────────────────────────────────────────────────
+  Widget _buildMessageList(String lang) {
     return StreamBuilder<QuerySnapshot>(
       stream: IndividualChatService.messagesStream(_chatId!),
       builder: (context, snapshot) {
@@ -272,7 +331,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
                   color: AppColors.primary, strokeWidth: 2));
         }
         final messages = snapshot.data!.docs;
-        if (messages.isEmpty) return _buildEmptyState();
+        if (messages.isEmpty) return _buildEmptyState(lang);
         _scrollToBottom();
 
         return ListView.builder(
@@ -280,8 +339,8 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
           itemCount: messages.length,
           itemBuilder: (context, index) {
-            final msg = messages[index].data() as Map<String, dynamic>;
-            final isMe = msg['sender_id'] == currentUser?.uid;
+            final msg    = messages[index].data() as Map<String, dynamic>;
+            final isMe   = msg['sender_id'] == currentUser?.uid;
             final prevSenderId = index > 0
                 ? (messages[index - 1].data()
             as Map<String, dynamic>)['sender_id']
@@ -300,8 +359,9 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
                 );
             return Column(
               children: [
-                if (showDate) _buildDateDivider(msg['sent_at']),
-                _buildMessageBubble(msg, isMe, isFirstInGroup, isLastInGroup),
+                if (showDate) _buildDateDivider(msg['sent_at'], lang),
+                _buildMessageBubble(
+                    msg, isMe, isFirstInGroup, isLastInGroup, lang),
               ],
             );
           },
@@ -310,16 +370,17 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
     );
   }
 
-  Widget _buildDateDivider(dynamic timestamp) {
-    String label = 'Today';
+  // ── Date divider — localised Today / Yesterday ────────────────────────────
+  Widget _buildDateDivider(dynamic timestamp, String lang) {
+    String label = _t(lang, 'today');
     if (timestamp is Timestamp) {
       final date = timestamp.toDate();
       final now  = DateTime.now();
       final diff = DateTime(now.year, now.month, now.day)
           .difference(DateTime(date.year, date.month, date.day))
           .inDays;
-      if (diff == 0)      label = 'Today';
-      else if (diff == 1) label = 'Yesterday';
+      if (diff == 0)      label = _t(lang, 'today');
+      else if (diff == 1) label = _t(lang, 'yesterday');
       else                label = '${date.day}/${date.month}/${date.year}';
     }
     return Padding(
@@ -349,26 +410,28 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
     );
   }
 
+  // ── Message Bubble ────────────────────────────────────────────────────────
   Widget _buildMessageBubble(
       Map<String, dynamic> msg,
       bool isMe,
       bool isFirstInGroup,
       bool isLastInGroup,
+      String lang,
       ) {
-    final Timestamp? sentAt = msg['sent_at'];
-    final time         = sentAt != null ? _formatTime(sentAt.toDate()) : '';
-    final hiResAvatar  = hiRes(widget.otherUserAvatar);
+    final Timestamp? sentAt   = msg['sent_at'];
+    final time                = sentAt != null ? _formatTime(sentAt.toDate()) : '';
+    final hiResAvatar         = hiRes(widget.otherUserAvatar);
 
     if ((msg['type'] ?? '') == 'group_share') {
-      return _buildGroupShareBubble(msg, isMe, isLastInGroup, time, hiResAvatar);
+      return _buildGroupShareBubble(
+          msg, isMe, isLastInGroup, time, hiResAvatar, lang);
     }
-
     if ((msg['type'] ?? '') == 'event_share') {
-      return _buildEventShareBubble(msg, isMe, isLastInGroup, time, hiResAvatar);
+      return _buildEventShareBubble(
+          msg, isMe, isLastInGroup, time, hiResAvatar, lang);
     }
 
     final text = msg['text'] ?? '';
-
     final bubbleRadius = BorderRadius.only(
       topLeft:     Radius.circular(!isMe && !isFirstInGroup ? 5 : 22),
       topRight:    Radius.circular(isMe  && !isFirstInGroup ? 5 : 22),
@@ -457,15 +520,19 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
     );
   }
 
-  // ── Group share card bubble ───────────────────────────────────────────────
+  // ── Group share bubble — localised name via org_name_jp ───────────────────
   Widget _buildGroupShareBubble(
       Map<String, dynamic> msg,
       bool isMe,
       bool isLastInGroup,
       String time,
       String hiResAvatar,
+      String lang,
       ) {
-    final groupName  = (msg['group_name']  ?? 'Unknown Group').toString();
+    // Use localised group name — mirrors web app's group_name_jp field
+    final groupName  = _groupName(msg, lang).isNotEmpty
+        ? _groupName(msg, lang)
+        : _t(lang, 'unknownGroup');
     final groupImage = (msg['group_image'] ?? '').toString();
     final groupType  = (msg['group_type']  ?? '').toString();
 
@@ -480,8 +547,8 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
     return Padding(
       padding: EdgeInsets.only(
           bottom: isLastInGroup ? 12 : 2,
-          left: isMe ? 60 : 38,
-          right: isMe ? 4 : 60),
+          left:  isMe ? 60 : 38,
+          right: isMe ? 4  : 60),
       child: Column(
         crossAxisAlignment:
         isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -489,33 +556,30 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
           if (!isMe)
             Padding(
               padding: const EdgeInsets.only(left: 4, bottom: 4),
-              child: Row(
-                children: [
-                  UserAvatar(
-                    url: hiResAvatar,
-                    name: widget.otherUserName,
-                    radius: 10,
-                    fontSize: 8,
+              child: Row(children: [
+                UserAvatar(
+                  url: hiResAvatar,
+                  name: widget.otherUserName,
+                  radius: 10,
+                  fontSize: 8,
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  widget.otherUserName,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
                   ),
-                  const SizedBox(width: 5),
-                  Text(
-                    widget.otherUserName,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ]),
             ),
 
           GestureDetector(
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => GroupDetailScreen(group: groupData),
-              ),
+                  builder: (_) => GroupDetailScreen(group: groupData)),
             ),
             child: Container(
               width: MediaQuery.of(context).size.width * 0.68,
@@ -551,60 +615,54 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
                   ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (groupType.isNotEmpty)
-                                Container(
-                                  margin: const EdgeInsets.only(bottom: 4),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: Text(
-                                    groupType,
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.primary,
-                                    ),
-                                  ),
+                    child: Row(children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (groupType.isNotEmpty)
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 4),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(20),
                                 ),
-                              Text(
-                                groupName,
-                                style: const TextStyle(
+                                child: Text(groupType,
+                                    style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.primary)),
+                              ),
+                            Text(
+                              groupName,
+                              style: const TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
-                                  color: Color(0xFF1A1A1A),
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ),
+                                  color: Color(0xFF1A1A1A)),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.all(7),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(9),
-                          ),
-                          child: const Icon(Icons.arrow_forward_rounded,
-                              color: Colors.white, size: 13),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.all(7),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.circular(9),
                         ),
-                      ],
-                    ),
+                        child: const Icon(Icons.arrow_forward_rounded,
+                            color: Colors.white, size: 13),
+                      ),
+                    ]),
                   ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
                     child: Text(
-                      'Tap to view group',
+                      _t(lang, 'tapToViewGroup'),
                       style: TextStyle(
                         fontSize: 11,
                         color: AppColors.primary.withOpacity(0.6),
@@ -624,10 +682,9 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
               child: Text(
                 time,
                 style: TextStyle(
-                  fontSize: 10.5,
-                  color: Colors.black.withOpacity(0.28),
-                  letterSpacing: 0.2,
-                ),
+                    fontSize: 10.5,
+                    color: Colors.black.withOpacity(0.28),
+                    letterSpacing: 0.2),
               ),
             ),
         ],
@@ -644,15 +701,19 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
     ),
   );
 
-  // ── Event share card bubble ───────────────────────────────────────────────
+  // ── Event share bubble — localised title via event_title_jp ──────────────
   Widget _buildEventShareBubble(
       Map<String, dynamic> msg,
       bool isMe,
       bool isLastInGroup,
       String time,
       String hiResAvatar,
+      String lang,
       ) {
-    final eventTitle = (msg['event_title'] ?? 'Untitled Event').toString();
+    // Use localised event title — mirrors web app's event_title_jp field
+    final eventTitle = _eventTitle(msg, lang).isNotEmpty
+        ? _eventTitle(msg, lang)
+        : _t(lang, 'untitledEvent');
     final eventImage = (msg['event_image'] ?? '').toString();
     final eventDate  = (msg['event_date']  ?? '').toString();
     final eventType  = (msg['event_type']  ?? '').toString();
@@ -668,8 +729,8 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
     return Padding(
       padding: EdgeInsets.only(
           bottom: isLastInGroup ? 12 : 2,
-          left: isMe ? 60 : 38,
-          right: isMe ? 4 : 60),
+          left:  isMe ? 60 : 38,
+          right: isMe ? 4  : 60),
       child: Column(
         crossAxisAlignment:
         isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
@@ -677,33 +738,30 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
           if (!isMe)
             Padding(
               padding: const EdgeInsets.only(left: 4, bottom: 4),
-              child: Row(
-                children: [
-                  UserAvatar(
-                    url: hiResAvatar,
-                    name: widget.otherUserName,
-                    radius: 10,
-                    fontSize: 8,
+              child: Row(children: [
+                UserAvatar(
+                  url: hiResAvatar,
+                  name: widget.otherUserName,
+                  radius: 10,
+                  fontSize: 8,
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  widget.otherUserName,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.primary,
                   ),
-                  const SizedBox(width: 5),
-                  Text(
-                    widget.otherUserName,
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ]),
             ),
 
           GestureDetector(
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => EventDetailScreen(event: eventData),
-              ),
+                  builder: (_) => EventDetailScreen(event: eventData)),
             ),
             child: Container(
               width: MediaQuery.of(context).size.width * 0.68,
@@ -739,82 +797,72 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
                   ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (eventType.isNotEmpty)
-                                Container(
-                                  margin: const EdgeInsets.only(bottom: 4),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: Text(
-                                    eventType,
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.primary,
-                                    ),
-                                  ),
+                    child: Row(children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (eventType.isNotEmpty)
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 4),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: AppColors.primary.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(20),
                                 ),
-                              Text(
-                                eventTitle,
-                                style: const TextStyle(
+                                child: Text(eventType,
+                                    style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.primary)),
+                              ),
+                            Text(
+                              eventTitle,
+                              style: const TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.w700,
-                                  color: Color(0xFF1A1A1A),
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              if (eventDate.isNotEmpty)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 3),
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.calendar_today_rounded,
-                                          size: 11,
-                                          color: AppColors.primary
-                                              .withOpacity(0.7)),
-                                      const SizedBox(width: 3),
-                                      Text(
-                                        eventDate,
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: AppColors.primary
-                                              .withOpacity(0.8),
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ],
+                                  color: Color(0xFF1A1A1A)),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            if (eventDate.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 3),
+                                child: Row(children: [
+                                  Icon(Icons.calendar_today_rounded,
+                                      size: 11,
+                                      color: AppColors.primary.withOpacity(0.7)),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    eventDate,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: AppColors.primary.withOpacity(0.8),
+                                      fontWeight: FontWeight.w500,
+                                    ),
                                   ),
-                                ),
-                            ],
-                          ),
+                                ]),
+                              ),
+                          ],
                         ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.all(7),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(9),
-                          ),
-                          child: const Icon(Icons.arrow_forward_rounded,
-                              color: Colors.white, size: 13),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.all(7),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.circular(9),
                         ),
-                      ],
-                    ),
+                        child: const Icon(Icons.arrow_forward_rounded,
+                            color: Colors.white, size: 13),
+                      ),
+                    ]),
                   ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
                     child: Text(
-                      'Tap to view event',
+                      _t(lang, 'tapToViewEvent'),
                       style: TextStyle(
                         fontSize: 11,
                         color: AppColors.primary.withOpacity(0.6),
@@ -834,10 +882,9 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
               child: Text(
                 time,
                 style: TextStyle(
-                  fontSize: 10.5,
-                  color: Colors.black.withOpacity(0.28),
-                  letterSpacing: 0.2,
-                ),
+                    fontSize: 10.5,
+                    color: Colors.black.withOpacity(0.28),
+                    letterSpacing: 0.2),
               ),
             ),
         ],
@@ -854,8 +901,8 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
     ),
   );
 
-  // ── Input Bar ────────────────────────────────────────────────────────────
-  Widget _buildInputBar() {
+  // ── Input Bar — localised placeholder ────────────────────────────────────
+  Widget _buildInputBar(String lang) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -897,7 +944,7 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
                   height: 1.4,
                 ),
                 decoration: InputDecoration(
-                  hintText: 'Message…',
+                  hintText: _t(lang, 'messagePh'),
                   hintStyle: TextStyle(
                       color: Colors.black.withOpacity(0.28), fontSize: 15.5),
                   border: InputBorder.none,
@@ -911,7 +958,8 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
           ScaleTransition(
             scale: Tween<double>(begin: 0.82, end: 1.0).animate(
               CurvedAnimation(
-                  parent: _sendBtnController, curve: Curves.easeOutBack),
+                  parent: _sendBtnController,
+                  curve: Curves.easeOutBack),
             ),
             child: GestureDetector(
               onTap: _sendMessage,
@@ -949,8 +997,8 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
     );
   }
 
-  // ── Empty State ──────────────────────────────────────────────────────────
-  Widget _buildEmptyState() {
+  // ── Empty State — localised ────────────────────────────────────────────────
+  Widget _buildEmptyState(String lang) {
     final hiResAvatar = hiRes(widget.otherUserAvatar, size: 200);
     return Center(
       child: Column(
@@ -989,15 +1037,16 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
           ),
           const SizedBox(height: 6),
           Text(
-            'Say hi to start the conversation 👋',
-            style:
-            TextStyle(fontSize: 14, color: Colors.black.withOpacity(0.35)),
+            _t(lang, 'firstHello'),
+            style: TextStyle(
+                fontSize: 14, color: Colors.black.withOpacity(0.35)),
           ),
         ],
       ),
     );
   }
 
+  // ── Helpers ───────────────────────────────────────────────────────────────
   bool _isDifferentDay(dynamic a, dynamic b) {
     if (a is! Timestamp || b is! Timestamp) return false;
     final da = a.toDate();
@@ -1006,11 +1055,8 @@ class _IndividualChatScreenState extends State<IndividualChatScreen>
   }
 
   String _formatTime(DateTime dt) {
-    final hour = dt.hour > 12
-        ? dt.hour - 12
-        : dt.hour == 0
-        ? 12
-        : dt.hour;
+    final hour =
+    dt.hour > 12 ? dt.hour - 12 : dt.hour == 0 ? 12 : dt.hour;
     final minute = dt.minute.toString().padLeft(2, '0');
     final period = dt.hour >= 12 ? 'PM' : 'AM';
     return '$hour:$minute $period';

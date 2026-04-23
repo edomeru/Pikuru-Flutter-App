@@ -4,33 +4,121 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/providers/providers.dart';
+import 'package:pikuru/providers/app_language_provider.dart'; // ← global lang
 import 'package:intl/intl.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Filter state (mirrors _AdvFilter in events_screen.dart)
+// i18n — mirrors web app T object exactly
+// ─────────────────────────────────────────────────────────────────────────────
+class _S {
+  final String lang;
+  const _S(this.lang);
+  bool get isJa => lang == kLangJa;
+
+  String get page         => isJa ? 'カレンダー'          : 'Calendar Events';
+  String get noEvents     => isJa ? 'この日のイベントはありません' : 'No events on this day';
+  String get moreInfo     => isJa ? '詳細情報'            : 'More Information';
+  String get free         => isJa ? '無料'                : 'Free';
+  String get filters      => isJa ? 'フィルター'           : 'Filters';
+  String get filterActive => isJa ? 'Active'             : 'Active';
+  String get allCountries => isJa ? 'すべての国'           : 'All Countries';
+  String get clearAll     => isJa ? 'クリア'              : 'Clear All';
+  String get applyFilters => isJa ? 'フィルターを適用'     : 'APPLY FILTERS';
+  String get loading      => isJa ? '読み込み中...'        : 'Loading...';
+
+  // section labels in filter modal
+  String get secLocation  => isJa ? '場所'                : 'LOCATION';
+  String get secSkill     => isJa ? 'スキルレベル'         : 'SKILL LEVELS';
+  String get secCat       => isJa ? 'カテゴリー'           : 'CATEGORIES';
+  String get secOther     => isJa ? 'その他'              : 'OTHER';
+
+  // filter labels
+  String get fCountry     => isJa ? '国'                  : 'Country';
+  String get fPrefecture  => isJa ? '都道府県'             : 'Prefecture';
+  String get fCity        => isJa ? '市区町村'             : 'City';
+  String get fType        => isJa ? 'イベントの種類'        : 'Event Type';
+  String get fAllCountries=> isJa ? 'すべての国'           : 'All countries';
+  String get fAll         => isJa ? 'すべて'              : 'All';
+  String get fAllTypes    => isJa ? 'すべての種類'         : 'All types';
+
+  // skill
+  String get skillPro     => isJa ? '上級'  : 'Pro';
+  String get skillAmateur => isJa ? '中級'  : 'Amateur';
+  String get skillBeginner=> isJa ? '初級'  : 'Beginner';
+
+  // categories — mirrors web app T.ja.cats
+  String get catMx => isJa ? 'ミックスダブルス' : 'Mixed Doubles';
+  String get catMd => isJa ? '男子ダブルス'   : "Men's Doubles";
+  String get catWd => isJa ? '女子ダブルス'   : "Women's Doubles";
+  String get catMs => isJa ? '男子シングルス'  : "Men's Singles";
+  String get catWs => isJa ? '女子シングルス'  : "Women's Singles";
+  String get catSe => isJa ? 'シニア'        : 'Seniors';
+  String get catJu => isJa ? 'ジュニア'      : 'Juniors';
+  String get catCo => isJa ? '学生'          : 'Collegiate';
+
+  // other
+  String get tourist => isJa ? '観光客歓迎' : 'Tourist Friendly';
+
+  // month names — mirrors web app T.ja.months
+  List<String> get months => isJa
+      ? ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月']
+      : ['January','February','March','April','May','June',
+    'July','August','September','October','November','December'];
+
+  // weekday headers — mirrors web app T.ja.weekdays
+  List<String> get weekdays => isJa
+      ? ['日','月','火','水','木','金','土']
+      : ['SU','MO','TU','WE','TH','FR','SA'];
+
+  // event count suffix
+  String eventCount(int n) => isJa ? '$n件のイベント' : '$n event${n == 1 ? '' : 's'}';
+
+  // event-type localiser — mirrors web app exactly
+  String localizeType(String key) {
+    if (!isJa) return key;
+    const m = {
+      'Professional Tournament':      'プロトーナメント',
+      'Global Tournament':            'グローバルトーナメント',
+      'Japan Tournament':             '日本トーナメント',
+      'Open Play':                    'オープンプレイ',
+      'Trial Session':                '体験セッション',
+      'Local Event':                  'ローカルイベント',
+      'Lessons/Clinics':              'レッスン・クリニック',
+      'Weekly Play / Recurring Play': '定期プレイ',
+    };
+    return m[key] ?? key;
+  }
+
+  // formatted date for selected-day header — mirrors web app formatDateDisplay
+  String formatDate(DateTime d) {
+    if (isJa) return '${d.year}年${months[d.month - 1]}${d.day}日';
+    return '${months[d.month - 1]} ${d.day}, ${d.year}';
+  }
+
+  // formatted month header — mirrors web app calendar header
+  String formatMonth(DateTime d) {
+    if (isJa) return '${d.year}年 ${months[d.month - 1]}';
+    return '${months[d.month - 1]} ${d.year}';
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Filter state (unchanged logic, labels now come from _S)
 // ─────────────────────────────────────────────────────────────────────────────
 class _CalFilter {
   String country;
   String prefecture;
   String city;
   String type;
-  bool skillPro;
-  bool skillAmateur;
-  bool skillBeginner;
+  bool skillPro, skillAmateur, skillBeginner;
   bool catMx, catMd, catMs, catWs, catWd, catSe, catJu, catCo;
   bool tourist;
 
   _CalFilter({
-    this.country       = '',
-    this.prefecture    = '',
-    this.city          = '',
-    this.type          = '',
-    this.skillPro      = false,
-    this.skillAmateur  = false,
-    this.skillBeginner = false,
-    this.catMx = false, this.catMd = false, this.catMs = false,
-    this.catWs = false, this.catWd = false, this.catSe = false,
-    this.catJu = false, this.catCo = false,
+    this.country = '', this.prefecture = '', this.city = '', this.type = '',
+    this.skillPro = false, this.skillAmateur = false, this.skillBeginner = false,
+    this.catMx = false, this.catMd = false, this.catMs = false, this.catWs = false,
+    this.catWd = false, this.catSe = false, this.catJu = false, this.catCo = false,
     this.tourist = false,
   });
 
@@ -38,8 +126,7 @@ class _CalFilter {
     String? country, String? prefecture, String? city, String? type,
     bool? skillPro, bool? skillAmateur, bool? skillBeginner,
     bool? catMx, bool? catMd, bool? catMs, bool? catWs,
-    bool? catWd, bool? catSe, bool? catJu, bool? catCo,
-    bool? tourist,
+    bool? catWd, bool? catSe, bool? catJu, bool? catCo, bool? tourist,
   }) => _CalFilter(
     country:       country       ?? this.country,
     prefecture:    prefecture    ?? this.prefecture,
@@ -56,44 +143,43 @@ class _CalFilter {
   );
 
   bool get hasNonLocationFilters =>
-      type.isNotEmpty ||
-          skillPro || skillAmateur || skillBeginner ||
-          catMx || catMd || catMs || catWs || catWd || catSe || catJu || catCo ||
-          tourist;
+      type.isNotEmpty || skillPro || skillAmateur || skillBeginner ||
+          catMx || catMd || catMs || catWs || catWd || catSe || catJu || catCo || tourist;
 
   bool get isActive =>
-      hasNonLocationFilters ||
-          country.isNotEmpty || prefecture.isNotEmpty || city.isNotEmpty;
+      hasNonLocationFilters || country.isNotEmpty || prefecture.isNotEmpty || city.isNotEmpty;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// CalendarEventsScreen
+// Screen
 // ─────────────────────────────────────────────────────────────────────────────
 class CalendarEventsScreen extends ConsumerStatefulWidget {
   const CalendarEventsScreen({super.key});
 
   @override
-  ConsumerState<CalendarEventsScreen> createState() =>
-      _CalendarEventsScreenState();
+  ConsumerState<CalendarEventsScreen> createState() => _CalendarEventsScreenState();
 }
 
 class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     with TickerProviderStateMixin {
 
-  // ── Palette ───────────────────────────────────────────────────────────────
+  // ── Palette (light, matches app) ──────────────────────────────────────────
   static const Color _bg       = Color(0xFFF7F8FA);
   static const Color _surface  = Colors.white;
   static const Color _border   = Color(0xFFEEEFF1);
-  static const Color _textDark = Color(0xFF0D0D0D);
-  static const Color _cardBg   = Color(0xFFF2F3F5);
   static const Color _borderMd = Color(0xFFDDDEE1);
+  static const Color _cardBg   = Color(0xFFF2F3F5);
+  static const Color _textDark = Color(0xFF0D0D0D);
   static const Color _textMid  = Color(0xFF555760);
   static const Color _textLight= Color(0xFF888A90);
 
-  // ── Filter state (single source of truth) ─────────────────────────────────
+  // ── Global lang ───────────────────────────────────────────────────────────
+  _S get s => _S(ref.watch(appLangProvider));
+
+  // ── State ─────────────────────────────────────────────────────────────────
   _CalFilter _filter = _CalFilter(country: 'Japan', prefecture: 'Tokyo');
 
-  static const List<String> _eventTypes = [
+  static const List<String> _eventTypeKeys = [
     'Professional Tournament', 'Global Tournament', 'Japan Tournament',
     'Open Play', 'Trial Session', 'Local Event',
     'Lessons/Clinics', 'Weekly Play / Recurring Play',
@@ -107,12 +193,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
   late final AnimationController _slideCtrl;
   late final Animation<Offset>   _slideAnim;
 
-  static const List<String> _monthNames = [
-    'January','February','March','April','May','June',
-    'July','August','September','October','November','December',
-  ];
-  static const List<String> _weekdays = ['SU','MO','TU','WE','TH','FR','SA'];
-
   @override
   void initState() {
     super.initState();
@@ -121,17 +201,13 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     _selectedDate = DateTime(now.year, now.month, now.day);
 
     _fadeCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 400))
-      ..forward();
+        vsync: this, duration: const Duration(milliseconds: 400))..forward();
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeOut);
 
     _slideCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 380))
-      ..forward();
-    _slideAnim = Tween<Offset>(
-      begin: const Offset(0, 0.05),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOutCubic));
+        vsync: this, duration: const Duration(milliseconds: 380))..forward();
+    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.05), end: Offset.zero)
+        .animate(CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOutCubic));
   }
 
   @override
@@ -141,56 +217,41 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     super.dispose();
   }
 
-  // ── Location label shown in the header ────────────────────────────────────
+  // ── Location label shown in header ────────────────────────────────────────
   String get _locationLabel {
     if (_filter.prefecture.isNotEmpty) return _filter.prefecture;
     if (_filter.country.isNotEmpty)    return _filter.country;
-    return 'All Countries';
+    return s.allCountries;
   }
 
-  // ── Full location matching ────────────────────────────────────────────────
+  // ── Location filter matching ───────────────────────────────────────────────
   bool _matchesLocation(Map<String, dynamic> event) {
     if (_filter.country.isEmpty) return true;
-
     final targetCountry = _filter.country.toLowerCase();
-    final targetPref    = _filter.prefecture.isNotEmpty
-        ? _filter.prefecture.toLowerCase() : null;
-    final targetCity    = _filter.city.isNotEmpty
-        ? _filter.city.toLowerCase() : null;
+    final targetPref    = _filter.prefecture.isNotEmpty ? _filter.prefecture.toLowerCase() : null;
+    final targetCity    = _filter.city.isNotEmpty       ? _filter.city.toLowerCase()       : null;
 
-    final country =
-    (event['_resolvedCountry'] ?? '').toString().trim().toLowerCase();
+    final country = (event['_resolvedCountry'] ?? '').toString().trim().toLowerCase();
     if (country.isEmpty) return false;
-    if (!country.contains(targetCountry) &&
-        !targetCountry.contains(country)) return false;
+    if (!country.contains(targetCountry) && !targetCountry.contains(country)) return false;
 
     if (targetPref != null && targetPref.isNotEmpty) {
-      final pref =
-      (event['_resolvedPrefecture'] ?? '').toString().trim().toLowerCase();
+      final pref = (event['_resolvedPrefecture'] ?? '').toString().trim().toLowerCase();
       if (pref.isEmpty) return false;
-      if (!pref.contains(targetPref) && !targetPref.contains(pref)) {
-        return false;
-      }
+      if (!pref.contains(targetPref) && !targetPref.contains(pref)) return false;
     }
 
     if (targetCity != null && targetCity.isNotEmpty) {
-      final city =
-      (event['_resolvedCity'] ?? '').toString().trim().toLowerCase();
+      final city = (event['_resolvedCity'] ?? '').toString().trim().toLowerCase();
       if (city.isEmpty) return false;
-      if (!city.contains(targetCity) && !targetCity.contains(city)) {
-        return false;
-      }
+      if (!city.contains(targetCity) && !targetCity.contains(city)) return false;
     }
-
     return true;
   }
 
-  // ── All filters ───────────────────────────────────────────────────────────
   bool _matchesAllFilters(Map<String, dynamic> e) {
     if (!_matchesLocation(e)) return false;
-
-    if (_filter.type.isNotEmpty &&
-        (e['event_type'] ?? '').toString() != _filter.type) return false;
+    if (_filter.type.isNotEmpty && (e['event_type'] ?? '').toString() != _filter.type) return false;
 
     if (_filter.skillPro || _filter.skillAmateur || _filter.skillBeginner) {
       final match =
@@ -215,11 +276,12 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     }
 
     if (_filter.tourist && e['event_touristfriendly'] != true) return false;
-
     return true;
   }
 
   // ── Enrich events with resolved location data ─────────────────────────────
+  // Mirrors web app resolveLocation() — reads loc_name_jp, loc_address_jp,
+  // loc_prefecture_jp, loc_city_jp, loc_country_jp fields
   Future<List<Map<String, dynamic>>> _enrichEvents(
       List<Map<String, dynamic>> raw) async {
     final locIds = raw
@@ -230,75 +292,83 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     final locCache = <String, Map<String, dynamic>>{};
     for (final locId in locIds) {
       try {
-        final q1 = await FirebaseFirestore.instance
+        final q = await FirebaseFirestore.instance
             .collection('locations')
             .where('loc_id', isEqualTo: locId)
             .limit(1)
             .get();
-        if (q1.docs.isNotEmpty) {
-          locCache[locId] = q1.docs.first.data();
-          continue;
-        }
-        final doc = await FirebaseFirestore.instance
-            .collection('locations')
-            .doc(locId)
-            .get();
+        if (q.docs.isNotEmpty) { locCache[locId] = q.docs.first.data(); continue; }
+        final doc = await FirebaseFirestore.instance.collection('locations').doc(locId).get();
         if (doc.exists) locCache[locId] = doc.data()!;
       } catch (_) {}
     }
 
     return raw.map((e) {
       final locId = (e['event_loc_id'] ?? '').toString().trim();
-      final loc   = locId.isNotEmpty
-          ? (locCache[locId] ?? <String, dynamic>{})
-          : <String, dynamic>{};
+      final loc   = locId.isNotEmpty ? (locCache[locId] ?? <String, dynamic>{}) : <String, dynamic>{};
 
       String get(String key) =>
-          ((loc.isNotEmpty ? loc[key] : null) ?? e[key] ?? '')
-              .toString().trim();
+          ((loc.isNotEmpty ? loc[key] : null) ?? e[key] ?? '').toString().trim();
 
-      final pref = [
+      // EN location fields
+      final prefEn = [
         get('loc_prefecture_en'), get('loc_prefecture'),
-        get('loc_prefecture_jp'), get('event_prefecture'),
-        get('prefecture'), get('event_venue_address'),
+        get('event_prefecture'), get('prefecture'),
       ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
 
-      final resolvedCountry = get('loc_country');
+      final cityEn = get('loc_city_en').isNotEmpty ? get('loc_city_en') : get('loc_city');
+      final country = get('loc_country');
 
-      final cityEn  = get('loc_city_en');
-      final cityFb  = get('loc_city');
-      final city    = cityEn.isNotEmpty ? cityEn : cityFb;
+      final label = cityEn.isNotEmpty && prefEn.isNotEmpty
+          ? '$cityEn, $prefEn'
+          : cityEn.isNotEmpty ? cityEn
+          : prefEn.isNotEmpty ? prefEn
+          : country;
 
-      final label = city.isNotEmpty && pref.isNotEmpty
-          ? '$city, $pref'
-          : city.isNotEmpty ? city
-          : pref.isNotEmpty ? pref
-          : resolvedCountry;
+      // JP location fields — mirrors web app resolveLocation jp fields
+      final prefJp  = get('loc_prefecture_jp').isNotEmpty
+          ? get('loc_prefecture_jp') : prefEn;
+      final cityJp  = get('loc_city_jp').isNotEmpty
+          ? get('loc_city_jp') : cityEn;
+      final countryJp = get('loc_country_jp').isNotEmpty
+          ? get('loc_country_jp') : (country == 'Japan' ? '日本' : country);
+      final addrJp  = get('loc_address_jp').isNotEmpty
+          ? get('loc_address_jp') : get('loc_address');
+
+      final labelJp = cityJp.isNotEmpty && prefJp.isNotEmpty
+          ? '$prefJp$cityJp'
+          : cityJp.isNotEmpty ? cityJp
+          : prefJp.isNotEmpty ? prefJp
+          : countryJp;
 
       final googleLink = [
-        get('loc_googlelink'), get('event_googlelink'),
-        get('event_venue_link'),
+        get('loc_googlelink'), get('event_googlelink'), get('event_venue_link'),
       ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
 
-      final orgName = [get('org_name'), get('event_org_name')]
-          .firstWhere((v) => v.isNotEmpty, orElse: () => '');
+      // Organizer name (JP mirror)
+      final orgNameEn = [get('org_name'), get('event_org_name')].firstWhere((v) => v.isNotEmpty, orElse: () => '');
+      final orgNameJp = get('org_name_jp').isNotEmpty ? get('org_name_jp') : orgNameEn;
 
       return {
         ...e,
+        // EN fields
         'location':            label.isNotEmpty ? label : get('event_venue_name'),
-        'event_address':       get('loc_address').isNotEmpty
-            ? get('loc_address') : get('event_venue_address'),
+        'event_address':       get('loc_address').isNotEmpty ? get('loc_address') : get('event_venue_address'),
         'event_googlelink':    googleLink,
-        'org_name':            orgName,
-        '_resolvedPrefecture': pref,
-        '_resolvedCountry':    resolvedCountry,
-        '_resolvedCity':       city,
+        'org_name':            orgNameEn,
+        // JP fields — mirrors web app enriched fields
+        'location_jp':         labelJp.isNotEmpty ? labelJp : get('event_venue_name'),
+        'event_address_jp':    addrJp,
+        'org_name_jp':         orgNameJp,
+        // resolved fields used for filtering
+        '_resolvedPrefecture': prefEn,
+        '_resolvedCountry':    country,
+        '_resolvedCity':       cityEn,
       };
     }).toList();
   }
 
-  // ── Build location map from enriched events ───────────────────────────────
-  Map<String, List<Map<String, String>>> _buildLocationMapFromEvents(
+  Map<String, List<Map<String, String>>> _buildLocationMap(
       List<Map<String, dynamic>> enrichedEvents) {
     final map = <String, List<Map<String, String>>>{};
     for (final e in enrichedEvents) {
@@ -308,7 +378,7 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
       if (pref.isEmpty) continue;
       map.putIfAbsent(country, () => []);
       if (!map[country]!.any((p) => p['en'] == pref)) {
-        map[country]!.add({'en': pref, 'jp': ''});
+        map[country]!.add({'en': pref});
       }
     }
     final sorted = Map.fromEntries(
@@ -319,23 +389,19 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     return sorted;
   }
 
-  // ── Build event map with multi-day spanning ───────────────────────────────
   Map<DateTime, List<Map<String, dynamic>>> _buildEventMap(
       List<Map<String, dynamic>> events) {
     final map = <DateTime, List<Map<String, dynamic>>>{};
     for (final e in events) {
       if (!_matchesAllFilters(e)) continue;
-
       final tsStart = e['event_date'] ?? e['event_start_date'];
       if (tsStart == null) continue;
       final dtStart  = (tsStart as Timestamp).toDate();
       final keyStart = DateTime(dtStart.year, dtStart.month, dtStart.day);
 
-      final tsEnd = e['event_date_end'];
-      final dtEnd = tsEnd != null
-          ? (tsEnd as Timestamp).toDate()
-          : DateTime(keyStart.year, keyStart.month, keyStart.day);
-      final keyEnd = DateTime(dtEnd.year, dtEnd.month, dtEnd.day);
+      final tsEnd   = e['event_date_end'];
+      final dtEnd   = tsEnd != null ? (tsEnd as Timestamp).toDate() : keyStart;
+      final keyEnd  = DateTime(dtEnd.year, dtEnd.month, dtEnd.day);
 
       DateTime current = keyStart;
       int loop = 0;
@@ -355,7 +421,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
 
   void _prevMonth() => setState(() =>
   _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month - 1));
-
   void _nextMonth() => setState(() =>
   _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1));
 
@@ -364,27 +429,16 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     if (uri == null) return;
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: const Text('Could not open link'),
-        backgroundColor: Colors.red.shade400,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      ));
     }
   }
 
-  String _formatSelectedDate(DateTime d) =>
-      '${_monthNames[d.month - 1]} ${d.day}, ${d.year}';
-
-  // ── Full filter modal ─────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // Filter modal
+  // ─────────────────────────────────────────────────────────────────────────
   void _showFilterModal(List<Map<String, dynamic>> enrichedEvents) {
     _CalFilter temp = _filter;
+    final locationMap = _buildLocationMap(enrichedEvents);
 
-    final locationMap = _buildLocationMapFromEvents(enrichedEvents);
-
-    // Build city list from enriched events
     final cities = <String>{};
     for (final e in enrichedEvents) {
       final c = (e['_resolvedCity'] ?? '').toString().trim();
@@ -396,357 +450,279 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return StatefulBuilder(builder: (ctx, setS) {
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setS) {
+        final curS = _S(ref.read(appLangProvider));
 
-          // ── Section label ───────────────────────────────────────────────
-          Widget sectionLabel(String text) => Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Row(children: [
-              Container(
-                width: 3, height: 14,
-                margin: const EdgeInsets.only(right: 8),
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  borderRadius: BorderRadius.circular(2),
+        Widget sectionLabel(String text) => Padding(
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Row(children: [
+            Container(
+              width: 3, height: 14,
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(2)),
+            ),
+            Text(text, style: const TextStyle(fontSize: 12,
+                fontWeight: FontWeight.w800, color: _textMid, letterSpacing: 0.8)),
+          ]),
+        );
+
+        Widget divider() => const Padding(
+          padding: EdgeInsets.symmetric(vertical: 20),
+          child: Divider(height: 1, color: _borderMd),
+        );
+
+        Widget checkPill(String label, bool value, VoidCallback onTap) {
+          return GestureDetector(
+            onTap: onTap,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              decoration: BoxDecoration(
+                color: value ? AppColors.primary.withOpacity(0.08) : _cardBg,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: value ? AppColors.primary.withOpacity(0.5) : _borderMd,
+                  width: 1.5,
                 ),
               ),
-              Text(text,
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w800,
-                      color: _textMid, letterSpacing: 0.8)),
-            ]),
-          );
-
-          Widget divider() => const Padding(
-            padding: EdgeInsets.symmetric(vertical: 20),
-            child: Divider(height: 1, color: _borderMd),
-          );
-
-          // ── Checkbox pill ───────────────────────────────────────────────
-          Widget checkPill(String label, bool value, VoidCallback onTap) {
-            return GestureDetector(
-              onTap: onTap,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 9),
-                decoration: BoxDecoration(
-                  color: value
-                      ? AppColors.primary.withOpacity(0.08) : _cardBg,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: value
-                        ? AppColors.primary.withOpacity(0.5) : _borderMd,
-                    width: 1.5,
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  width: 15, height: 15,
+                  decoration: BoxDecoration(
+                    color: value ? AppColors.primary : Colors.transparent,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                        color: value ? AppColors.primary : _borderMd, width: 1.5),
                   ),
+                  child: value ? const Icon(Icons.check, size: 10, color: Colors.white) : null,
                 ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    width: 15, height: 15,
+                const SizedBox(width: 8),
+                Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
+                    color: value ? AppColors.primary : _textMid)),
+              ]),
+            ),
+          );
+        }
+
+        Widget dropdownField(String label, String value,
+            List<String> options, String allLabel, ValueChanged<String> onChange) {
+          final hasVal = value.isNotEmpty;
+          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(label, style: const TextStyle(
+                fontSize: 12, fontWeight: FontWeight.w700, color: _textLight)),
+            const SizedBox(height: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: hasVal ? AppColors.primary.withOpacity(0.06) : _cardBg,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: hasVal ? AppColors.primary.withOpacity(0.4) : _borderMd),
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: value.isEmpty ? '' : value,
+                  isExpanded: true,
+                  dropdownColor: _surface,
+                  icon: Icon(Icons.keyboard_arrow_down_rounded,
+                      color: hasVal ? AppColors.primary : _textLight, size: 20),
+                  style: TextStyle(
+                      color: hasVal ? AppColors.primary : _textDark,
+                      fontSize: 14, fontWeight: FontWeight.w500),
+                  items: [
+                    DropdownMenuItem(value: '',
+                        child: Text(allLabel,
+                            style: const TextStyle(color: _textLight))),
+                    ...options.map((o) => DropdownMenuItem(value: o,
+                        child: Text(o, style: const TextStyle(color: _textDark)))),
+                  ],
+                  onChanged: (v) => onChange(v ?? ''),
+                ),
+              ),
+            ),
+          ]);
+        }
+
+        final availablePrefs = temp.country.isNotEmpty
+            ? (locationMap[temp.country] ?? []) : <Map<String, String>>[];
+        final sortedPrefs = availablePrefs.map((p) => p['en']!).toList()..sort();
+
+        return Container(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.92),
+          decoration: const BoxDecoration(color: _surface,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+          child: Column(children: [
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 4),
+              width: 36, height: 4,
+              decoration: BoxDecoration(color: _borderMd,
+                  borderRadius: BorderRadius.circular(2)),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 12, 12),
+              child: Row(children: [
+                Text(curS.filters, style: const TextStyle(fontSize: 22,
+                    fontWeight: FontWeight.w800, color: _textDark, letterSpacing: -0.4)),
+                const Spacer(),
+                if (_filter.isActive) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                      color: value ? AppColors.primary : Colors.transparent,
-                      borderRadius: BorderRadius.circular(4),
-                      border: Border.all(
-                          color: value ? AppColors.primary : _borderMd,
-                          width: 1.5),
+                      color: AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
                     ),
-                    child: value
-                        ? const Icon(Icons.check, size: 10, color: Colors.white)
-                        : null,
+                    child: Text(curS.filterActive, style: const TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.w700,
+                        color: AppColors.primary)),
                   ),
                   const SizedBox(width: 8),
-                  Text(label,
-                      style: TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w600,
-                          color: value ? AppColors.primary : _textMid)),
-                ]),
-              ),
-            );
-          }
-
-          // ── Dropdown field ──────────────────────────────────────────────
-          Widget dropdownField(
-              String label, String value,
-              List<String> options, String allLabel,
-              ValueChanged<String> onChange) {
-            final hasVal = value.isNotEmpty;
-            return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label,
-                      style: const TextStyle(fontSize: 12,
-                          fontWeight: FontWeight.w700, color: _textLight)),
-                  const SizedBox(height: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    decoration: BoxDecoration(
-                      color: hasVal
-                          ? AppColors.primary.withOpacity(0.06) : _cardBg,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: hasVal
-                            ? AppColors.primary.withOpacity(0.4) : _borderMd,
-                      ),
-                    ),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<String>(
-                        value: value.isEmpty ? '' : value,
-                        isExpanded: true,
-                        dropdownColor: _surface,
-                        icon: Icon(Icons.keyboard_arrow_down_rounded,
-                            color: hasVal ? AppColors.primary : _textLight,
-                            size: 20),
-                        style: TextStyle(
-                            color: hasVal ? AppColors.primary : _textDark,
-                            fontSize: 14, fontWeight: FontWeight.w500),
-                        items: [
-                          DropdownMenuItem(
-                              value: '',
-                              child: Text(allLabel,
-                                  style: const TextStyle(color: _textLight))),
-                          ...options.map((o) =>
-                              DropdownMenuItem(value: o, child: Text(o))),
-                        ],
-                        onChanged: (v) => onChange(v ?? ''),
-                      ),
-                    ),
+                ],
+                GestureDetector(
+                  onTap: () => Navigator.pop(ctx),
+                  child: Container(
+                    width: 34, height: 34,
+                    decoration: BoxDecoration(color: _cardBg, shape: BoxShape.circle,
+                        border: Border.all(color: _borderMd)),
+                    child: const Icon(Icons.close_rounded, color: _textMid, size: 18),
                   ),
-                ]);
-          }
-
-          final availablePrefs = temp.country.isNotEmpty
-              ? (locationMap[temp.country] ?? [])
-              : <Map<String, String>>[];
-          final sortedPrefs =
-          availablePrefs.map((p) => p['en']!).toList()..sort();
-
-          // ── Modal shell ─────────────────────────────────────────────────
-          return Container(
-            constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(ctx).size.height * 0.92),
-            decoration: const BoxDecoration(
-              color: _surface,
-              borderRadius:
-              BorderRadius.vertical(top: Radius.circular(28)),
-            ),
-            child: Column(children: [
-              // Drag handle
-              Container(
-                margin: const EdgeInsets.only(top: 12, bottom: 4),
-                width: 36, height: 4,
-                decoration: BoxDecoration(
-                    color: _borderMd,
-                    borderRadius: BorderRadius.circular(2)),
-              ),
-
-              // Header
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 12, 12, 12),
-                child: Row(children: [
-                  const Text('Filters',
-                      style: TextStyle(
-                          fontSize: 22, fontWeight: FontWeight.w800,
-                          color: _textDark, letterSpacing: -0.4)),
-                  const Spacer(),
-                  if (_filter.isActive) ...[
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Text('Active',
-                          style: TextStyle(
-                              fontSize: 11, fontWeight: FontWeight.w700,
-                              color: AppColors.primary)),
-                    ),
-                    const SizedBox(width: 8),
-                  ],
-                  GestureDetector(
-                    onTap: () => Navigator.pop(ctx),
-                    child: Container(
-                      width: 34, height: 34,
-                      decoration: BoxDecoration(
-                        color: _cardBg,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: _borderMd),
-                      ),
-                      child: const Icon(Icons.close_rounded,
-                          color: _textMid, size: 18),
-                    ),
-                  ),
-                ]),
-              ),
-              const Divider(height: 1, color: _borderMd),
-
-              // Scrollable body
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-
-                        // ── LOCATION ─────────────────────────────────────────
-                        sectionLabel('LOCATION'),
-                        Row(children: [
-                          Expanded(child: dropdownField(
-                              'Country', temp.country,
-                              locationMap.keys.toList(), 'All countries',
-                                  (v) => setS(() => temp = temp.copyWith(
-                                  country: v, prefecture: '', city: '')))),
-                          const SizedBox(width: 12),
-                          Expanded(child: dropdownField(
-                              'Prefecture', temp.prefecture,
-                              sortedPrefs, 'All',
-                                  (v) => setS(() =>
-                              temp = temp.copyWith(prefecture: v)))),
-                        ]),
-                        const SizedBox(height: 12),
-                        Row(children: [
-                          Expanded(child: dropdownField(
-                              'City', temp.city,
-                              sortedCities, 'All',
-                                  (v) => setS(() =>
-                              temp = temp.copyWith(city: v)))),
-                          const SizedBox(width: 12),
-                          Expanded(child: dropdownField(
-                              'Event Type', temp.type,
-                              _eventTypes, 'All types',
-                                  (v) => setS(() =>
-                              temp = temp.copyWith(type: v)))),
-                        ]),
-
-                        divider(),
-
-                        // ── SKILL LEVELS ──────────────────────────────────────
-                        sectionLabel('SKILL LEVELS'),
-                        Wrap(spacing: 8, runSpacing: 8, children: [
-                          checkPill('Pro', temp.skillPro, () => setS(() =>
-                          temp = temp.copyWith(skillPro: !temp.skillPro))),
-                          checkPill('Amateur', temp.skillAmateur, () => setS(() =>
-                          temp = temp.copyWith(
-                              skillAmateur: !temp.skillAmateur))),
-                          checkPill('Beginner', temp.skillBeginner, () => setS(() =>
-                          temp = temp.copyWith(
-                              skillBeginner: !temp.skillBeginner))),
-                        ]),
-
-                        divider(),
-
-                        // ── CATEGORIES ────────────────────────────────────────
-                        sectionLabel('CATEGORIES'),
-                        Wrap(spacing: 8, runSpacing: 8, children: [
-                          checkPill('Mixed Doubles', temp.catMx,
-                                  () => setS(() =>
-                              temp = temp.copyWith(catMx: !temp.catMx))),
-                          checkPill("Men's Doubles", temp.catMd,
-                                  () => setS(() =>
-                              temp = temp.copyWith(catMd: !temp.catMd))),
-                          checkPill("Women's Doubles", temp.catWd,
-                                  () => setS(() =>
-                              temp = temp.copyWith(catWd: !temp.catWd))),
-                          checkPill("Men's Singles", temp.catMs,
-                                  () => setS(() =>
-                              temp = temp.copyWith(catMs: !temp.catMs))),
-                          checkPill("Women's Singles", temp.catWs,
-                                  () => setS(() =>
-                              temp = temp.copyWith(catWs: !temp.catWs))),
-                          checkPill('Seniors', temp.catSe,
-                                  () => setS(() =>
-                              temp = temp.copyWith(catSe: !temp.catSe))),
-                          checkPill('Juniors', temp.catJu,
-                                  () => setS(() =>
-                              temp = temp.copyWith(catJu: !temp.catJu))),
-                          checkPill('Collegiate', temp.catCo,
-                                  () => setS(() =>
-                              temp = temp.copyWith(catCo: !temp.catCo))),
-                        ]),
-
-                        divider(),
-
-                        // ── OTHER ─────────────────────────────────────────────
-                        sectionLabel('OTHER'),
-                        checkPill('Tourist Friendly', temp.tourist,
-                                () => setS(() =>
-                            temp = temp.copyWith(tourist: !temp.tourist))),
-
-                        const SizedBox(height: 28),
-
-                        // ── Action buttons ────────────────────────────────────
-                        Row(children: [
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: () => setS(() =>
-                              temp = _CalFilter()),
-                              child: Container(
-                                height: 52,
-                                decoration: BoxDecoration(
-                                  color: _cardBg,
-                                  borderRadius: BorderRadius.circular(14),
-                                  border: Border.all(
-                                      color: _borderMd, width: 1.5),
-                                ),
-                                child: const Center(
-                                  child: Text('Clear All',
-                                      style: TextStyle(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w700,
-                                          color: _textMid)),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            flex: 2,
-                            child: GestureDetector(
-                              onTap: () {
-                                setState(() => _filter = temp);
-                                Navigator.pop(ctx);
-                              },
-                              child: Container(
-                                height: 52,
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary,
-                                  borderRadius: BorderRadius.circular(14),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: AppColors.primary
-                                          .withOpacity(0.30),
-                                      blurRadius: 14,
-                                      offset: const Offset(0, 4),
-                                    ),
-                                  ],
-                                ),
-                                child: const Center(
-                                  child: Text('APPLY FILTERS',
-                                      style: TextStyle(
-                                          fontSize: 15,
-                                          fontWeight: FontWeight.w800,
-                                          color: Colors.white,
-                                          letterSpacing: 0.6)),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ]),
-                      ]),
                 ),
+              ]),
+            ),
+            const Divider(height: 1, color: _borderMd),
+
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+                  // ── LOCATION ───────────────────────────────────────────
+                  sectionLabel(curS.secLocation),
+                  Row(children: [
+                    Expanded(child: dropdownField(
+                      curS.fCountry, temp.country,
+                      locationMap.keys.toList(), curS.fAllCountries,
+                          (v) => setS(() => temp = temp.copyWith(country: v, prefecture: '', city: '')),
+                    )),
+                    const SizedBox(width: 12),
+                    Expanded(child: dropdownField(
+                      curS.fPrefecture, temp.prefecture,
+                      sortedPrefs, curS.fAll,
+                          (v) => setS(() => temp = temp.copyWith(prefecture: v)),
+                    )),
+                  ]),
+                  const SizedBox(height: 12),
+                  Row(children: [
+                    Expanded(child: dropdownField(
+                      curS.fCity, temp.city,
+                      sortedCities, curS.fAll,
+                          (v) => setS(() => temp = temp.copyWith(city: v)),
+                    )),
+                    const SizedBox(width: 12),
+                    Expanded(child: dropdownField(
+                      curS.fType, temp.type,
+                      _eventTypeKeys, curS.fAllTypes,
+                          (v) => setS(() => temp = temp.copyWith(type: v)),
+                    )),
+                  ]),
+
+                  divider(),
+
+                  // ── SKILL LEVELS ────────────────────────────────────────
+                  sectionLabel(curS.secSkill),
+                  Wrap(spacing: 8, runSpacing: 8, children: [
+                    checkPill(curS.skillPro,      temp.skillPro,
+                            () => setS(() => temp = temp.copyWith(skillPro:      !temp.skillPro))),
+                    checkPill(curS.skillAmateur,  temp.skillAmateur,
+                            () => setS(() => temp = temp.copyWith(skillAmateur:  !temp.skillAmateur))),
+                    checkPill(curS.skillBeginner, temp.skillBeginner,
+                            () => setS(() => temp = temp.copyWith(skillBeginner: !temp.skillBeginner))),
+                  ]),
+
+                  divider(),
+
+                  // ── CATEGORIES ──────────────────────────────────────────
+                  sectionLabel(curS.secCat),
+                  Wrap(spacing: 8, runSpacing: 8, children: [
+                    checkPill(curS.catMx, temp.catMx, () => setS(() => temp = temp.copyWith(catMx: !temp.catMx))),
+                    checkPill(curS.catMd, temp.catMd, () => setS(() => temp = temp.copyWith(catMd: !temp.catMd))),
+                    checkPill(curS.catWd, temp.catWd, () => setS(() => temp = temp.copyWith(catWd: !temp.catWd))),
+                    checkPill(curS.catMs, temp.catMs, () => setS(() => temp = temp.copyWith(catMs: !temp.catMs))),
+                    checkPill(curS.catWs, temp.catWs, () => setS(() => temp = temp.copyWith(catWs: !temp.catWs))),
+                    checkPill(curS.catSe, temp.catSe, () => setS(() => temp = temp.copyWith(catSe: !temp.catSe))),
+                    checkPill(curS.catJu, temp.catJu, () => setS(() => temp = temp.copyWith(catJu: !temp.catJu))),
+                    checkPill(curS.catCo, temp.catCo, () => setS(() => temp = temp.copyWith(catCo: !temp.catCo))),
+                  ]),
+
+                  divider(),
+
+                  // ── OTHER ───────────────────────────────────────────────
+                  sectionLabel(curS.secOther),
+                  checkPill(curS.tourist, temp.tourist,
+                          () => setS(() => temp = temp.copyWith(tourist: !temp.tourist))),
+
+                  const SizedBox(height: 28),
+
+                  // ── Action buttons ──────────────────────────────────────
+                  Row(children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setS(() => temp = _CalFilter()),
+                        child: Container(
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color: _cardBg,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: _borderMd, width: 1.5),
+                          ),
+                          child: Center(child: Text(curS.clearAll,
+                              style: const TextStyle(fontSize: 14,
+                                  fontWeight: FontWeight.w700, color: _textMid))),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      flex: 2,
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() => _filter = temp);
+                          Navigator.pop(ctx);
+                        },
+                        child: Container(
+                          height: 52,
+                          decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            borderRadius: BorderRadius.circular(14),
+                            boxShadow: [BoxShadow(
+                                color: AppColors.primary.withOpacity(0.30),
+                                blurRadius: 14, offset: const Offset(0, 4))],
+                          ),
+                          child: Center(child: Text(curS.applyFilters,
+                              style: const TextStyle(fontSize: 15,
+                                  fontWeight: FontWeight.w800, color: Colors.white,
+                                  letterSpacing: 0.6))),
+                        ),
+                      ),
+                    ),
+                  ]),
+                ]),
               ),
-            ]),
-          );
-        });
-      },
+            ),
+          ]),
+        );
+      }),
     );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
+  // Build
+  // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
+    // Watch global lang — rebuilds entire screen when lang changes anywhere
+    ref.watch(appLangProvider);
     final eventsAsync = ref.watch(calendarEventsProvider);
 
     return Scaffold(
@@ -755,304 +731,241 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
         loading: () => const Center(
             child: CircularProgressIndicator(color: AppColors.primary)),
         error: (e, _) => Center(child: Text('Error: $e')),
-        data: (rawEvents) {
-          return FutureBuilder<List<Map<String, dynamic>>>(
-            future: _enrichEvents(rawEvents),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting &&
-                  !snapshot.hasData) {
-                return const Center(
-                    child: CircularProgressIndicator(
-                        color: AppColors.primary));
-              }
-              final events       = snapshot.data ?? [];
-              final eventMap     = _buildEventMap(events);
-              final selectedEvts = _eventsForDate(eventMap, _selectedDate);
+        data: (rawEvents) => FutureBuilder<List<Map<String, dynamic>>>(
+          future: _enrichEvents(rawEvents),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting &&
+                !snapshot.hasData) {
+              return const Center(
+                  child: CircularProgressIndicator(color: AppColors.primary));
+            }
+            final events       = snapshot.data ?? [];
+            final eventMap     = _buildEventMap(events);
+            final selectedEvts = _eventsForDate(eventMap, _selectedDate);
 
-              return CustomScrollView(
-                slivers: [
-                  // ── App Bar ───────────────────────────────────────────
-                  SliverAppBar(
-                    pinned: true,
-                    backgroundColor: _surface,
-                    elevation: 0,
-                    scrolledUnderElevation: 0.5,
-                    shadowColor: _border,
-                    leading: IconButton(
-                      icon: const Icon(Icons.arrow_back_ios_new_rounded,
-                          color: _textDark, size: 20),
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                    title: const Text('Calendar Events',
-                        style: TextStyle(
-                            color: _textDark,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 18,
-                            letterSpacing: -0.3)),
-                    actions: [
-                      Padding(
-                        padding: const EdgeInsets.only(right: 12),
-                        child: GestureDetector(
-                          onTap: () => _showFilterModal(events),
-                          child: Stack(
-                            clipBehavior: Clip.none,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 6),
-                                decoration: BoxDecoration(
-                                  color: _filter.isActive
-                                      ? AppColors.primary
-                                      : AppColors.primary.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.location_on_rounded,
-                                          size: 13,
-                                          color: _filter.isActive
-                                              ? Colors.white
-                                              : AppColors.primary),
-                                      const SizedBox(width: 4),
-                                      Text(_locationLabel,
-                                          style: TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w700,
-                                              color: _filter.isActive
-                                                  ? Colors.white
-                                                  : AppColors.primary)),
-                                      const SizedBox(width: 2),
-                                      Icon(Icons.keyboard_arrow_down_rounded,
-                                          size: 14,
-                                          color: _filter.isActive
-                                              ? Colors.white
-                                              : AppColors.primary),
-                                    ]),
-                              ),
-                              // Orange dot when non-location filters active
-                              if (_filter.hasNonLocationFilters)
-                                Positioned(
-                                  top: -3, right: -3,
-                                  child: Container(
-                                    width: 10, height: 10,
-                                    decoration: const BoxDecoration(
-                                        color: Colors.white,
-                                        shape: BoxShape.circle),
-                                    child: Center(
-                                        child: Container(
-                                            width: 7, height: 7,
-                                            decoration: const BoxDecoration(
-                                                color: Colors.orange,
-                                                shape: BoxShape.circle))),
-                                  ),
-                                ),
-                            ],
+            return CustomScrollView(slivers: [
+
+              // ── AppBar ──────────────────────────────────────────────────
+              SliverAppBar(
+                pinned: true,
+                backgroundColor: _surface,
+                elevation: 0,
+                scrolledUnderElevation: 0.5,
+                shadowColor: _border,
+                leading: IconButton(
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded,
+                      color: _textDark, size: 20),
+                  onPressed: () => Navigator.pop(context),
+                ),
+                title: Text(s.page, style: const TextStyle(
+                    color: _textDark, fontWeight: FontWeight.w800,
+                    fontSize: 18, letterSpacing: -0.3)),
+                actions: [
+                  Padding(
+                    padding: const EdgeInsets.only(right: 12),
+                    child: GestureDetector(
+                      onTap: () => _showFilterModal(events),
+                      child: Stack(clipBehavior: Clip.none, children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: _filter.isActive
+                                ? AppColors.primary
+                                : AppColors.primary.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(20),
                           ),
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            Icon(Icons.location_on_rounded, size: 13,
+                                color: _filter.isActive
+                                    ? Colors.white : AppColors.primary),
+                            const SizedBox(width: 4),
+                            Text(_locationLabel, style: TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.w700,
+                                color: _filter.isActive
+                                    ? Colors.white : AppColors.primary)),
+                            const SizedBox(width: 2),
+                            Icon(Icons.keyboard_arrow_down_rounded, size: 14,
+                                color: _filter.isActive
+                                    ? Colors.white : AppColors.primary),
+                          ]),
                         ),
-                      ),
-                    ],
-                    bottom: PreferredSize(
-                      preferredSize: const Size.fromHeight(1),
-                      child: Container(height: 1, color: _border),
-                    ),
-                  ),
-
-                  // ── Body ─────────────────────────────────────────────
-                  SliverToBoxAdapter(
-                    child: FadeTransition(
-                      opacity: _fadeAnim,
-                      child: SlideTransition(
-                        position: _slideAnim,
-                        child: Column(children: [
-
-                          // ── Calendar Card ─────────────────────────────
-                          Container(
-                            margin:
-                            const EdgeInsets.fromLTRB(16, 20, 16, 0),
-                            decoration: BoxDecoration(
-                              color: _surface,
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(color: _border),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.04),
-                                  blurRadius: 16,
-                                  offset: const Offset(0, 4),
-                                ),
-                              ],
+                        if (_filter.hasNonLocationFilters)
+                          Positioned(top: -3, right: -3,
+                            child: Container(
+                              width: 10, height: 10,
+                              decoration: const BoxDecoration(
+                                  color: Colors.white, shape: BoxShape.circle),
+                              child: Center(child: Container(
+                                  width: 7, height: 7,
+                                  decoration: const BoxDecoration(
+                                      color: Colors.orange,
+                                      shape: BoxShape.circle))),
                             ),
-                            child: Column(children: [
-
-                              // Month navigation
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                    8, 18, 8, 10),
-                                child: Row(
-                                  mainAxisAlignment:
-                                  MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    IconButton(
-                                      onPressed: _prevMonth,
-                                      icon: const Icon(
-                                          Icons.chevron_left_rounded,
-                                          color: AppColors.primary,
-                                          size: 28),
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(),
-                                    ),
-                                    Text(
-                                      '${_monthNames[_focusedMonth.month - 1]} ${_focusedMonth.year}',
-                                      style: const TextStyle(
-                                          fontSize: 18,
-                                          fontWeight: FontWeight.w800,
-                                          color: _textDark,
-                                          letterSpacing: -0.3),
-                                    ),
-                                    IconButton(
-                                      onPressed: _nextMonth,
-                                      icon: const Icon(
-                                          Icons.chevron_right_rounded,
-                                          color: AppColors.primary,
-                                          size: 28),
-                                      padding: EdgeInsets.zero,
-                                      constraints: const BoxConstraints(),
-                                    ),
-                                  ],
-                                ),
-                              ),
-
-                              // Weekday headers
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12),
-                                child: Row(
-                                  children: _weekdays
-                                      .map((d) => Expanded(
-                                    child: Center(
-                                      child: Text(d,
-                                          style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight:
-                                              FontWeight.w700,
-                                              color: Colors
-                                                  .grey.shade400,
-                                              letterSpacing: 0.5)),
-                                    ),
-                                  ))
-                                      .toList(),
-                                ),
-                              ),
-
-                              const SizedBox(height: 10),
-
-                              // Grid
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                    12, 0, 12, 16),
-                                child: _buildGrid(eventMap),
-                              ),
-                            ]),
                           ),
-
-                          const SizedBox(height: 20),
-
-                          // ── Selected date header ──────────────────────
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(
-                                16, 0, 16, 12),
-                            child: Row(children: [
-                              Container(
-                                width: 4, height: 18,
-                                decoration: BoxDecoration(
-                                  color: AppColors.primary,
-                                  borderRadius: BorderRadius.circular(2),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                _formatSelectedDate(_selectedDate),
-                                style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w800,
-                                    color: _textDark),
-                              ),
-                              const Spacer(),
-                              if (selectedEvts.isNotEmpty)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.primary
-                                        .withOpacity(0.1),
-                                    borderRadius:
-                                    BorderRadius.circular(20),
-                                  ),
-                                  child: Text(
-                                    '${selectedEvts.length} event${selectedEvts.length == 1 ? '' : 's'}',
-                                    style: const TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppColors.primary),
-                                  ),
-                                ),
-                            ]),
-                          ),
-
-                          // ── Events or empty state ─────────────────────
-                          if (selectedEvts.isEmpty)
-                            _buildEmptyState()
-                          else
-                            ...selectedEvts.map((e) => _EventCard(
-                              event: e,
-                              onOpenLink: _openLink,
-                            )),
-
-                          const SizedBox(height: 40),
-                        ]),
-                      ),
+                      ]),
                     ),
                   ),
                 ],
-              );
-            },
-          );
-        },
+                bottom: PreferredSize(
+                  preferredSize: const Size.fromHeight(1),
+                  child: Container(height: 1, color: _border),
+                ),
+              ),
+
+              // ── Body ────────────────────────────────────────────────────
+              SliverToBoxAdapter(
+                child: FadeTransition(
+                  opacity: _fadeAnim,
+                  child: SlideTransition(
+                    position: _slideAnim,
+                    child: Column(children: [
+
+                      // ── Calendar Card ──────────────────────────────────
+                      Container(
+                        margin: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+                        decoration: BoxDecoration(
+                          color: _surface,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: _border),
+                          boxShadow: [BoxShadow(
+                              color: Colors.black.withOpacity(0.04),
+                              blurRadius: 16, offset: const Offset(0, 4))],
+                        ),
+                        child: Column(children: [
+
+                          // Month navigation
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(8, 18, 8, 10),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                IconButton(
+                                  onPressed: _prevMonth,
+                                  icon: const Icon(Icons.chevron_left_rounded,
+                                      color: AppColors.primary, size: 28),
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                ),
+                                // Month header — mirrors web app formatMonth
+                                Text(s.formatMonth(_focusedMonth),
+                                  style: const TextStyle(fontSize: 18,
+                                      fontWeight: FontWeight.w800, color: _textDark,
+                                      letterSpacing: -0.3),
+                                ),
+                                IconButton(
+                                  onPressed: _nextMonth,
+                                  icon: const Icon(Icons.chevron_right_rounded,
+                                      color: AppColors.primary, size: 28),
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          // Weekday headers — localized
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            child: Row(
+                              children: s.weekdays.map((d) => Expanded(
+                                child: Center(child: Text(d, style: TextStyle(
+                                    fontSize: 11, fontWeight: FontWeight.w700,
+                                    color: Colors.grey.shade400,
+                                    letterSpacing: 0.5))),
+                              )).toList(),
+                            ),
+                          ),
+
+                          const SizedBox(height: 10),
+
+                          // Calendar grid
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+                            child: _buildGrid(eventMap),
+                          ),
+                        ]),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // ── Selected date header ───────────────────────────
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                        child: Row(children: [
+                          Container(width: 4, height: 18,
+                              decoration: BoxDecoration(color: AppColors.primary,
+                                  borderRadius: BorderRadius.circular(2))),
+                          const SizedBox(width: 8),
+                          // Date display — mirrors web app formatDateDisplay
+                          Text(s.formatDate(_selectedDate),
+                              style: const TextStyle(fontSize: 16,
+                                  fontWeight: FontWeight.w800, color: _textDark)),
+                          const Spacer(),
+                          if (selectedEvts.isNotEmpty)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(s.eventCount(selectedEvts.length),
+                                  style: const TextStyle(fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: AppColors.primary)),
+                            ),
+                        ]),
+                      ),
+
+                      // ── Events or empty state ──────────────────────────
+                      if (selectedEvts.isEmpty)
+                        _buildEmptyState()
+                      else
+                        ...selectedEvts.map((e) => _EventCard(
+                          event: e,
+                          lang: ref.watch(appLangProvider),
+                          onOpenLink: _openLink,
+                        )),
+
+                      const SizedBox(height: 40),
+                    ]),
+                  ),
+                ),
+              ),
+            ]);
+          },
+        ),
       ),
     );
   }
 
   // ── Calendar grid ─────────────────────────────────────────────────────────
-  Widget _buildGrid(
-      Map<DateTime, List<Map<String, dynamic>>> eventMap) {
+  Widget _buildGrid(Map<DateTime, List<Map<String, dynamic>>> eventMap) {
     final firstDay    = DateTime(_focusedMonth.year, _focusedMonth.month, 1);
-    final daysInMonth =
-        DateTime(_focusedMonth.year, _focusedMonth.month + 1, 0).day;
-    final startWeekday = firstDay.weekday % 7;
-    final todayNorm    = DateTime.now();
-    final todayKey =
-    DateTime(todayNorm.year, todayNorm.month, todayNorm.day);
+    final daysInMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1, 0).day;
+    final startWeekday= firstDay.weekday % 7; // Sun = 0
+    final todayNorm   = DateTime.now();
+    final todayKey    = DateTime(todayNorm.year, todayNorm.month, todayNorm.day);
 
     final cells = <Widget>[];
     for (int i = 0; i < startWeekday; i++) cells.add(const SizedBox());
 
     for (int day = 1; day <= daysInMonth; day++) {
-      final date      = DateTime(_focusedMonth.year, _focusedMonth.month, day);
-      final dayEvents = _eventsForDate(eventMap, date);
-      final hasEvents = dayEvents.isNotEmpty;
-      final isToday   = date == todayKey;
-      final isSelected = date ==
-          DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
-      final isPast = date.isBefore(todayKey);
+      final date       = DateTime(_focusedMonth.year, _focusedMonth.month, day);
+      final dayEvents  = _eventsForDate(eventMap, date);
+      final hasEvents  = dayEvents.isNotEmpty;
+      final isToday    = date == todayKey;
+      final isSelected = date == DateTime(
+          _selectedDate.year, _selectedDate.month, _selectedDate.day);
+      final isPast     = date.isBefore(todayKey);
 
       cells.add(GestureDetector(
         onTap: () => setState(() => _selectedDate = date),
         child: hasEvents
-            ? _EventThumbCell(
-            day: day, events: dayEvents,
+            ? _EventThumbCell(day: day, events: dayEvents,
             isSelected: isSelected, isToday: isToday)
-            : _EmptyDayCell(
-            day: day, isSelected: isSelected,
+            : _EmptyDayCell(day: day, isSelected: isSelected,
             isToday: isToday, isPast: isPast),
       ));
     }
@@ -1066,50 +979,35 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     );
   }
 
-  Widget _buildEmptyState() {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _border),
-      ),
-      child: Row(children: [
-        Icon(Icons.event_available_rounded,
-            color: Colors.grey.shade300, size: 32),
-        const SizedBox(width: 16),
-        Text('No events on this day',
-            style: TextStyle(
-                fontSize: 14,
-                color: Colors.grey.shade400,
-                fontWeight: FontWeight.w500)),
-      ]),
-    );
-  }
+  Widget _buildEmptyState() => Container(
+    margin: const EdgeInsets.symmetric(horizontal: 16),
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(color: _surface,
+        borderRadius: BorderRadius.circular(16), border: Border.all(color: _border)),
+    child: Row(children: [
+      Icon(Icons.event_available_rounded, color: Colors.grey.shade300, size: 32),
+      const SizedBox(width: 16),
+      Text(s.noEvents, style: TextStyle(fontSize: 14,
+          color: Colors.grey.shade400, fontWeight: FontWeight.w500)),
+    ]),
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Calendar cell: day with event thumbnail
+// Calendar cells (unchanged visually)
 // ─────────────────────────────────────────────────────────────────────────────
 class _EventThumbCell extends StatelessWidget {
   final int day;
   final List<Map<String, dynamic>> events;
-  final bool isSelected;
-  final bool isToday;
-
-  const _EventThumbCell({
-    required this.day, required this.events,
-    required this.isSelected, required this.isToday,
-  });
+  final bool isSelected, isToday;
+  const _EventThumbCell({required this.day, required this.events,
+    required this.isSelected, required this.isToday});
 
   @override
   Widget build(BuildContext context) {
     final count    = events.length;
     final imageUrl = (events.first['event_pic'] ??
-        events.first['event_pic_thumbnail'] ??
-        events.first['event_image'] ?? '')
-        .toString();
+        events.first['event_pic_thumbnail'] ?? events.first['event_image'] ?? '').toString();
 
     return Container(
       margin: const EdgeInsets.all(2),
@@ -1119,59 +1017,35 @@ class _EventThumbCell extends StatelessWidget {
           imageUrl.isNotEmpty
               ? Image.network(imageUrl, fit: BoxFit.cover,
               errorBuilder: (_, __, ___) => Container(
-                color: AppColors.primary.withOpacity(0.12),
-                child: const Icon(Icons.event,
-                    size: 16, color: AppColors.primary),
-              ))
-              : Container(
-            color: AppColors.primary.withOpacity(0.12),
-            child: const Icon(Icons.event,
-                size: 16, color: AppColors.primary),
-          ),
+                  color: AppColors.primary.withOpacity(0.12),
+                  child: const Icon(Icons.event, size: 16, color: AppColors.primary)))
+              : Container(color: AppColors.primary.withOpacity(0.12),
+              child: const Icon(Icons.event, size: 16, color: AppColors.primary)),
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Colors.black.withOpacity(0.06),
-                  Colors.black.withOpacity(0.50),
-                ],
+                begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                colors: [Colors.black.withOpacity(0.06), Colors.black.withOpacity(0.50)],
               ),
             ),
           ),
-          if (isSelected)
-            Container(color: AppColors.primary.withOpacity(0.52)),
-          Positioned(
-            left: 5, bottom: 4,
-            child: Text('$day',
-                style: const TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                    shadows: [
-                      Shadow(color: Colors.black54,
-                          blurRadius: 4, offset: Offset(0, 1))
-                    ])),
-          ),
-          Positioned(
-            top: 4, right: 4,
+          if (isSelected) Container(color: AppColors.primary.withOpacity(0.52)),
+          Positioned(left: 5, bottom: 4,
+              child: Text('$day', style: const TextStyle(fontSize: 12,
+                  fontWeight: FontWeight.w800, color: Colors.white,
+                  shadows: [Shadow(color: Colors.black54, blurRadius: 4, offset: Offset(0, 1))]))),
+          Positioned(top: 4, right: 4,
             child: Container(
               width: 16, height: 16,
               decoration: BoxDecoration(
                 color: isSelected ? Colors.white : AppColors.primary,
                 shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(color: Colors.black.withOpacity(0.2),
-                      blurRadius: 4, offset: const Offset(0, 1)),
-                ],
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2),
+                    blurRadius: 4, offset: const Offset(0, 1))],
               ),
-              child: Center(
-                child: Text('$count',
-                    style: TextStyle(
-                        fontSize: 8, fontWeight: FontWeight.w900,
-                        color: isSelected
-                            ? AppColors.primary : Colors.white)),
-              ),
+              child: Center(child: Text('$count', style: TextStyle(
+                  fontSize: 8, fontWeight: FontWeight.w900,
+                  color: isSelected ? AppColors.primary : Colors.white))),
             ),
           ),
         ]),
@@ -1180,91 +1054,88 @@ class _EventThumbCell extends StatelessWidget {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Calendar cell: empty day
-// ─────────────────────────────────────────────────────────────────────────────
 class _EmptyDayCell extends StatelessWidget {
-  final int  day;
-  final bool isSelected;
-  final bool isToday;
-  final bool isPast;
-
-  const _EmptyDayCell({
-    required this.day, required this.isSelected,
-    required this.isToday, required this.isPast,
-  });
+  final int day;
+  final bool isSelected, isToday, isPast;
+  const _EmptyDayCell({required this.day, required this.isSelected,
+    required this.isToday, required this.isPast});
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.all(2),
-      decoration: BoxDecoration(
-        color: isSelected
-            ? AppColors.primary
-            : isToday
-            ? AppColors.primary.withOpacity(0.10)
-            : Colors.transparent,
-        borderRadius: BorderRadius.circular(10),
-        border: isToday && !isSelected
-            ? Border.all(
-            color: AppColors.primary.withOpacity(0.35), width: 1.5)
-            : null,
-      ),
-      child: Center(
-        child: Text('$day',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: isSelected || isToday
-                  ? FontWeight.w800 : FontWeight.w500,
-              color: isSelected
-                  ? Colors.white
-                  : isPast
-                  ? Colors.grey.shade300
-                  : const Color(0xFF1A1A1A),
-            )),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.all(2),
+    decoration: BoxDecoration(
+      color: isSelected ? AppColors.primary
+          : isToday ? AppColors.primary.withOpacity(0.10) : Colors.transparent,
+      borderRadius: BorderRadius.circular(10),
+      border: isToday && !isSelected
+          ? Border.all(color: AppColors.primary.withOpacity(0.35), width: 1.5) : null,
+    ),
+    child: Center(child: Text('$day', style: TextStyle(
+      fontSize: 13,
+      fontWeight: isSelected || isToday ? FontWeight.w800 : FontWeight.w500,
+      color: isSelected ? Colors.white
+          : isPast ? Colors.grey.shade300 : const Color(0xFF1A1A1A),
+    ))),
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Event card
+// Event card — now fully localised via lang parameter
 // ─────────────────────────────────────────────────────────────────────────────
 class _EventCard extends StatelessWidget {
   final Map<String, dynamic> event;
+  final String               lang;
   final Future<void> Function(String) onOpenLink;
 
-  const _EventCard({required this.event, required this.onOpenLink});
+  const _EventCard({required this.event, required this.lang, required this.onOpenLink});
 
-  String get _title =>
-      (event['event_title_en'] ?? event['event_title'] ?? 'Untitled Event')
-          .toString();
+  bool get _isJa => lang == kLangJa;
+
+  // ── Title: prefer event_title_jp when Japanese — mirrors web app ──────────
+  String get _title => _isJa
+      ? (event['event_title_jp'] ?? event['event_title'] ?? 'Untitled Event').toString()
+      : (event['event_title'] ?? 'Untitled Event').toString();
+
+  // ── Location: prefer location_jp when Japanese — mirrors web app ──────────
+  String get _location => _isJa
+      ? (event['location_jp'] ?? event['location'] ?? event['event_venue_name'] ?? '').toString()
+      : (event['location'] ?? event['event_venue_name'] ?? '').toString();
+
+  // ── Address: prefer event_address_jp when Japanese ────────────────────────
+  String get _address => _isJa
+      ? (event['event_address_jp'] ?? event['event_address'] ?? event['event_venue_address'] ?? '').toString()
+      : (event['event_address'] ?? event['event_venue_address'] ?? '').toString();
+
+  // ── Org: prefer org_name_jp when Japanese — mirrors web app ──────────────
+  String get _orgName => _isJa
+      ? (event['org_name_jp'] ?? event['org_name'] ?? event['event_org_name'] ?? '').toString()
+      : (event['org_name'] ?? event['event_org_name'] ?? '').toString();
+
   String get _imageUrl =>
-      (event['event_pic'] ?? event['event_pic_thumbnail'] ??
-          event['event_image'] ?? '').toString();
+      (event['event_pic'] ?? event['event_pic_thumbnail'] ?? event['event_image'] ?? '').toString();
   String get _url =>
       (event['event_link'] ?? event['event_url'] ?? '').toString();
-  String get _fee {
-    final f = event['event_fee'];
-    if (f == null || f.toString().isEmpty ||
-        f.toString() == '0' || f.toString() == '0.0') return 'Free';
-    return '¥${f.toString()}';
-  }
-  String get _time {
-    final raw = event['event_time'] ?? event['event_start_time'];
-    if (raw == null) return '';
-    if (raw is Timestamp) return DateFormat('h:mm a').format(raw.toDate());
-    return raw.toString();
-  }
-  String get _location =>
-      (event['location'] ?? event['event_venue_name'] ?? '').toString();
-  String get _address =>
-      (event['event_address'] ?? event['event_venue_address'] ?? '')
-          .toString();
   String get _googleLink =>
       (event['event_googlelink'] ?? event['event_venue_link'] ?? '').toString();
-  String get _orgName =>
-      (event['org_name'] ?? event['event_org_name'] ?? '').toString();
+
+  // Fee — mirrors web app feeStr logic
+  String _fee(String freeLabel) {
+    final f = event['event_fee'];
+    if (f == null || f.toString().isEmpty ||
+        f.toString() == '0' || f.toString() == '0.0') return freeLabel;
+    return '¥${f.toString()}';
+  }
+
+  String _time() {
+    final raw = event['event_time'] ?? event['event_start_time'];
+    if (raw == null) return '';
+    if (raw is Timestamp) {
+      final dt = raw.toDate();
+      if (_isJa) return '${dt.hour}:${dt.minute.toString().padLeft(2,'0')}';
+      return DateFormat('h:mm a').format(dt);
+    }
+    return raw.toString();
+  }
 
   static const Color _surface  = Colors.white;
   static const Color _border   = Color(0xFFEEEFF1);
@@ -1272,9 +1143,13 @@ class _EventCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isFree     = _fee == 'Free';
+    final freeLabel  = _isJa ? '無料' : 'Free';
+    final moreInfo   = _isJa ? '詳細情報' : 'More Information';
+    final feeStr     = _fee(freeLabel);
+    final isFree     = feeStr == freeLabel;
+    final timeStr    = _time();
     final hasImage   = _imageUrl.isNotEmpty;
-    final hasTime    = _time.isNotEmpty;
+    final hasTime    = timeStr.isNotEmpty;
     final hasLoc     = _location.isNotEmpty || _address.isNotEmpty;
     final hasOrg     = _orgName.isNotEmpty;
     final hasLink    = _url.isNotEmpty;
@@ -1287,265 +1162,115 @@ class _EventCard extends StatelessWidget {
         color: _surface,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: _border),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.04),
-              blurRadius: 14, offset: const Offset(0, 3)),
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04),
+            blurRadius: 14, offset: const Offset(0, 3))],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+        // Image
         if (hasImage)
           ClipRRect(
-            borderRadius:
-            const BorderRadius.vertical(top: Radius.circular(20)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
             child: AspectRatio(
               aspectRatio: 16 / 7,
               child: Image.network(_imageUrl, fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => Container(
-                    color: AppColors.primary.withOpacity(0.08),
-                    child: const Icon(Icons.event,
-                        size: 40, color: AppColors.primary),
-                  )),
+                      color: AppColors.primary.withOpacity(0.08),
+                      child: const Icon(Icons.event, size: 40, color: AppColors.primary))),
             ),
           ),
+
         Padding(
           padding: const EdgeInsets.all(16),
-          child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Expanded(
-                    child: Text(_title,
-                        style: const TextStyle(
-                            fontSize: 17, fontWeight: FontWeight.w800,
-                            color: _textDark, letterSpacing: -0.2)),
-                  ),
-                  const SizedBox(width: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: isFree
-                          ? Colors.green.shade50
-                          : AppColors.primary.withOpacity(0.09),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(_fee,
-                        style: TextStyle(
-                            fontSize: 12, fontWeight: FontWeight.w700,
-                            color: isFree
-                                ? Colors.green.shade600
-                                : AppColors.primary)),
-                  ),
-                ]),
-                if (hasTime) ...[
-                  const SizedBox(height: 8),
-                  Row(children: [
-                    Icon(Icons.access_time_rounded,
-                        size: 14, color: Colors.grey.shade400),
-                    const SizedBox(width: 5),
-                    Text(_time,
-                        style: TextStyle(
-                            fontSize: 13, color: Colors.grey.shade500,
-                            fontWeight: FontWeight.w500)),
-                  ]),
-                ],
-                if (hasLoc) ...[
-                  const SizedBox(height: 8),
-                  GestureDetector(
-                    onTap: hasGMap ? () => onOpenLink(_googleLink) : null,
-                    child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(Icons.location_on_rounded,
-                              size: 14,
-                              color: hasGMap
-                                  ? AppColors.primary : Colors.grey.shade400),
-                          const SizedBox(width: 5),
-                          Expanded(
-                            child: Text(locDisplay,
-                                style: TextStyle(
-                                  fontSize: 13, fontWeight: FontWeight.w500,
-                                  color: hasGMap
-                                      ? AppColors.primary : Colors.grey.shade500,
-                                  decoration: hasGMap
-                                      ? TextDecoration.underline
-                                      : TextDecoration.none,
-                                  decorationColor: AppColors.primary,
-                                )),
-                          ),
-                          if (hasGMap) ...[
-                            const SizedBox(width: 4),
-                            Icon(Icons.open_in_new_rounded,
-                                size: 12, color: AppColors.primary),
-                          ],
-                        ]),
-                  ),
-                ],
-                if (hasOrg) ...[
-                  const SizedBox(height: 6),
-                  Row(children: [
-                    Icon(Icons.person_outline_rounded,
-                        size: 14, color: Colors.grey.shade400),
-                    const SizedBox(width: 5),
-                    Expanded(
-                      child: Text(_orgName,
-                          style: TextStyle(
-                              fontSize: 13, color: Colors.grey.shade500,
-                              fontWeight: FontWeight.w500)),
-                    ),
-                  ]),
-                ],
-                const SizedBox(height: 14),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: hasLink ? () => onOpenLink(_url) : null,
-                    icon: const Icon(Icons.open_in_new_rounded,
-                        size: 16, color: Colors.white),
-                    label: const Text('More Information',
-                        style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white, fontSize: 14)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      disabledBackgroundColor: Colors.grey.shade200,
-                      disabledForegroundColor: Colors.grey.shade400,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(vertical: 13),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                    ),
-                  ),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+            // Title + fee
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(child: Text(_title, style: const TextStyle(
+                  fontSize: 17, fontWeight: FontWeight.w800,
+                  color: _textDark, letterSpacing: -0.2))),
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: isFree ? Colors.green.shade50 : AppColors.primary.withOpacity(0.09),
+                  borderRadius: BorderRadius.circular(20),
                 ),
+                child: Text(feeStr, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700,
+                    color: isFree ? Colors.green.shade600 : AppColors.primary)),
+              ),
+            ]),
+
+            // Time
+            if (hasTime) ...[
+              const SizedBox(height: 8),
+              Row(children: [
+                Icon(Icons.access_time_rounded, size: 14, color: Colors.grey.shade400),
+                const SizedBox(width: 5),
+                Text(timeStr, style: TextStyle(fontSize: 13,
+                    color: Colors.grey.shade500, fontWeight: FontWeight.w500)),
               ]),
+            ],
+
+            // Location — shows JP field when Japanese
+            if (hasLoc) ...[
+              const SizedBox(height: 8),
+              GestureDetector(
+                onTap: hasGMap ? () => onOpenLink(_googleLink) : null,
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Icon(Icons.location_on_rounded, size: 14,
+                      color: hasGMap ? AppColors.primary : Colors.grey.shade400),
+                  const SizedBox(width: 5),
+                  Expanded(child: Text(locDisplay, style: TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w500,
+                    color: hasGMap ? AppColors.primary : Colors.grey.shade500,
+                    decoration: hasGMap ? TextDecoration.underline : TextDecoration.none,
+                    decorationColor: AppColors.primary,
+                  ))),
+                  if (hasGMap) ...[
+                    const SizedBox(width: 4),
+                    Icon(Icons.open_in_new_rounded, size: 12, color: AppColors.primary),
+                  ],
+                ]),
+              ),
+            ],
+
+            // Org name — shows JP field when Japanese
+            if (hasOrg) ...[
+              const SizedBox(height: 6),
+              Row(children: [
+                Icon(Icons.person_outline_rounded, size: 14, color: Colors.grey.shade400),
+                const SizedBox(width: 5),
+                Expanded(child: Text(_orgName, style: TextStyle(
+                    fontSize: 13, color: Colors.grey.shade500,
+                    fontWeight: FontWeight.w500))),
+              ]),
+            ],
+
+            const SizedBox(height: 14),
+
+            // CTA button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: hasLink ? () => onOpenLink(_url) : null,
+                icon: const Icon(Icons.open_in_new_rounded, size: 16, color: Colors.white),
+                label: Text(moreInfo, style: const TextStyle(
+                    fontWeight: FontWeight.w700, color: Colors.white, fontSize: 14)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  disabledBackgroundColor: Colors.grey.shade200,
+                  disabledForegroundColor: Colors.grey.shade400,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
+            ),
+          ]),
         ),
       ]),
     );
   }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Shared location picker sub-widgets
-// ─────────────────────────────────────────────────────────────────────────────
-class _LocationDropdown extends StatelessWidget {
-  final IconData      icon;
-  final String        label;
-  final bool          hasValue;
-  final bool          enabled;
-  final VoidCallback? onTap;
-
-  const _LocationDropdown({
-    required this.icon, required this.label, required this.hasValue,
-    this.enabled = true, this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final active = hasValue && enabled;
-    return GestureDetector(
-      onTap: enabled ? onTap : null,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        height: 52,
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        decoration: BoxDecoration(
-          color: active
-              ? AppColors.primary.withOpacity(0.06)
-              : const Color(0xFFF2F3F5),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-              color: active
-                  ? AppColors.primary.withOpacity(0.5)
-                  : const Color(0xFFDDDEE1),
-              width: 1.5),
-        ),
-        child: Row(children: [
-          Icon(icon, size: 16,
-              color: active ? AppColors.primary
-                  : enabled ? const Color(0xFF555760)
-                  : const Color(0xFFBBBCC0)),
-          const SizedBox(width: 8),
-          Expanded(
-              child: Text(label,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w600,
-                      color: active ? AppColors.primary
-                          : enabled ? const Color(0xFF333438)
-                          : const Color(0xFFBBBCC0)))),
-          Icon(Icons.keyboard_arrow_down_rounded, size: 18,
-              color: active ? AppColors.primary
-                  : enabled ? const Color(0xFF888A90)
-                  : const Color(0xFFBBBCC0)),
-        ]),
-      ),
-    );
-  }
-}
-
-class _PickerRow extends StatelessWidget {
-  final String label;
-  final String? sublabel;
-  final bool isHeader;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _PickerRow({
-    required this.label, this.sublabel,
-    required this.isHeader, required this.isSelected, required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 100),
-        color: isSelected ? const Color(0xFFE8E8E2) : Colors.transparent,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-        child: Row(children: [
-          Expanded(
-            child: sublabel != null
-                ? Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(label,
-                      style: TextStyle(
-                          fontSize: isHeader ? 14 : 16,
-                          fontWeight: isHeader
-                              ? FontWeight.w500 : FontWeight.w600,
-                          color: isHeader
-                              ? const Color(0xFF888880)
-                              : const Color(0xFF1A1A1A),
-                          letterSpacing: -0.2)),
-                  Text(sublabel!,
-                      style: const TextStyle(
-                          fontSize: 12, color: Color(0xFF888880),
-                          fontWeight: FontWeight.w400)),
-                ])
-                : Text(label,
-                style: TextStyle(
-                    fontSize: isHeader ? 14 : 16,
-                    fontWeight: isHeader
-                        ? FontWeight.w500 : FontWeight.w600,
-                    color: isHeader
-                        ? const Color(0xFF888880)
-                        : const Color(0xFF1A1A1A),
-                    letterSpacing: -0.2)),
-          ),
-          if (isSelected)
-            Icon(Icons.check_rounded, size: 18, color: AppColors.primary),
-        ]),
-      ),
-    );
-  }
-}
-
-class _PickerDivider extends StatelessWidget {
-  const _PickerDivider();
-  @override
-  Widget build(BuildContext context) =>
-      const Divider(height: 1, thickness: 1, color: Color(0xFFDDDDD5));
 }

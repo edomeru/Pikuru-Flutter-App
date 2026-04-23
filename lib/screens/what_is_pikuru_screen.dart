@@ -1,19 +1,120 @@
 import 'package:flutter/material.dart';
-import 'package:pikuru/theme/material.dart'; // ✅ Uses your app theme
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pikuru/theme/material.dart';
+import 'package:pikuru/providers/app_language_provider.dart';
 
-class WhatIsPikuruScreen extends StatefulWidget {
+// ─────────────────────────────────────────────────────────────────────────────
+// Localised content — mirrors the web app's Firestore `resources/what-is-pikuru`
+// document (pikuruDoc.en / pikuruDoc.ja in seed_pikuru_page.tsx)
+// ─────────────────────────────────────────────────────────────────────────────
+class _Content {
+  final String appBarTitle;
+  final String heroTitle;
+  final String heroSub;
+  // Origin section
+  final String originTitle;
+  final String originP1;
+  final String originP2;
+  final String originHighlight;
+  final String originP3;
+  // What We Offer section
+  final String offerTitle;
+  final List<_OfferItem> offerItems;
+  // Join Us section
+  final String joinTitle;
+  final String joinP1;
+  final String joinP2;
+  // Follow Us section
+  final String followTitle;
+  final String followSub;
+
+  const _Content({
+    required this.appBarTitle,
+    required this.heroTitle,
+    required this.heroSub,
+    required this.originTitle,
+    required this.originP1,
+    required this.originP2,
+    required this.originHighlight,
+    required this.originP3,
+    required this.offerTitle,
+    required this.offerItems,
+    required this.joinTitle,
+    required this.joinP1,
+    required this.joinP2,
+    required this.followTitle,
+    required this.followSub,
+  });
+}
+
+// ── EN content ────────────────────────────────────────────────────────────────
+const _en = _Content(
+  appBarTitle:      'What is Pikuru?',
+  heroTitle:        "Let's Pikuru! 🏓",
+  heroSub:          "Japan's pickleball community hub",
+  originTitle:      'Origin of Pikuru',
+  originP1:         '"Pikuru" was created as a shorter, more casual way to say "Do you wanna play pickleball?" in Japanese.',
+  originP2:         'In Japanese slang, when asking a friend if they want to do something, people often add "-ru?" to the end of a verb to make it light and casual.',
+  originHighlight:  'Normally, you would say "ピックルボール遊ぶ？" (Do you want to play pickleball?), but we shortened it to "Pikuru?" so it feels friendly, easy to say, and natural as a quick invitation.',
+  originP3:         '"Pikuru" was born from the idea of creating a fun, approachable culture where people can casually invite each other to play.',
+  offerTitle:       'What We Offer',
+  offerItems: [
+    _OfferItem(icon: Icons.location_on_rounded,      title: 'Local Court Finder',   subtitle: 'See where you can play across Japan'),
+    _OfferItem(icon: Icons.event_rounded,            title: 'Event Listings',        subtitle: 'From casual meetups to tournaments'),
+    _OfferItem(icon: Icons.sports_tennis_rounded,    title: 'Gear Guides',           subtitle: 'For every play style and budget'),
+    _OfferItem(icon: Icons.newspaper_rounded,        title: 'News & Spotlights',     subtitle: 'Rising players and global updates'),
+    _OfferItem(icon: Icons.phone_iphone_rounded,     title: 'Future Mobile App',     subtitle: 'Find your pickleball community easily'),
+  ],
+  joinTitle: 'Join Us',
+  joinP1:    "Whether you're picking up your first paddle or you've been playing for years, Pikuru is here to help you connect, learn, and grow.",
+  joinP2:    "Let's build Japan's pickleball future — one rally at a time.",
+  followTitle: 'Follow us!',
+  followSub:   'Stay in the loop with the Pikuru community',
+);
+
+// ── JA content — mirrors pikuruDoc.ja in seed_pikuru_page.tsx ─────────────────
+const _ja = _Content(
+  appBarTitle:      'Pikuruとは？',
+  heroTitle:        "Let's Pikuru! 🏓",
+  heroSub:          '日本のピックルボールコミュニティハブ',
+  originTitle:      'Pikuruの由来',
+  originP1:         '「Pikuru（ピクル）」は、「ピックルボールやらない？」という言葉を、より短くカジュアルにしたものです。',
+  originP2:         '日本の若者言葉では、友達を誘うときに動詞の最後に「〜る？」をつけて気軽な誘い方にすることがよくあります。',
+  originHighlight:  '普通なら「ピックルボール遊ぶ？」と言いますが、親しみやすく、言いやすく、自然な誘いとなるよう「ピクル？」と短縮しました。',
+  originP3:         '「ピクル」は、人々が気軽に誘い合ってプレーできる楽しくて親しみやすい文化を作りたいという思いから生まれました。',
+  offerTitle:       '提供するもの',
+  offerItems: [
+    _OfferItem(icon: Icons.location_on_rounded,      title: '地域のコート検索',     subtitle: '日本全国でプレーできる場所を見る'),
+    _OfferItem(icon: Icons.event_rounded,            title: 'イベント一覧',          subtitle: 'カジュアルな集まりから大会まで'),
+    _OfferItem(icon: Icons.sports_tennis_rounded,    title: 'ギアガイド',            subtitle: 'プレースタイルと予算に応じた選び方'),
+    _OfferItem(icon: Icons.newspaper_rounded,        title: 'ニュース＆スポットライト', subtitle: '注目選手と世界的なアップデート'),
+    _OfferItem(icon: Icons.phone_iphone_rounded,     title: '将来のモバイルアプリ',  subtitle: 'ピックルボールのコミュニティを簡単に見つける'),
+  ],
+  joinTitle: '参加する',
+  joinP1:    '初めてパドルを握る方も、長年プレーしている方も、Pikuruはつながり、学び、成長するお手伝いをします。',
+  joinP2:    '日本のピックルボールの未来を共に作りましょう — 1ラリーずつ。',
+  followTitle: 'フォローしてね！',
+  followSub:   'Pikuruコミュニティの最新情報をゲット',
+);
+
+_Content _c(String lang) => lang == kLangJa ? _ja : _en;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// WhatIsPikuruScreen — ConsumerStatefulWidget
+// ─────────────────────────────────────────────────────────────────────────────
+class WhatIsPikuruScreen extends ConsumerStatefulWidget {
   const WhatIsPikuruScreen({super.key});
 
   @override
-  State<WhatIsPikuruScreen> createState() => _WhatIsPikuruScreen();
+  ConsumerState<WhatIsPikuruScreen> createState() => _WhatIsPikuruScreenState();
 }
 
-class _WhatIsPikuruScreen extends State<WhatIsPikuruScreen>
+class _WhatIsPikuruScreenState extends ConsumerState<WhatIsPikuruScreen>
     with TickerProviderStateMixin {
   late final AnimationController _fadeController;
-  late final Animation<double> _fadeAnim;
+  late final Animation<double>   _fadeAnim;
   late final AnimationController _slideController;
-  late final Animation<Offset> _slideAnim;
+  late final Animation<Offset>   _slideAnim;
 
   @override
   void initState() {
@@ -32,8 +133,8 @@ class _WhatIsPikuruScreen extends State<WhatIsPikuruScreen>
     _slideAnim = Tween<Offset>(
       begin: const Offset(0, 0.08),
       end: Offset.zero,
-    ).animate(
-        CurvedAnimation(parent: _slideController, curve: Curves.easeOutCubic));
+    ).animate(CurvedAnimation(
+        parent: _slideController, curve: Curves.easeOutCubic));
   }
 
   @override
@@ -45,11 +146,15 @@ class _WhatIsPikuruScreen extends State<WhatIsPikuruScreen>
 
   @override
   Widget build(BuildContext context) {
+    // ✅ Watch global lang provider — rebuilds when lang changes anywhere
+    final lang = ref.watch(appLangProvider);
+    final c    = _c(lang);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF4F9F5),
       body: CustomScrollView(
         slivers: [
-          // ── Hero App Bar ──────────────────────────────────────────
+          // ── Hero App Bar ──────────────────────────────────────────────────
           SliverAppBar(
             expandedHeight: 220,
             pinned: true,
@@ -59,9 +164,9 @@ class _WhatIsPikuruScreen extends State<WhatIsPikuruScreen>
                   color: Colors.white, size: 20),
               onPressed: () => Navigator.maybePop(context),
             ),
-            title: const Text(
-              'What is Pikuru?',
-              style: TextStyle(
+            title: Text(
+              c.appBarTitle,
+              style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.w600,
                 fontSize: 18,
@@ -86,42 +191,34 @@ class _WhatIsPikuruScreen extends State<WhatIsPikuruScreen>
                     ),
                   ),
                   Positioned(
-                    top: -40,
-                    right: -40,
+                    top: -40, right: -40,
                     child: Container(
-                      width: 200,
-                      height: 200,
+                      width: 200, height: 200,
                       decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withOpacity(0.06),
-                      ),
+                          shape: BoxShape.circle,
+                          color: Colors.white.withOpacity(0.06)),
                     ),
                   ),
                   Positioned(
-                    bottom: -20,
-                    left: -30,
+                    bottom: -20, left: -30,
                     child: Container(
-                      width: 140,
-                      height: 140,
+                      width: 140, height: 140,
                       decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withOpacity(0.05),
-                      ),
+                          shape: BoxShape.circle,
+                          color: Colors.white.withOpacity(0.05)),
                     ),
                   ),
                   Positioned(
-                    bottom: 28,
-                    left: 24,
-                    right: 24,
+                    bottom: 28, left: 24, right: 24,
                     child: FadeTransition(
                       opacity: _fadeAnim,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Text(
-                            "Let's Pikuru! 🏓",
-                            style: TextStyle(
+                          Text(
+                            c.heroTitle,
+                            style: const TextStyle(
                               fontSize: 34,
                               fontWeight: FontWeight.w900,
                               color: Colors.white,
@@ -131,7 +228,7 @@ class _WhatIsPikuruScreen extends State<WhatIsPikuruScreen>
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            "Japan's pickleball community hub",
+                            c.heroSub,
                             style: TextStyle(
                               fontSize: 14,
                               color: Colors.white.withOpacity(0.75),
@@ -148,7 +245,7 @@ class _WhatIsPikuruScreen extends State<WhatIsPikuruScreen>
             ),
           ),
 
-          // ── Body ─────────────────────────────────────────────────
+          // ── Body ─────────────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: FadeTransition(
               opacity: _fadeAnim,
@@ -161,64 +258,52 @@ class _WhatIsPikuruScreen extends State<WhatIsPikuruScreen>
                     children: [
                       const SizedBox(height: 28),
 
-                      // ── Origin ────────────────────────────────
-                      const _SectionHeader(title: 'Origin of Pikuru'),
+                      // Origin
+                      _SectionHeader(title: c.originTitle),
                       const SizedBox(height: 12),
                       _StoryCard(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            _BodyText(
-                              '"Pikuru" was created as a shorter, more casual way to say "Do you wanna play pickleball?" in Japanese.',
-                            ),
-                            SizedBox(height: 10),
-                            _BodyText(
-                              'In Japanese slang, when asking a friend if they want to do something, people often add "-ru?" to the end of a verb to make it light and casual.',
-                            ),
-                            SizedBox(height: 10),
-                            _HighlightBox(
-                              text:
-                              'Normally, you would say "ピックルボール遊ぶ？" (Do you want to play pickleball?), but we shortened it to "Pikuru?" so it feels friendly, easy to say, and natural as a quick invitation.',
-                            ),
-                            SizedBox(height: 10),
-                            _BodyText(
-                              '"Pikuru" was born from the idea of creating a fun, approachable culture where people can casually invite each other to play.',
-                            ),
+                          children: [
+                            _BodyText(c.originP1),
+                            const SizedBox(height: 10),
+                            _BodyText(c.originP2),
+                            const SizedBox(height: 10),
+                            _HighlightBox(text: c.originHighlight),
+                            const SizedBox(height: 10),
+                            _BodyText(c.originP3),
                           ],
                         ),
                       ),
 
                       const SizedBox(height: 28),
 
-                      // ── What We Offer ─────────────────────────
-                      const _SectionHeader(title: 'What We Offer'),
+                      // What We Offer
+                      _SectionHeader(title: c.offerTitle),
                       const SizedBox(height: 12),
-                      const _OfferGrid(),
+                      _OfferGrid(items: c.offerItems),
 
                       const SizedBox(height: 28),
 
-                      // ── Join Us ───────────────────────────────
-                      const _SectionHeader(title: 'Join Us'),
+                      // Join Us
+                      _SectionHeader(title: c.joinTitle),
                       const SizedBox(height: 12),
                       _StoryCard(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
-                          children: const [
-                            _BodyText(
-                              "Whether you're picking up your first paddle or you've been playing for years, Pikuru is here to help you connect, learn, and grow.",
-                            ),
-                            SizedBox(height: 10),
-                            _BodyText(
-                              "Let's build Japan's pickleball future — one rally at a time.",
-                            ),
+                          children: [
+                            _BodyText(c.joinP1),
+                            const SizedBox(height: 10),
+                            _BodyText(c.joinP2),
                           ],
                         ),
                       ),
 
                       const SizedBox(height: 36),
 
-                      // ── Follow Us ─────────────────────────────
-                      const _FollowSection(),
+                      // Follow Us
+                      _FollowSection(
+                          title: c.followTitle, sub: c.followSub),
 
                       const SizedBox(height: 40),
                     ],
@@ -233,7 +318,10 @@ class _WhatIsPikuruScreen extends State<WhatIsPikuruScreen>
   }
 }
 
-// ── Section Header ────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// Reusable sub-widgets (all accept localised strings as parameters)
+// ─────────────────────────────────────────────────────────────────────────────
+
 class _SectionHeader extends StatelessWidget {
   final String title;
   const _SectionHeader({required this.title});
@@ -243,12 +331,10 @@ class _SectionHeader extends StatelessWidget {
     return Row(
       children: [
         Container(
-          width: 4,
-          height: 20,
+          width: 4, height: 20,
           decoration: BoxDecoration(
-            color: AppColors.primary,
-            borderRadius: BorderRadius.circular(2),
-          ),
+              color: AppColors.primary,
+              borderRadius: BorderRadius.circular(2)),
         ),
         const SizedBox(width: 10),
         Text(
@@ -265,7 +351,6 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-// ── Story Card ────────────────────────────────────────────────────────
 class _StoryCard extends StatelessWidget {
   final Widget child;
   const _StoryCard({required this.child});
@@ -292,7 +377,6 @@ class _StoryCard extends StatelessWidget {
   }
 }
 
-// ── Highlight Box ─────────────────────────────────────────────────────
 class _HighlightBox extends StatelessWidget {
   final String text;
   const _HighlightBox({required this.text});
@@ -304,9 +388,8 @@ class _HighlightBox extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.primary.withOpacity(0.07),
         borderRadius: BorderRadius.circular(10),
-        border: Border(
-          left: BorderSide(color: AppColors.primary, width: 3),
-        ),
+        border: const Border(
+            left: BorderSide(color: AppColors.primary, width: 3)),
       ),
       child: Text(
         text,
@@ -321,7 +404,6 @@ class _HighlightBox extends StatelessWidget {
   }
 }
 
-// ── Body Text ─────────────────────────────────────────────────────────
 class _BodyText extends StatelessWidget {
   final String text;
   const _BodyText(this.text);
@@ -340,57 +422,31 @@ class _BodyText extends StatelessWidget {
   }
 }
 
-// ── Offer Grid ────────────────────────────────────────────────────────
-class _OfferGrid extends StatelessWidget {
-  const _OfferGrid();
-
-  static const List<_OfferItem> _offers = [
-    _OfferItem(
-      icon: Icons.location_on_rounded,
-      title: 'Local Court Finder',
-      subtitle: 'See where you can play across Japan',
-    ),
-    _OfferItem(
-      icon: Icons.event_rounded,
-      title: 'Event Listings',
-      subtitle: 'From casual meetups to tournaments',
-    ),
-    _OfferItem(
-      icon: Icons.sports_tennis_rounded,
-      title: 'Gear Guides',
-      subtitle: 'For every play style and budget',
-    ),
-    _OfferItem(
-      icon: Icons.newspaper_rounded,
-      title: 'News & Spotlights',
-      subtitle: 'Rising players and global updates',
-    ),
-    _OfferItem(
-      icon: Icons.phone_iphone_rounded,
-      title: 'Future Mobile App',
-      subtitle: 'Find your pickleball community easily',
-    ),
-  ];
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: _offers.asMap().entries.map((entry) {
-        return _OfferTile(
-          item: entry.value,
-          isLast: entry.key == _offers.length - 1,
-        );
-      }).toList(),
-    );
-  }
-}
-
+// ── Offer item model ──────────────────────────────────────────────────────────
 class _OfferItem {
   final IconData icon;
   final String title;
   final String subtitle;
   const _OfferItem(
       {required this.icon, required this.title, required this.subtitle});
+}
+
+// ── Offer grid ────────────────────────────────────────────────────────────────
+class _OfferGrid extends StatelessWidget {
+  final List<_OfferItem> items;
+  const _OfferGrid({required this.items});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: items.asMap().entries.map((entry) {
+        return _OfferTile(
+          item: entry.value,
+          isLast: entry.key == items.length - 1,
+        );
+      }).toList(),
+    );
+  }
 }
 
 class _OfferTile extends StatelessWidget {
@@ -418,8 +474,7 @@ class _OfferTile extends StatelessWidget {
       child: Row(
         children: [
           Container(
-            width: 44,
-            height: 44,
+            width: 44, height: 44,
             decoration: BoxDecoration(
               color: AppColors.primary.withOpacity(0.10),
               borderRadius: BorderRadius.circular(12),
@@ -457,9 +512,11 @@ class _OfferTile extends StatelessWidget {
   }
 }
 
-// ── Follow Section ────────────────────────────────────────────────────
+// ── Follow section — accepts localised strings ────────────────────────────────
 class _FollowSection extends StatelessWidget {
-  const _FollowSection();
+  final String title;
+  final String sub;
+  const _FollowSection({required this.title, required this.sub});
 
   @override
   Widget build(BuildContext context) {
@@ -487,9 +544,9 @@ class _FollowSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Follow us!',
-            style: TextStyle(
+          Text(
+            title,
+            style: const TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.w900,
               color: Colors.white,
@@ -498,7 +555,7 @@ class _FollowSection extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Stay in the loop with the Pikuru community',
+            sub,
             style: TextStyle(
               fontSize: 13,
               color: Colors.white.withOpacity(0.7),
@@ -507,11 +564,20 @@ class _FollowSection extends StatelessWidget {
           const SizedBox(height: 20),
           Row(
             children: [
-              _SocialButton(icon: Icons.camera_alt_outlined, label: 'Instagram', onTap: () {}),
+              _SocialButton(
+                  icon: Icons.camera_alt_outlined,
+                  label: 'Instagram',
+                  onTap: () {}),
               const SizedBox(width: 12),
-              _SocialButton(icon: Icons.facebook_rounded, label: 'Facebook', onTap: () {}),
+              _SocialButton(
+                  icon: Icons.facebook_rounded,
+                  label: 'Facebook',
+                  onTap: () {}),
               const SizedBox(width: 12),
-              _SocialButton(icon: Icons.play_circle_outline_rounded, label: 'YouTube', onTap: () {}),
+              _SocialButton(
+                  icon: Icons.play_circle_outline_rounded,
+                  label: 'YouTube',
+                  onTap: () {}),
               const SizedBox(width: 12),
               _LineButton(onTap: () {}),
             ],
@@ -536,8 +602,7 @@ class _SocialButton extends StatelessWidget {
       child: GestureDetector(
         onTap: onTap,
         child: Container(
-          width: 52,
-          height: 52,
+          width: 52, height: 52,
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.15),
             borderRadius: BorderRadius.circular(14),

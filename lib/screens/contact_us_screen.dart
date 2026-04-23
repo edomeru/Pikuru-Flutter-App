@@ -1,32 +1,86 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:pikuru/theme/material.dart';
+import 'package:pikuru/providers/app_language_provider.dart';
 
-class ContactUsScreen extends StatefulWidget {
+// ─────────────────────────────────────────────────────────────────────────────
+// Localised strings — mirrors the web app's T map in contact/page.tsx
+// ─────────────────────────────────────────────────────────────────────────────
+const _L = {
+  kLangEn: {
+    'pageTitle':    'Contact Us',
+    'heroTitle':    'Get in Touch 💬',
+    'heroSub':      "We'd love to hear from you",
+    'infoBanner':   'Our team typically responds within 24–48 hours.',
+    'nameLabel':    'Your Name',
+    'nameHint':     'Enter your full name',
+    'emailLabel':   'Email Address',
+    'emailHint':    'Enter your email',
+    'messageLabel': 'Message',
+    'messageHint':  'How can we help you?',
+    'sendBtn':      'Send Message',
+    'successTitle': 'Message Sent!',
+    'successSub':   "Thanks for reaching out. We'll get back to you within 24–48 hours.",
+    'goBackBtn':    'Go Back',
+    'errName':      'Name is required',
+    'errEmail':     'Enter a valid email',
+    'errMessage':   'Message is too short (min 10 characters)',
+    'errSubmit':    'Failed to send message. Please try again.',
+  },
+  kLangJa: {
+    'pageTitle':    'お問い合わせ',
+    'heroTitle':    'ご連絡ください 💬',
+    'heroSub':      '皆様からのメッセージをお待ちしております',
+    'infoBanner':   '通常24〜48時間以内に担当者より返信いたします。',
+    'nameLabel':    'お名前',
+    'nameHint':     'フルネームを入力',
+    'emailLabel':   'メールアドレス',
+    'emailHint':    'メールアドレスを入力',
+    'messageLabel': 'メッセージ',
+    'messageHint':  'ご用件をお聞かせください',
+    'sendBtn':      '送信する',
+    'successTitle': '送信完了！',
+    'successSub':   'お問い合わせありがとうございます。24〜48時間以内に返信いたします。',
+    'goBackBtn':    '戻る',
+    'errName':      'お名前を入力してください',
+    'errEmail':     '有効なメールアドレスを入力してください',
+    'errMessage':   'メッセージが短すぎます（10文字以上）',
+    'errSubmit':    '送信に失敗しました。もう一度お試しください。',
+  },
+};
+
+String _t(String lang, String key) =>
+    _L[lang]?[key] ?? _L[kLangEn]![key]!;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ContactUsScreen — ConsumerStatefulWidget to watch appLangProvider
+// ─────────────────────────────────────────────────────────────────────────────
+class ContactUsScreen extends ConsumerStatefulWidget {
   const ContactUsScreen({super.key});
 
   @override
-  State<ContactUsScreen> createState() => _ContactUsScreenState();
+  ConsumerState<ContactUsScreen> createState() => _ContactUsScreenState();
 }
 
-class _ContactUsScreenState extends State<ContactUsScreen>
+class _ContactUsScreenState extends ConsumerState<ContactUsScreen>
     with TickerProviderStateMixin {
-  final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-  final _emailController = TextEditingController();
+  final _formKey         = GlobalKey<FormState>();
+  final _nameController    = TextEditingController();
+  final _emailController   = TextEditingController();
   final _messageController = TextEditingController();
 
   bool _isSubmitting = false;
-  bool _submitted = false;
+  bool _submitted    = false;
 
   late final AnimationController _fadeController;
-  late final Animation<double> _fadeAnim;
+  late final Animation<double>   _fadeAnim;
   late final AnimationController _slideController;
-  late final Animation<Offset> _slideAnim;
+  late final Animation<Offset>   _slideAnim;
   late final AnimationController _successController;
-  late final Animation<double> _successAnim;
+  late final Animation<double>   _successAnim;
 
   @override
   void initState() {
@@ -51,7 +105,7 @@ class _ContactUsScreenState extends State<ContactUsScreen>
     _successAnim = CurvedAnimation(
         parent: _successController, curve: Curves.easeOutBack);
 
-    // Pre-fill email from signed-in user
+    // Pre-fill from signed-in user
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       _emailController.text = user.email ?? '';
@@ -72,7 +126,7 @@ class _ContactUsScreenState extends State<ContactUsScreen>
     super.dispose();
   }
 
-  Future<void> _submit() async {
+  Future<void> _submit(String lang) async {
     if (!_formKey.currentState!.validate()) return;
     HapticFeedback.lightImpact();
     setState(() => _isSubmitting = true);
@@ -80,26 +134,29 @@ class _ContactUsScreenState extends State<ContactUsScreen>
     try {
       final user = FirebaseAuth.instance.currentUser;
       await FirebaseFirestore.instance.collection('contact_us').add({
-        'name': _nameController.text.trim(),
-        'email': _emailController.text.trim(),
-        'message': _messageController.text.trim(),
-        'user_id': user?.uid ?? '',
+        'name':         _nameController.text.trim(),
+        'email':        _emailController.text.trim(),
+        'message':      _messageController.text.trim(),
+        'user_id':      user?.uid ?? '',
         'submitted_at': FieldValue.serverTimestamp(),
-        'status': 'unread',
+        'status':       'unread',
+        // Store the language the user was using when they submitted
+        'lang':         lang,
       });
 
       setState(() {
         _isSubmitting = false;
-        _submitted = true;
+        _submitted    = true;
       });
       _successController.forward();
       HapticFeedback.mediumImpact();
     } catch (e) {
       setState(() => _isSubmitting = false);
       if (mounted) {
+        final errMsg = _t(ref.read(appLangProvider), 'errSubmit');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Failed to send message. Please try again.'),
+            content: Text(errMsg),
             backgroundColor: Colors.red.shade400,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
@@ -112,11 +169,14 @@ class _ContactUsScreenState extends State<ContactUsScreen>
 
   @override
   Widget build(BuildContext context) {
+    // ✅ Watch global lang provider — rebuilds whenever lang changes anywhere
+    final lang = ref.watch(appLangProvider);
+
     return Scaffold(
       backgroundColor: const Color(0xFFF4F9F5),
       body: CustomScrollView(
         slivers: [
-          // ── Hero App Bar ──────────────────────────────────────────
+          // ── Hero App Bar ────────────────────────────────────────────────────
           SliverAppBar(
             expandedHeight: 160,
             pinned: true,
@@ -133,11 +193,13 @@ class _ContactUsScreenState extends State<ContactUsScreen>
                     color: Colors.white, size: 20),
               ),
             ),
-            title: const Text('Contact Us',
-                style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 18)),
+            title: Text(
+              _t(lang, 'pageTitle'),
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 18),
+            ),
             flexibleSpace: FlexibleSpaceBar(
               background: Stack(
                 fit: StackFit.expand,
@@ -181,15 +243,17 @@ class _ContactUsScreenState extends State<ContactUsScreen>
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Text('Get in Touch 💬',
-                              style: TextStyle(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w900,
-                                  color: Colors.white,
-                                  letterSpacing: -0.3)),
+                          Text(
+                            _t(lang, 'heroTitle'),
+                            style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.white,
+                                letterSpacing: -0.3),
+                          ),
                           const SizedBox(height: 4),
                           Text(
-                            "We'd love to hear from you",
+                            _t(lang, 'heroSub'),
                             style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.white.withOpacity(0.72)),
@@ -203,6 +267,7 @@ class _ContactUsScreenState extends State<ContactUsScreen>
             ),
           ),
 
+          // ── Body ────────────────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: FadeTransition(
               opacity: _fadeAnim,
@@ -211,14 +276,18 @@ class _ContactUsScreenState extends State<ContactUsScreen>
                 child: Padding(
                   padding: const EdgeInsets.all(20),
                   child: _submitted
-                      ? _SuccessView(animation: _successAnim)
+                      ? _SuccessView(
+                    animation: _successAnim,
+                    lang: lang,
+                  )
                       : _FormView(
-                    formKey: _formKey,
-                    nameController: _nameController,
-                    emailController: _emailController,
-                    messageController: _messageController,
-                    isSubmitting: _isSubmitting,
-                    onSubmit: _submit,
+                    formKey:            _formKey,
+                    nameController:     _nameController,
+                    emailController:    _emailController,
+                    messageController:  _messageController,
+                    isSubmitting:       _isSubmitting,
+                    lang:               lang,
+                    onSubmit:           () => _submit(lang),
                   ),
                 ),
               ),
@@ -230,15 +299,16 @@ class _ContactUsScreenState extends State<ContactUsScreen>
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Form View
-// ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
+// Form View — fully localised
+// ═══════════════════════════════════════════════════════════════════════════════
 class _FormView extends StatelessWidget {
   final GlobalKey<FormState> formKey;
   final TextEditingController nameController;
   final TextEditingController emailController;
   final TextEditingController messageController;
   final bool isSubmitting;
+  final String lang;
   final VoidCallback onSubmit;
 
   const _FormView({
@@ -247,6 +317,7 @@ class _FormView extends StatelessWidget {
     required this.emailController,
     required this.messageController,
     required this.isSubmitting,
+    required this.lang,
     required this.onSubmit,
   });
 
@@ -257,7 +328,7 @@ class _FormView extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Info banner ──────────────────────────────────────────
+          // ── Info banner ─────────────────────────────────────────────────────
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
@@ -278,10 +349,10 @@ class _FormView extends StatelessWidget {
                       color: AppColors.primary, size: 22),
                 ),
                 const SizedBox(width: 12),
-                const Expanded(
+                Expanded(
                   child: Text(
-                    'Our team typically responds within 24–48 hours.',
-                    style: TextStyle(
+                    _t(lang, 'infoBanner'),
+                    style: const TextStyle(
                         fontSize: 13,
                         color: AppColors.primary,
                         fontWeight: FontWeight.w500,
@@ -294,7 +365,7 @@ class _FormView extends StatelessWidget {
 
           const SizedBox(height: 24),
 
-          // ── Form card ────────────────────────────────────────────
+          // ── Form card ────────────────────────────────────────────────────────
           Container(
             decoration: BoxDecoration(
               color: Colors.white,
@@ -313,27 +384,36 @@ class _FormView extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Name
-                _FieldLabel(label: 'Your Name', icon: Icons.person_outline_rounded),
+                _FieldLabel(
+                    label: _t(lang, 'nameLabel'),
+                    icon:  Icons.person_outline_rounded),
                 const SizedBox(height: 8),
                 _InputField(
                   controller: nameController,
-                  hint: 'Enter your full name',
-                  validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Name is required' : null,
+                  hint: _t(lang, 'nameHint'),
+                  validator: (v) => (v == null || v.trim().isEmpty)
+                      ? _t(lang, 'errName')
+                      : null,
                 ),
 
                 const SizedBox(height: 20),
 
                 // Email
-                _FieldLabel(label: 'Email Address', icon: Icons.email_outlined),
+                _FieldLabel(
+                    label: _t(lang, 'emailLabel'),
+                    icon:  Icons.email_outlined),
                 const SizedBox(height: 8),
                 _InputField(
                   controller: emailController,
-                  hint: 'Enter your email',
+                  hint: _t(lang, 'emailHint'),
                   keyboardType: TextInputType.emailAddress,
                   validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'Email is required';
-                    if (!v.contains('@') || !v.contains('.')) return 'Enter a valid email';
+                    if (v == null || v.trim().isEmpty) {
+                      return _t(lang, 'errEmail');
+                    }
+                    if (!v.contains('@') || !v.contains('.')) {
+                      return _t(lang, 'errEmail');
+                    }
                     return null;
                   },
                 ),
@@ -341,15 +421,21 @@ class _FormView extends StatelessWidget {
                 const SizedBox(height: 20),
 
                 // Message
-                _FieldLabel(label: 'Message', icon: Icons.chat_bubble_outline_rounded),
+                _FieldLabel(
+                    label: _t(lang, 'messageLabel'),
+                    icon:  Icons.chat_bubble_outline_rounded),
                 const SizedBox(height: 8),
                 _InputField(
                   controller: messageController,
-                  hint: 'How can we help you?',
+                  hint: _t(lang, 'messageHint'),
                   maxLines: 5,
                   validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'Message is required';
-                    if (v.trim().length < 10) return 'Message is too short';
+                    if (v == null || v.trim().isEmpty) {
+                      return _t(lang, 'errMessage');
+                    }
+                    if (v.trim().length < 10) {
+                      return _t(lang, 'errMessage');
+                    }
                     return null;
                   },
                 ),
@@ -359,7 +445,7 @@ class _FormView extends StatelessWidget {
 
           const SizedBox(height: 24),
 
-          // ── Submit button ────────────────────────────────────────
+          // ── Submit button ────────────────────────────────────────────────────
           SizedBox(
             width: double.infinity,
             height: 56,
@@ -367,7 +453,8 @@ class _FormView extends StatelessWidget {
               onPressed: isSubmitting ? null : onSubmit,
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
-                disabledBackgroundColor: AppColors.primary.withOpacity(0.5),
+                disabledBackgroundColor:
+                AppColors.primary.withOpacity(0.5),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16)),
                 elevation: 0,
@@ -378,17 +465,19 @@ class _FormView extends StatelessWidget {
                   width: 22, height: 22,
                   child: CircularProgressIndicator(
                       color: Colors.white, strokeWidth: 2.5))
-                  : const Row(
+                  : Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.send_rounded,
+                  const Icon(Icons.send_rounded,
                       color: Colors.white, size: 18),
-                  SizedBox(width: 10),
-                  Text('Send Message',
-                      style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white)),
+                  const SizedBox(width: 10),
+                  Text(
+                    _t(lang, 'sendBtn'),
+                    style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white),
+                  ),
                 ],
               ),
             ),
@@ -401,12 +490,13 @@ class _FormView extends StatelessWidget {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// Success View
-// ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
+// Success View — fully localised
+// ═══════════════════════════════════════════════════════════════════════════════
 class _SuccessView extends StatelessWidget {
   final Animation<double> animation;
-  const _SuccessView({required this.animation});
+  final String lang;
+  const _SuccessView({required this.animation, required this.lang});
 
   @override
   Widget build(BuildContext context) {
@@ -415,11 +505,13 @@ class _SuccessView extends StatelessWidget {
       child: Container(
         width: double.infinity,
         margin: const EdgeInsets.only(top: 40),
-        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
+        padding:
+        const EdgeInsets.symmetric(horizontal: 32, vertical: 48),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: AppColors.primary.withOpacity(0.12)),
+          border:
+          Border.all(color: AppColors.primary.withOpacity(0.12)),
           boxShadow: [
             BoxShadow(
                 color: AppColors.primary.withOpacity(0.07),
@@ -440,9 +532,9 @@ class _SuccessView extends StatelessWidget {
                   color: AppColors.primary, size: 44),
             ),
             const SizedBox(height: 24),
-            const Text(
-              'Message Sent!',
-              style: TextStyle(
+            Text(
+              _t(lang, 'successTitle'),
+              style: const TextStyle(
                   fontSize: 22,
                   fontWeight: FontWeight.w800,
                   color: Color(0xFF0D0D0D),
@@ -450,7 +542,7 @@ class _SuccessView extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             Text(
-              "Thanks for reaching out. We'll get back to you within 24–48 hours.",
+              _t(lang, 'successSub'),
               textAlign: TextAlign.center,
               style: TextStyle(
                   fontSize: 14,
@@ -465,15 +557,18 @@ class _SuccessView extends StatelessWidget {
                 onPressed: () => Navigator.pop(context),
                 style: OutlinedButton.styleFrom(
                   side: BorderSide(
-                      color: AppColors.primary.withOpacity(0.4), width: 1.5),
+                      color: AppColors.primary.withOpacity(0.4),
+                      width: 1.5),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14)),
                 ),
-                child: const Text('Go Back',
-                    style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.primary)),
+                child: Text(
+                  _t(lang, 'goBackBtn'),
+                  style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primary),
+                ),
               ),
             ),
           ],
@@ -483,9 +578,9 @@ class _SuccessView extends StatelessWidget {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 // Field Label
-// ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 class _FieldLabel extends StatelessWidget {
   final String label;
   final IconData icon;
@@ -508,9 +603,9 @@ class _FieldLabel extends StatelessWidget {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 // Input Field
-// ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
 class _InputField extends StatelessWidget {
   final TextEditingController controller;
   final String hint;
@@ -544,15 +639,18 @@ class _InputField extends StatelessWidget {
             horizontal: 16, vertical: maxLines > 1 ? 14 : 0),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: AppColors.primary.withOpacity(0.15)),
+          borderSide:
+          BorderSide(color: AppColors.primary.withOpacity(0.15)),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: AppColors.primary.withOpacity(0.15)),
+          borderSide:
+          BorderSide(color: AppColors.primary.withOpacity(0.15)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: AppColors.primary, width: 1.5),
+          borderSide:
+          BorderSide(color: AppColors.primary, width: 1.5),
         ),
         errorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -560,9 +658,11 @@ class _InputField extends StatelessWidget {
         ),
         focusedErrorBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide(color: Colors.red.shade400, width: 1.5),
+          borderSide:
+          BorderSide(color: Colors.red.shade400, width: 1.5),
         ),
-        errorStyle: TextStyle(fontSize: 12, color: Colors.red.shade400),
+        errorStyle:
+        TextStyle(fontSize: 12, color: Colors.red.shade400),
       ),
     );
   }

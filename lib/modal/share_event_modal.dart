@@ -2,32 +2,65 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:intl/intl.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
 // ShareEventModal
 // Usage: ShareEventModal.show(context, event: widget.event)
-//
-// Sends an event_share message to:
-//   • individual_chats/{chatId}/messages
-//   • group_chats/{chatId}/messages
-//
-// Firestore payload:
-//   {
-//     sender_id, sender_name, sender_avatar,
-//     type: 'event_share',
-//     text: 'Shared an event: $title 🏓',
-//     event_id, event_title, event_image,
-//     event_date  (pre-formatted string),
-//     event_type,
-//     event_data: { ...full event map },
-//     sent_at: serverTimestamp,
-//   }
 // ════════════════════════════════════════════════════════════════════════════
 
-class ShareEventModal extends StatefulWidget {
+// ── Static i18n strings ───────────────────────────────────────────────────────
+const _kEn = {
+  'title'          : 'Share Event',
+  'shareVia'       : 'Share via',
+  'people'         : 'People',
+  'groups'         : 'Groups',
+  'copyLink'       : 'Copy Link',
+  'instagram'      : 'Instagram',
+  'line'           : 'LINE',
+  'facebook'       : 'Facebook',
+  'messenger'      : 'Messenger',
+  'twitter'        : 'X / Twitter',
+  'whatsapp'       : 'WhatsApp',
+  'linkCopied'     : 'Link copied!',
+  'selectRecip'    : 'Select recipients',
+  'sendTo'         : 'Send to',
+  'sent'           : 'Sent!',
+  'failedSend'     : 'Failed to send: ',
+  'signIn'         : 'Sign in to see contacts',
+  'noConvo'        : 'No recent conversations',
+  'noGroups'       : 'No group chats yet',
+  'sharedEvent'    : 'Shared an event: ',
+};
+
+const _kJa = {
+  'title'          : 'イベントをシェア',
+  'shareVia'       : 'シェア方法',
+  'people'         : 'ユーザー',
+  'groups'         : 'グループ',
+  'copyLink'       : 'リンクをコピー',
+  'instagram'      : 'Instagram',
+  'line'           : 'LINE',
+  'facebook'       : 'Facebook',
+  'messenger'      : 'Messenger',
+  'twitter'        : 'X / Twitter',
+  'whatsapp'       : 'WhatsApp',
+  'linkCopied'     : 'リンクをコピーしました！',
+  'selectRecip'    : '送信先を選択',
+  'sendTo'         : '送信する（',
+  'sent'           : '送信済み！',
+  'failedSend'     : '送信に失敗しました: ',
+  'signIn'         : 'ログインして連絡先を表示',
+  'noConvo'        : '最近の会話はありません',
+  'noGroups'       : 'グループチャットはまだありません',
+  'sharedEvent'    : 'イベントをシェアしました: ',
+};
+
+class ShareEventModal extends ConsumerStatefulWidget {
   final Map<String, dynamic> event;
 
   const ShareEventModal({super.key, required this.event});
@@ -43,10 +76,10 @@ class ShareEventModal extends StatefulWidget {
   }
 
   @override
-  State<ShareEventModal> createState() => _ShareEventModalState();
+  ConsumerState<ShareEventModal> createState() => _ShareEventModalState();
 }
 
-class _ShareEventModalState extends State<ShareEventModal>
+class _ShareEventModalState extends ConsumerState<ShareEventModal>
     with SingleTickerProviderStateMixin {
   late final TabController _tabController;
   final Set<String> _selectedIds = {};
@@ -65,12 +98,28 @@ class _ShareEventModalState extends State<ShareEventModal>
     super.dispose();
   }
 
-  // ── Derived event fields ────────────────────────────────────────────────
-  String get _eventId    => (widget.event['event_id']    ?? '').toString();
-  String get _eventTitle => (widget.event['event_title'] ?? 'Event').toString();
+  // ── Lang helpers ──────────────────────────────────────────────────────────
+  bool get _isJa => ref.watch(appLangProvider) == kLangJa;
+  Map<String, String> get _t => _isJa ? _kJa : _kEn;
+
+  /// Returns the Japanese field value if available and lang is JA,
+  /// otherwise falls back to the English field.
+  String _f(String enKey, [String? jpKey]) {
+    final jp = jpKey ?? '${enKey}_jp';
+    final jpVal = (widget.event[jp] ?? '').toString();
+    if (_isJa && jpVal.isNotEmpty) return jpVal;
+    return (widget.event[enKey] ?? '').toString();
+  }
+
+  // ── Derived event fields ──────────────────────────────────────────────────
+  String get _eventId    => (widget.event['event_id'] ?? '').toString();
+
+  String get _eventTitle => _f('event_title');
+
   String get _eventImage =>
       (widget.event['event_pic'] ?? widget.event['event_image'] ?? '').toString();
-  String get _eventType  => (widget.event['event_type']  ?? '').toString();
+
+  String get _eventType  => _f('event_type');
 
   String get _eventDateLabel {
     final rawDate = widget.event['event_date'];
@@ -82,9 +131,10 @@ class _ShareEventModalState extends State<ShareEventModal>
     return '';
   }
 
-  String get _shareText => 'Shared an event: $_eventTitle 🏓';
+  String get _shareText =>
+      '${_t['sharedEvent']}$_eventTitle 🏓';
 
-  // ── Send ────────────────────────────────────────────────────────────────
+  // ── Send ──────────────────────────────────────────────────────────────────
   Future<void> _send() async {
     if (_selectedIds.isEmpty || _sending) return;
     final me = FirebaseAuth.instance.currentUser;
@@ -111,7 +161,6 @@ class _ShareEventModalState extends State<ShareEventModal>
 
     try {
       await Future.wait(_selectedIds.map((chatId) async {
-        // Individual chat IDs are "uid1_uid2"; group chats are Firestore auto-IDs
         final isIndividual =
             chatId.contains('_') && chatId.split('_').length == 2;
 
@@ -150,7 +199,7 @@ class _ShareEventModalState extends State<ShareEventModal>
         setState(() => _sending = false);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to send: $e'),
+            content: Text('${_t['failedSend']}$e'),
             backgroundColor: Colors.red.shade400,
             behavior: SnackBarBehavior.floating,
             shape: RoundedRectangleBorder(
@@ -171,6 +220,10 @@ class _ShareEventModalState extends State<ShareEventModal>
 
   @override
   Widget build(BuildContext context) {
+    // Watch lang so the whole modal rebuilds on any global lang change.
+    final isJa = ref.watch(appLangProvider) == kLangJa;
+    final t = isJa ? _kJa : _kEn;
+
     final bottomPad = MediaQuery.of(context).padding.bottom;
 
     return Container(
@@ -198,8 +251,8 @@ class _ShareEventModalState extends State<ShareEventModal>
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Row(
               children: [
-                const Text('Share Event',
-                    style: TextStyle(
+                Text(t['title']!,
+                    style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w800,
                         color: Color(0xFF0D0D0D),
@@ -311,14 +364,14 @@ class _ShareEventModalState extends State<ShareEventModal>
                     fontSize: 13, fontWeight: FontWeight.w700),
                 unselectedLabelStyle: const TextStyle(
                     fontSize: 13, fontWeight: FontWeight.w500),
-                tabs: const [Tab(text: 'People'), Tab(text: 'Groups')],
+                tabs: [Tab(text: t['people']), Tab(text: t['groups'])],
               ),
             ),
           ),
 
           const SizedBox(height: 10),
 
-          // ── Tab content (fixed height, horizontal avatar scroll) ───────
+          // ── Tab content ───────────────────────────────────────────────
           SizedBox(
             height: 140,
             child: TabBarView(
@@ -326,12 +379,14 @@ class _ShareEventModalState extends State<ShareEventModal>
               children: [
                 _PeopleTab(
                   selectedIds: _selectedIds,
+                  isJa: isJa,
                   onToggle: (id) => setState(() => _selectedIds.contains(id)
                       ? _selectedIds.remove(id)
                       : _selectedIds.add(id)),
                 ),
                 _GroupsTab(
                   selectedIds: _selectedIds,
+                  isJa: isJa,
                   onToggle: (id) => setState(() => _selectedIds.contains(id)
                       ? _selectedIds.remove(id)
                       : _selectedIds.add(id)),
@@ -349,7 +404,7 @@ class _ShareEventModalState extends State<ShareEventModal>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Share via',
+                Text(t['shareVia']!,
                     style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -361,14 +416,14 @@ class _ShareEventModalState extends State<ShareEventModal>
                   child: Row(
                     children: [
                       _SocialButton(
-                        label: 'Copy Link',
+                        label: t['copyLink']!,
                         icon: Icons.link_rounded,
                         color: const Color(0xFF1C1C1E),
                         onTap: () {
                           Clipboard.setData(ClipboardData(text: _shareText));
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: const Text('Link copied!'),
+                              content: Text(t['linkCopied']!),
                               backgroundColor: AppColors.primary,
                               behavior: SnackBarBehavior.floating,
                               duration: const Duration(seconds: 2),
@@ -380,7 +435,7 @@ class _ShareEventModalState extends State<ShareEventModal>
                       ),
                       const SizedBox(width: 16),
                       _SocialButton(
-                        label: 'Instagram',
+                        label: t['instagram']!,
                         color: const Color(0xFFE1306C),
                         gradient: const LinearGradient(
                           colors: [
@@ -396,7 +451,7 @@ class _ShareEventModalState extends State<ShareEventModal>
                       ),
                       const SizedBox(width: 16),
                       _SocialButton(
-                        label: 'LINE',
+                        label: t['line']!,
                         color: const Color(0xFF06C755),
                         iconWidget: _LineIcon(),
                         onTap: () => _launchSocial(
@@ -404,7 +459,7 @@ class _ShareEventModalState extends State<ShareEventModal>
                       ),
                       const SizedBox(width: 16),
                       _SocialButton(
-                        label: 'Facebook',
+                        label: t['facebook']!,
                         color: const Color(0xFF1877F2),
                         icon: Icons.facebook_rounded,
                         onTap: () => _launchSocial(
@@ -412,7 +467,7 @@ class _ShareEventModalState extends State<ShareEventModal>
                       ),
                       const SizedBox(width: 16),
                       _SocialButton(
-                        label: 'Messenger',
+                        label: t['messenger']!,
                         color: const Color(0xFF0084FF),
                         iconWidget: _MessengerIcon(),
                         onTap: () => _launchSocial(
@@ -420,7 +475,7 @@ class _ShareEventModalState extends State<ShareEventModal>
                       ),
                       const SizedBox(width: 16),
                       _SocialButton(
-                        label: 'X / Twitter',
+                        label: t['twitter']!,
                         color: const Color(0xFF000000),
                         icon: Icons.alternate_email_rounded,
                         onTap: () => _launchSocial(
@@ -428,7 +483,7 @@ class _ShareEventModalState extends State<ShareEventModal>
                       ),
                       const SizedBox(width: 16),
                       _SocialButton(
-                        label: 'WhatsApp',
+                        label: t['whatsapp']!,
                         color: const Color(0xFF25D366),
                         icon: Icons.chat_rounded,
                         onTap: () => _launchSocial(
@@ -475,14 +530,14 @@ class _ShareEventModalState extends State<ShareEventModal>
                       child: CircularProgressIndicator(
                           color: Colors.white, strokeWidth: 2.5))
                       : _sent
-                      ? const Row(
+                      ? Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.check_circle_rounded,
+                      const Icon(Icons.check_circle_rounded,
                           size: 18, color: Colors.white),
-                      SizedBox(width: 7),
-                      Text('Sent!',
-                          style: TextStyle(
+                      const SizedBox(width: 7),
+                      Text(t['sent']!,
+                          style: const TextStyle(
                               fontSize: 15,
                               fontWeight: FontWeight.w800,
                               color: Colors.white)),
@@ -499,8 +554,10 @@ class _ShareEventModalState extends State<ShareEventModal>
                       const SizedBox(width: 7),
                       Text(
                         _selectedIds.isEmpty
-                            ? 'Select recipients'
-                            : 'Send to ${_selectedIds.length}',
+                            ? t['selectRecip']!
+                            : isJa
+                            ? '${t['sendTo']}${_selectedIds.length}人）'
+                            : '${t['sendTo']} ${_selectedIds.length}',
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
@@ -522,18 +579,24 @@ class _ShareEventModalState extends State<ShareEventModal>
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// People tab — reads individual_chats, resolves other user from maps
+// People tab
 // ─────────────────────────────────────────────────────────────────────────────
 class _PeopleTab extends StatelessWidget {
   final Set<String> selectedIds;
+  final bool isJa;
   final void Function(String) onToggle;
 
-  const _PeopleTab({required this.selectedIds, required this.onToggle});
+  const _PeopleTab({
+    required this.selectedIds,
+    required this.isJa,
+    required this.onToggle,
+  });
 
   @override
   Widget build(BuildContext context) {
     final me = FirebaseAuth.instance.currentUser;
-    if (me == null) return _empty('Sign in to see contacts');
+    final t = isJa ? _kJa : _kEn;
+    if (me == null) return _empty(t['signIn']!);
 
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
@@ -543,7 +606,6 @@ class _PeopleTab extends StatelessWidget {
           .limit(20)
           .snapshots(),
       builder: (context, snapshot) {
-        // Fallback without ordering if composite index not yet created
         if (snapshot.hasError) {
           return StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance
@@ -553,7 +615,7 @@ class _PeopleTab extends StatelessWidget {
                 .snapshots(),
             builder: (_, snap2) {
               if (!snap2.hasData || snap2.data!.docs.isEmpty) {
-                return _empty('No recent conversations');
+                return _empty(t['noConvo']!);
               }
               return _buildList(snap2.data!.docs, me.uid);
             },
@@ -565,9 +627,7 @@ class _PeopleTab extends StatelessWidget {
               child: CircularProgressIndicator(strokeWidth: 2));
         }
 
-        if (snapshot.data!.docs.isEmpty) {
-          return _empty('No recent conversations');
-        }
+        if (snapshot.data!.docs.isEmpty) return _empty(t['noConvo']!);
 
         return _buildList(snapshot.data!.docs, me.uid);
       },
@@ -580,19 +640,15 @@ class _PeopleTab extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20),
       itemCount: docs.length,
       itemBuilder: (context, i) {
-        final data   = docs[i].data() as Map<String, dynamic>;
-        final chatId = docs[i].id;
-        final participants =
-        List<String>.from(data['participants'] ?? []);
-        final otherId =
-        participants.firstWhere((p) => p != myUid, orElse: () => '');
-        final names   =
-        Map<String, dynamic>.from(data['participant_names']   ?? {});
-        final avatars =
-        Map<String, dynamic>.from(data['participant_avatars'] ?? {});
-        final name    = (names[otherId]   ?? 'User').toString();
-        final avatar  = (avatars[otherId] ?? '').toString();
-        final selected = selectedIds.contains(chatId);
+        final data      = docs[i].data() as Map<String, dynamic>;
+        final chatId    = docs[i].id;
+        final parts     = List<String>.from(data['participants'] ?? []);
+        final otherId   = parts.firstWhere((p) => p != myUid, orElse: () => '');
+        final names     = Map<String, dynamic>.from(data['participant_names']   ?? {});
+        final avatars   = Map<String, dynamic>.from(data['participant_avatars'] ?? {});
+        final name      = (names[otherId]   ?? 'User').toString();
+        final avatar    = (avatars[otherId] ?? '').toString();
+        final selected  = selectedIds.contains(chatId);
 
         return _AvatarTile(
           id: chatId,
@@ -614,13 +670,18 @@ class _PeopleTab extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Groups tab — checks participants subcollection, resolves org name/image
+// Groups tab
 // ─────────────────────────────────────────────────────────────────────────────
 class _GroupsTab extends StatefulWidget {
   final Set<String> selectedIds;
+  final bool isJa;
   final void Function(String) onToggle;
 
-  const _GroupsTab({required this.selectedIds, required this.onToggle});
+  const _GroupsTab({
+    required this.selectedIds,
+    required this.isJa,
+    required this.onToggle,
+  });
 
   @override
   State<_GroupsTab> createState() => _GroupsTabState();
@@ -638,10 +699,7 @@ class _GroupsTabState extends State<_GroupsTab> {
 
   Future<void> _loadGroups() async {
     final me = FirebaseAuth.instance.currentUser;
-    if (me == null) {
-      setState(() => _loading = false);
-      return;
-    }
+    if (me == null) { setState(() => _loading = false); return; }
 
     try {
       final allChats = await FirebaseFirestore.instance
@@ -653,20 +711,26 @@ class _GroupsTabState extends State<_GroupsTab> {
       final List<_GroupChatItem> result = [];
 
       for (final doc in allChats.docs) {
-        final participantRef = await FirebaseFirestore.instance
+        final partRef = await FirebaseFirestore.instance
             .collection('group_chats')
             .doc(doc.id)
             .collection('participants')
             .doc(me.uid)
             .get();
-        if (!participantRef.exists) continue;
+        if (!partRef.exists) continue;
 
-        final data       = doc.data();
-        final orgId      = (data['org_id']    ?? '').toString();
-        String name      = (data['org_name']  ?? 'Group Chat').toString();
-        String avatarUrl = (data['org_image'] ?? '').toString();
+        final data     = doc.data();
+        final orgId    = (data['org_id']    ?? '').toString();
+        String name    = (data['org_name']  ?? 'Group Chat').toString();
+        String avatar  = (data['org_image'] ?? '').toString();
 
-        if (orgId.isNotEmpty && (name == 'Group Chat' || avatarUrl.isEmpty)) {
+        // Prefer Japanese org name if lang is JA and field exists
+        if (widget.isJa) {
+          final jpName = (data['org_name_jp'] ?? '').toString();
+          if (jpName.isNotEmpty) name = jpName;
+        }
+
+        if (orgId.isNotEmpty && (name == 'Group Chat' || avatar.isEmpty)) {
           try {
             final orgSnap = await FirebaseFirestore.instance
                 .collection('organizations')
@@ -675,14 +739,20 @@ class _GroupsTabState extends State<_GroupsTab> {
                 .get();
             if (orgSnap.docs.isNotEmpty) {
               final org = orgSnap.docs.first.data();
-              name      = (org['org_name']  ?? name).toString();
-              avatarUrl = (org['org_image'] ?? avatarUrl).toString();
+              if (widget.isJa) {
+                final jpOrgName = (org['org_name_jp'] ?? '').toString();
+                name = jpOrgName.isNotEmpty
+                    ? jpOrgName
+                    : (org['org_name'] ?? name).toString();
+              } else {
+                name = (org['org_name'] ?? name).toString();
+              }
+              avatar = (org['org_image'] ?? avatar).toString();
             }
           } catch (_) {}
         }
 
-        result.add(_GroupChatItem(
-            chatId: doc.id, name: name, avatarUrl: avatarUrl));
+        result.add(_GroupChatItem(chatId: doc.id, name: name, avatarUrl: avatar));
       }
 
       if (mounted) setState(() { _items = result; _loading = false; });
@@ -693,6 +763,8 @@ class _GroupsTabState extends State<_GroupsTab> {
 
   @override
   Widget build(BuildContext context) {
+    final t = widget.isJa ? _kJa : _kEn;
+
     if (_loading) {
       return const Center(child: CircularProgressIndicator(strokeWidth: 2));
     }
@@ -700,7 +772,7 @@ class _GroupsTabState extends State<_GroupsTab> {
     final items = _items ?? [];
     if (items.isEmpty) {
       return Center(
-        child: Text('No group chats yet',
+        child: Text(t['noGroups']!,
             style: TextStyle(
                 fontSize: 13, color: Colors.black.withOpacity(0.35))),
       );
@@ -771,9 +843,7 @@ class _AvatarTile extends StatelessWidget {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: selected
-                          ? AppColors.primary
-                          : Colors.transparent,
+                      color: selected ? AppColors.primary : Colors.transparent,
                       width: 2.5,
                     ),
                   ),
@@ -809,11 +879,8 @@ class _AvatarTile extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 11,
-                fontWeight:
-                selected ? FontWeight.w700 : FontWeight.w500,
-                color: selected
-                    ? AppColors.primary
-                    : const Color(0xFF0D0D0D),
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                color: selected ? AppColors.primary : const Color(0xFF0D0D0D),
               ),
             ),
           ],
@@ -850,17 +917,14 @@ class _EventThumb extends StatelessWidget {
     (event['event_pic'] ?? event['event_image'] ?? '').toString();
     if (url.isNotEmpty) {
       return Image.network(url,
-          width: 44,
-          height: 44,
-          fit: BoxFit.cover,
+          width: 44, height: 44, fit: BoxFit.cover,
           errorBuilder: (_, __, ___) => _ph());
     }
     return _ph();
   }
 
   Widget _ph() => Container(
-      width: 44,
-      height: 44,
+      width: 44, height: 44,
       color: AppColors.primary.withOpacity(0.1),
       child: Icon(Icons.event_rounded,
           size: 22, color: AppColors.primary.withOpacity(0.5)));
@@ -925,7 +989,6 @@ class _SocialButton extends StatelessWidget {
   }
 }
 
-// ── LINE icon ──────────────────────────────────────────────────────────────────
 class _LineIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) => const Text('LINE',
@@ -936,7 +999,6 @@ class _LineIcon extends StatelessWidget {
           letterSpacing: -0.5));
 }
 
-// ── Messenger icon ─────────────────────────────────────────────────────────────
 class _MessengerIcon extends StatelessWidget {
   @override
   Widget build(BuildContext context) => const Icon(

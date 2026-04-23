@@ -9,29 +9,103 @@ import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:pikuru/providers/app_language_provider.dart'; // ← global lang
 
 // ─────────────────────────────────────────────────────────────────────────────
-// pubspec.yaml dependencies:
-//   cloud_firestore: ^4.x.x
-//   firebase_storage: ^11.x.x
-//   image_picker: ^1.x.x
-//   flutter_riverpod: ^2.x.x
-//   google_maps_flutter: ^2.x.x
-//   geocoding: ^3.x.x
-//
-// AndroidManifest.xml — inside <application>:
-//   <meta-data android:name="com.google.android.geo.API_KEY"
-//              android:value="YOUR_API_KEY"/>
-//
-// iOS AppDelegate.swift — before GeneratedPluginRegistrant:
-//   GMSServices.provideAPIKey("YOUR_API_KEY")
+// i18n — mirrors web app T object exactly
 // ─────────────────────────────────────────────────────────────────────────────
+class _S {
+  final String lang;
+  const _S(this.lang);
+  bool get isJa => lang == kLangJa;
 
-// ── Detect Japanese characters ────────────────────────────────────────────────
-bool _isJapanese(String text) =>
-    RegExp(r'[\u3040-\u30FF\u4E00-\u9FFF\uFF65-\uFF9F]').hasMatch(text);
+  String get pageTitle   => isJa ? 'イベント追加'            : 'Add an Event';
+  String get s1          => isJa ? '基本情報'                : 'Basic Details';
+  String get s2          => isJa ? 'スケジュールと料金'       : 'Schedule & Fees';
+  String get s3          => isJa ? '対象レベルと部門'         : 'Divisions & Levels';
+  String get s4          => isJa ? '開催場所と主催者'         : 'Location & Org';
+  String get s5          => isJa ? '説明とメディア'           : 'Description & Media';
 
-// ── Google Translate (free public endpoint) ───────────────────────────────────
+  String get lblTitle    => isJa ? 'イベント名 *'            : 'Event Name *';
+  String get lblType     => isJa ? 'イベントの種類 *'         : 'Event Type *';
+  String get lblLink     => isJa ? '申し込み / イベントリンク' : 'Registration / Event Link';
+  String get lblDate     => isJa ? '開催日 *'               : 'Date of Event *';
+  String get lblDateEnd  => isJa ? '終了日 (任意)'           : 'End Date (Optional)';
+  String get lblStart    => isJa ? '開始時間 * (例: 09:00)'  : 'Start Time (e.g. 09:00)';
+  String get lblFee      => isJa ? '参加費 (例: 無料, ¥2000)': 'Fee (e.g. Free, ¥2000)';
+  String get lblMax      => isJa ? '最大参加人数'             : 'Max Participants';
+  String get lblStripe   => isJa ? 'Pikuruアプリで支払いを受け付けますか？' : 'Accept payment through Pikuru App?';
+  String get stripeSub   => isJa ? '*Stripe手数料＋参加者1人あたり¥100の手数料がかかります。' : '*Stripe fees plus a ¥100 fee per participant will apply.';
+  String get yes         => isJa ? 'はい'                   : 'Yes';
+  String get no          => isJa ? 'いいえ'                 : 'No';
+  String get lblSkill    => isJa ? 'スキルレベル'             : 'Skill Level';
+  String get lblCat      => isJa ? 'イベントカテゴリー'        : 'Event Category';
+  String get lblTourist  => isJa ? '観光客歓迎？'             : 'Tourist Friendly?';
+  String get touristSub  => isJa ? '日本語が話せない観光客や訪問者を歓迎するイベントであることを示します。' : 'Welcoming to visitors and tourists, including non-Japanese speakers.';
+  String get lblVenue    => isJa ? '会場名'                  : 'Venue Name / Hosted By';
+  String get lblAddress  => isJa ? '会場の住所 *'             : 'Event Address *';
+  String get lblMapLink  => isJa ? 'Googleマップリンク'       : 'Google Maps Link';
+  String get lblOrgName  => isJa ? '主催者 (団体名)'          : 'Organization Name';
+  String get lblContact  => isJa ? '連絡用メールアドレス *'    : 'Contact Email *';
+  String get lblDesc     => isJa ? 'イベント説明 *'           : 'Event Description *';
+  String get plDesc      => isJa ? 'イベントの詳細、ルール、スケジュールなどを記入してください。' : 'Talk about the event, rules, schedule, etc.';
+  String get lblCover    => isJa ? '可能であればフライヤーを添付してください。' : 'Event Flyer / Cover Image';
+  String get selImg      => isJa ? '画像を選択'               : 'Select Event Image';
+  String get imgSub      => isJa ? 'この画像はサムネイルとして使われます。' : "We'll use this as the event thumbnail.";
+  String get translateHint => isJa ? '送信時に EN・JP 両方へ自動翻訳されます' : 'Auto-translated to both EN & JP on submit';
+  String get reviewNote  => isJa ? '送信されたイベントは審査後、48時間以内に公開されます。' : 'Submitted events go through a review process and will be visible within 48 hours of approval.';
+  String get searchVenue => isJa ? '会場・住所を検索...'        : 'Search venue or address…';
+  String get tapToDrop   => isJa ? 'タップしてピンを立てる'      : 'Tap map to drop a pin';
+  String get back        => isJa ? '戻る'                   : 'Back';
+  String get cont        => isJa ? '次へ'                   : 'Continue';
+  String get create      => isJa ? 'イベントを作成'           : 'Create Event';
+  String get errFields   => isJa ? 'タイトル、日付、住所、連絡先メールを入力してください。' : 'Please fill in Title, Date, Address, and Contact Email.';
+  String get noImageNote => isJa ? '画像なしで保存しました。'    : 'Could not upload image — saving without it.';
+  String get submitted   => isJa ? 'イベントを審査に送信しました！' : 'Event submitted for review!';
+
+  // Skills — mirrors web app T.ja
+  String get skillBeginner => isJa ? '初級' : 'Beginner';
+  String get skillAmateur  => isJa ? '中級' : 'Amateur';
+  String get skillPro      => isJa ? '上級' : 'Pro';
+
+  // Categories — mirrors web app T.ja.cats
+  String get catMs => isJa ? '男子シングルス'  : "Men's Singles";
+  String get catWs => isJa ? '女子シングルス'  : "Women's Singles";
+  String get catMd => isJa ? '男子ダブルス'   : "Men's Doubles";
+  String get catWd => isJa ? '女子ダブルス'   : "Women's Doubles";
+  String get catMx => isJa ? 'ミックスダブルス' : 'Mixed Doubles';
+  String get catJu => isJa ? 'ジュニア'       : 'Juniors';
+  String get catCo => isJa ? '学生'           : 'Collegiate';
+  String get catSe => isJa ? 'シニア'         : 'Seniors';
+
+  // Event-type localiser — mirrors web app T.ja.types
+  List<String> get typeKeys => [
+    'Professional Tournament', 'Global Tournament', 'Japan Tournament',
+    'Open Play', 'Trial Session', 'Local Event',
+    'Lessons/Clinics', 'Weekly Play / Recurring Play',
+  ];
+  String localizeType(String key) {
+    if (!isJa) return key;
+    const m = {
+      'Professional Tournament':      'プロトーナメント',
+      'Global Tournament':            'グローバルトーナメント',
+      'Japan Tournament':             '日本トーナメント',
+      'Open Play':                    'オープンプレイ',
+      'Trial Session':                '体験セッション',
+      'Local Event':                  'ローカルイベント',
+      'Lessons/Clinics':              'レッスン・クリニック',
+      'Weekly Play / Recurring Play': '定期プレイ',
+    };
+    return m[key] ?? key;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────────────────────
+bool _isJapanese(String t) =>
+    RegExp(r'[\u3040-\u30FF\u4E00-\u9FFF\uFF65-\uFF9F]').hasMatch(t);
+
 Future<String> _translateText(String text, String targetLang) async {
   if (text.trim().isEmpty) return text;
   try {
@@ -44,19 +118,18 @@ Future<String> _translateText(String text, String targetLang) async {
     final request = await client.getUrl(uri);
     final response = await request.close();
     final raw = await response.transform(const Utf8Decoder()).join();
-    // Parse [[["translated","original"],...],...]
     final decoded = jsonDecode(raw) as List;
-    final parts = (decoded[0] as List)
+    return (decoded[0] as List)
         .map((item) => (item as List).first?.toString() ?? '')
         .join();
-    return parts;
-  } catch (_) {
-    return text;
-  }
+  } catch (_) { return text; }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Screen
+// ─────────────────────────────────────────────────────────────────────────────
 class AddEventScreen extends ConsumerStatefulWidget {
-  const AddEventScreen({Key? key}) : super(key: key);
+  const AddEventScreen({super.key});
 
   @override
   ConsumerState<AddEventScreen> createState() => _AddEventScreenState();
@@ -78,13 +151,16 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
   static const Color _border     = Color(0xFFCDE5D1);
   static const Color _errorRed   = Color(0xFFE53935);
 
-  final List<String> _stepLabels = ['Details', 'Schedule', 'Divisions', 'Venue', 'Media'];
+  // ── Global lang helper ────────────────────────────────────────────────────
+  _S get s => _S(ref.watch(appLangProvider));
+
+  List<String> get _stepLabels => [s.s1, s.s2, s.s3, s.s4, s.s5];
 
   // ── Controllers ───────────────────────────────────────────────────────────
   late TextEditingController _titleController;
   late TextEditingController _linkController;
   late TextEditingController _feeController;
-  late TextEditingController _maxParticipantsController;
+  late TextEditingController _maxController;
   late TextEditingController _contactController;
   late TextEditingController _descController;
   late TextEditingController _startTimeController;
@@ -96,10 +172,10 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
 
   // ── Map state ─────────────────────────────────────────────────────────────
   GoogleMapController? _mapController;
-  LatLng _mapCenter = const LatLng(35.6895, 139.6917);
+  LatLng  _mapCenter    = const LatLng(35.6895, 139.6917);
   LatLng? _markerPos;
-  bool   _searchLoading = false;
-  Timer? _searchDebounce;
+  bool    _searchLoading = false;
+  Timer?  _searchDebounce;
 
   // ── Form state ────────────────────────────────────────────────────────────
   String    _eventType      = 'Open Play';
@@ -110,45 +186,28 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
   bool _skillBeginner   = false;
   bool _skillAmateur    = false;
   bool _skillPro        = false;
-  bool _catMensSingles   = false;
-  bool _catWomensSingles = false;
-  bool _catMensDoubles   = false;
-  bool _catWomensDoubles = false;
-  bool _catMixedDoubles  = false;
-  bool _catJuniors       = false;
-  bool _catCollegiate    = false;
-  bool _catSeniors       = false;
+  bool _catMs = false, _catWs = false, _catMd = false, _catWd = false;
+  bool _catMx = false, _catJu = false, _catCo = false, _catSe = false;
 
   File? _imageFile;
   bool  _isLoading = false;
 
-  static const List<String> _eventTypes = [
-    'Professional Tournament',
-    'Global Tournament',
-    'Japan Tournament',
-    'Open Play',
-    'Trial Session',
-    'Local Event',
-    'Lessons/Clinics',
-    'Weekly Play / Recurring Play',
-  ];
-
   @override
   void initState() {
     super.initState();
-    _pageController            = PageController();
-    _titleController           = TextEditingController();
-    _linkController            = TextEditingController();
-    _feeController             = TextEditingController();
-    _maxParticipantsController = TextEditingController();
-    _contactController         = TextEditingController();
-    _descController            = TextEditingController();
-    _startTimeController       = TextEditingController();
-    _venueNameController       = TextEditingController();
-    _venueAddressController    = TextEditingController();
-    _venueMapLinkController    = TextEditingController();
-    _orgNameController         = TextEditingController();
-    _mapSearchController       = TextEditingController();
+    _pageController        = PageController();
+    _titleController       = TextEditingController();
+    _linkController        = TextEditingController();
+    _feeController         = TextEditingController();
+    _maxController         = TextEditingController();
+    _contactController     = TextEditingController();
+    _descController        = TextEditingController();
+    _startTimeController   = TextEditingController();
+    _venueNameController   = TextEditingController();
+    _venueAddressController= TextEditingController();
+    _venueMapLinkController= TextEditingController();
+    _orgNameController     = TextEditingController();
+    _mapSearchController   = TextEditingController();
   }
 
   @override
@@ -157,7 +216,7 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
     _mapController?.dispose();
     _searchDebounce?.cancel();
     for (final c in [
-      _titleController, _linkController, _feeController, _maxParticipantsController,
+      _titleController, _linkController, _feeController, _maxController,
       _contactController, _descController, _startTimeController,
       _venueNameController, _venueAddressController, _venueMapLinkController,
       _orgNameController, _mapSearchController,
@@ -165,7 +224,7 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
     super.dispose();
   }
 
-  // ── Map: tap → reverse geocode → fill fields ──────────────────────────────
+  // ── Map helpers ───────────────────────────────────────────────────────────
   Future<void> _onMapTap(LatLng pos) async {
     setState(() => _markerPos = pos);
     _mapController?.animateCamera(CameraUpdate.newLatLng(pos));
@@ -177,34 +236,21 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
         'https://www.google.com/maps/search/?api=1&query=${pos.latitude},${pos.longitude}';
     setState(() => _venueMapLinkController.text = mapsLink);
     try {
-      final placemarks =
-      await placemarkFromCoordinates(pos.latitude, pos.longitude);
+      final placemarks = await placemarkFromCoordinates(pos.latitude, pos.longitude);
       if (placemarks.isNotEmpty) {
         final p = placemarks.first;
         final parts = [p.street, p.locality, p.administrativeArea, p.country]
-            .where((s) => s != null && s.isNotEmpty)
-            .toList();
-
-        // A valid place name must:
-        //  • be non-empty
-        //  • not be purely numeric (e.g. "13", "1-13")
-        //  • not equal the street value (geocoder sometimes copies it)
-        //  • not be a leading numeric prefix of the street (house number)
-        final rawName  = p.name?.trim() ?? '';
-        final street   = p.street?.trim() ?? '';
+            .where((s) => s != null && s.isNotEmpty).toList();
+        final rawName   = p.name?.trim() ?? '';
+        final street    = p.street?.trim() ?? '';
         final isNumeric = RegExp(r'^[\d\-‐–—/\s]+$').hasMatch(rawName);
-        final isStreetPrefix = street.isNotEmpty &&
-            street.startsWith(rawName) &&
+        final isPrefix  = street.isNotEmpty && street.startsWith(rawName) &&
             rawName.length <= street.length;
-        final isValidName = rawName.isNotEmpty &&
-            !isNumeric &&
-            rawName != street &&
-            !isStreetPrefix;
-
+        final isValid   = rawName.isNotEmpty && !isNumeric &&
+            rawName != street && !isPrefix;
         setState(() {
           _venueAddressController.text = parts.join(', ');
-          // Only overwrite if field is empty AND we have a real place name
-          if (_venueNameController.text.isEmpty && isValidName) {
+          if (_venueNameController.text.isEmpty && isValid) {
             _venueNameController.text = rawName;
           }
         });
@@ -212,14 +258,11 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
     } catch (_) {}
   }
 
-  // ── Map: search bar ───────────────────────────────────────────────────────
   void _onSearchChanged(String query) {
     _searchDebounce?.cancel();
     if (query.trim().isEmpty) return;
-    _searchDebounce = Timer(
-      const Duration(milliseconds: 600),
-          () => _searchPlace(query),
-    );
+    _searchDebounce = Timer(const Duration(milliseconds: 600),
+            () => _searchPlace(query));
   }
 
   Future<void> _searchPlace(String query) async {
@@ -230,11 +273,7 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
       if (locations.isNotEmpty && mounted) {
         final loc = locations.first;
         final pos = LatLng(loc.latitude, loc.longitude);
-        setState(() {
-          _markerPos    = pos;
-          _mapCenter    = pos;
-          _searchLoading = false;
-        });
+        setState(() { _markerPos = pos; _mapCenter = pos; _searchLoading = false; });
         _mapController?.animateCamera(CameraUpdate.newLatLngZoom(pos, 15));
         await _fillFromLatLng(pos);
         _mapSearchController.clear();
@@ -247,11 +286,10 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
     }
   }
 
-  // ── Pick image ────────────────────────────────────────────────────────────
+  // ── Image ─────────────────────────────────────────────────────────────────
   Future<void> _pickImage() async {
-    final picker = ImagePicker();
-    final picked =
-    await picker.pickImage(source: ImageSource.gallery, imageQuality: 85);
+    final picked = await ImagePicker().pickImage(
+        source: ImageSource.gallery, imageQuality: 85);
     if (picked != null && mounted) setState(() => _imageFile = File(picked.path));
   }
 
@@ -263,12 +301,10 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
     final desc    = _descController.text.trim();
 
     if (title.isEmpty || _eventDate == null || address.isEmpty || contact.isEmpty) {
-      _showSnack('Please fill in Title, Date, Address, and Contact Email.',
-          isError: true);
+      _showSnack(s.errFields, isError: true);
       return;
     }
     setState(() => _isLoading = true);
-
     try {
       // ── Image upload ──────────────────────────────────────────────────────
       String imageUrl = '';
@@ -276,54 +312,38 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
         try {
           final storageRef = FirebaseStorage.instance.ref(
               'event_images/${DateTime.now().millisecondsSinceEpoch}_${_imageFile!.path.split('/').last}');
-          final uploadTask = storageRef.putFile(_imageFile!);
-          final snapshot = await uploadTask.timeout(
-            const Duration(seconds: 30),
-            onTimeout: () {
-              uploadTask.cancel();
-              throw TimeoutException('timeout');
-            },
-          );
-          imageUrl = await snapshot.ref.getDownloadURL();
+          final snap = await storageRef.putFile(_imageFile!)
+              .timeout(const Duration(seconds: 30));
+          imageUrl = await snap.ref.getDownloadURL();
         } catch (_) {
-          if (mounted) {
-            _showSnack('Could not upload image — saving without it.',
-                isError: false);
-          }
+          if (mounted) _showSnack(s.noImageNote);
         }
       }
 
-      // ── Bilingual title ───────────────────────────────────────────────────
-      String titleEn;
-      String titleJp;
+      // ── Bilingual title (mirrors web app translateText logic) ─────────────
+      String titleEn, titleJp;
       if (_isJapanese(title)) {
-        // Input is Japanese → keep as JP, translate to EN
         titleJp = title;
         titleEn = await _translateText(title, 'en');
       } else {
-        // Input is English (or other) → keep as EN, translate to JP
         titleEn = title;
         titleJp = await _translateText(title, 'ja');
       }
 
       // ── Bilingual description ─────────────────────────────────────────────
-      String descEn;
-      String descJp;
+      String descEn, descJp;
       if (_isJapanese(desc)) {
-        // Input is Japanese → keep as JP, translate to EN
         descJp = desc;
         descEn = await _translateText(desc, 'en');
       } else {
-        // Input is English (or other) → keep as EN, translate to JP
         descEn = desc;
         descJp = await _translateText(desc, 'ja');
       }
 
       // ── Timestamps ────────────────────────────────────────────────────────
       final eventDateTs    = Timestamp.fromDate(_eventDate!);
-      final eventDateEndTs =
-      _eventDateEnd != null ? Timestamp.fromDate(_eventDateEnd!) : null;
-
+      final eventDateEndTs = _eventDateEnd != null
+          ? Timestamp.fromDate(_eventDateEnd!) : null;
       Timestamp? startTs;
       final timeStr = _startTimeController.text.trim();
       if (timeStr.isNotEmpty) {
@@ -331,12 +351,12 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
         if (parts.length == 2) {
           startTs = Timestamp.fromDate(DateTime(
             _eventDate!.year, _eventDate!.month, _eventDate!.day,
-            int.tryParse(parts[0]) ?? 0,
-            int.tryParse(parts[1]) ?? 0,
+            int.tryParse(parts[0]) ?? 0, int.tryParse(parts[1]) ?? 0,
           ));
         }
       }
 
+      // ── Firestore document — matches web app field names exactly ──────────
       await FirebaseFirestore.instance.collection('events').add({
         // Review flags
         'event_pending_review': true,
@@ -344,49 +364,42 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
         'event_active':         false,
         'event_status':         false,
 
-        // Timestamps
         'event_added':   FieldValue.serverTimestamp(),
         'event_created': FieldValue.serverTimestamp(),
         'event_updated': FieldValue.serverTimestamp(),
 
-        // Title (bilingual)
+        // Bilingual title — same fields as web app
         'event_title':    titleEn,
         'event_title_en': titleEn,
         'event_title_jp': titleJp,
 
-        // Basic
         'event_type': _eventType,
         'event_link': _linkController.text.trim(),
 
-        // Schedule
         'event_date':       eventDateTs,
         'event_date_end':   eventDateEndTs,
         'event_time':       startTs,
         'event_start_date': startTs,
         'event_fee':        _feeController.text.trim(),
-        'event_limit':      _maxParticipantsController.text.trim().isNotEmpty
-            ? int.tryParse(_maxParticipantsController.text.trim())
-            : null,
+        'event_limit':      _maxController.text.trim().isNotEmpty
+            ? int.tryParse(_maxController.text.trim()) : null,
         'event_stripe_setup': _acceptStripe,
 
-        // Skill
         'event_skill_level_beginner': _skillBeginner,
         'event_skill_level_amateur':  _skillAmateur,
         'event_skill_level_pro':      _skillPro,
 
-        // Categories
-        'event_category_menssingle':    _catMensSingles,
-        'event_category_womenssingle':  _catWomensSingles,
-        'event_category_mensdoubles':   _catMensDoubles,
-        'event_category_womensdoubles': _catWomensDoubles,
-        'event_category_mixeddoubles':  _catMixedDoubles,
-        'event_category_juniors':       _catJuniors,
-        'event_category_collegiate':    _catCollegiate,
-        'event_category_seniors':       _catSeniors,
+        'event_category_menssingle':    _catMs,
+        'event_category_womenssingle':  _catWs,
+        'event_category_mensdoubles':   _catMd,
+        'event_category_womensdoubles': _catWd,
+        'event_category_mixeddoubles':  _catMx,
+        'event_category_juniors':       _catJu,
+        'event_category_collegiate':    _catCo,
+        'event_category_seniors':       _catSe,
 
         'event_touristfriendly': _touristFriendly,
 
-        // Venue
         'event_venue_name':    _venueNameController.text.trim(),
         'event_venue_address': address,
         'event_venue_link':    _venueMapLinkController.text.trim(),
@@ -394,22 +407,19 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
         'event_loc_id':        '',
         'event_org_id':        '',
 
-        // Contact & description (bilingual)
-        'event_contact':         contact,
-        'event_description_en':  descEn,
-        'event_description_jp':  descJp,
+        'event_contact':        contact,
+        // Bilingual description — same fields as web app
+        'event_description_en': descEn,
+        'event_description_jp': descJp,
 
-        // Media
         'event_pic':           imageUrl,
         'event_pic_thumbnail': imageUrl,
-
-        // Submitter — replace with FirebaseAuth.instance.currentUser?.uid ?? ''
-        'event_addedby': '',
-        'submittedBy':   '',
+        'event_addedby':       '',
+        'submittedBy':         '',
       });
 
       if (mounted) {
-        _showSnack('Event submitted for review!');
+        _showSnack(s.submitted);
         Navigator.pop(context);
       }
     } catch (e) {
@@ -433,6 +443,9 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
   // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
+    // Watch global lang — rebuilds labels whenever lang changes anywhere in app
+    ref.watch(appLangProvider);
+
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
@@ -454,13 +467,11 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
           onPressed: () => Navigator.pop(context),
         ),
         title: Column(children: [
-          const Text('Add an Event',
-              style: TextStyle(
-                  color: _textDark, fontWeight: FontWeight.w800,
-                  fontSize: 18, letterSpacing: -0.5)),
-          Text(_stepLabels[_currentPage],
-              style: const TextStyle(
-                  color: _accent, fontWeight: FontWeight.w500, fontSize: 12)),
+          Text(s.pageTitle, style: const TextStyle(
+              color: _textDark, fontWeight: FontWeight.w800,
+              fontSize: 18, letterSpacing: -0.5)),
+          Text(_stepLabels[_currentPage], style: const TextStyle(
+              color: _accent, fontWeight: FontWeight.w500, fontSize: 12)),
         ]),
         centerTitle: true,
       ),
@@ -485,27 +496,26 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
     );
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Step indicator
+  // ─────────────────────────────────────────────────────────────────────────
   Widget _buildStepIndicator() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       child: Row(
         children: List.generate(_stepLabels.length, (i) {
           final active = i <= _currentPage;
-          return Expanded(
-            child: Row(children: [
-              Expanded(
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 300),
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: active ? _accent : _border,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
+          return Expanded(child: Row(children: [
+            Expanded(child: AnimatedContainer(
+              duration: const Duration(milliseconds: 300),
+              height: 4,
+              decoration: BoxDecoration(
+                color: active ? _accent : _border,
+                borderRadius: BorderRadius.circular(2),
               ),
-              if (i < _stepLabels.length - 1) const SizedBox(width: 4),
-            ]),
-          );
+            )),
+            if (i < _stepLabels.length - 1) const SizedBox(width: 4),
+          ]));
         }),
       ),
     );
@@ -518,59 +528,41 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _buildPageHeader(
-            'Basic Details', 'Title, type & registration link', Icons.info_outline),
+        _buildPageHeader(s.s1, Icons.info_outline),
 
-        _buildTextField(
-          label: 'Event Name *',
-          controller: _titleController,
-          hint: 'e.g. UTR Pickleball Japan Tour 2026',
-        ),
+        _buildTextField(label: s.lblTitle, controller: _titleController,
+            hint: 'e.g. UTR Pickleball Japan Tour 2026'),
         const SizedBox(height: 6),
         Row(children: [
           Icon(Icons.translate_rounded, size: 13, color: _textLight),
           const SizedBox(width: 5),
-          const Text('Auto-translated to both EN & JP on submit',
-              style: TextStyle(color: _textLight, fontSize: 11)),
+          Text(s.translateHint, style: const TextStyle(color: _textLight, fontSize: 11)),
         ]),
         const SizedBox(height: 14),
 
-        _buildLabel('Event Type *'),
+        _buildLabel(s.lblType),
         const SizedBox(height: 6),
         _buildDropdown(
           value: _eventType,
-          items: _eventTypes,
+          items: s.typeKeys,
           onChanged: (v) => setState(() => _eventType = v!),
-          labelBuilder: (v) => v,
+          labelBuilder: s.localizeType,
         ),
         const SizedBox(height: 14),
 
-        _buildTextField(
-          label: 'Registration / Event Link',
-          controller: _linkController,
-          hint: 'https://',
-          keyboardType: TextInputType.url,
-        ),
+        _buildTextField(label: s.lblLink, controller: _linkController,
+            hint: 'https://', keyboardType: TextInputType.url),
         const SizedBox(height: 20),
 
         Container(
           padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-              color: _accentSoft, borderRadius: BorderRadius.circular(12)),
+          decoration: BoxDecoration(color: _accentSoft,
+              borderRadius: BorderRadius.circular(12)),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             const Icon(Icons.info_outline, size: 16, color: _primary),
             const SizedBox(width: 8),
-            const Expanded(
-              child: Text(
-                'Submitted events go through a review process and will be '
-                    'visible within 48 hours of approval.',
-                style: TextStyle(
-                    color: _primary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    height: 1.4),
-              ),
-            ),
+            Expanded(child: Text(s.reviewNote, style: const TextStyle(
+                color: _primary, fontSize: 12, fontWeight: FontWeight.w500, height: 1.4))),
           ]),
         ),
       ]),
@@ -584,48 +576,30 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _buildPageHeader(
-            'Schedule & Fees', 'Date, time and entry fee', Icons.calendar_today_outlined),
+        _buildPageHeader(s.s2, Icons.calendar_today_outlined),
 
-        _buildLabel('Date of Event *'),
+        _buildLabel(s.lblDate),
         const SizedBox(height: 6),
-        _buildDatePicker(
-          value: _eventDate,
-          hint: 'Select event date',
-          onPicked: (d) => setState(() => _eventDate = d),
-        ),
+        _buildDatePicker(value: _eventDate, hint: s.lblDate,
+            onPicked: (d) => setState(() => _eventDate = d)),
         const SizedBox(height: 14),
 
-        _buildLabel('End Date (Optional)'),
+        _buildLabel(s.lblDateEnd),
         const SizedBox(height: 6),
-        _buildDatePicker(
-          value: _eventDateEnd,
-          hint: 'Select end date',
-          onPicked: (d) => setState(() => _eventDateEnd = d),
-        ),
+        _buildDatePicker(value: _eventDateEnd, hint: s.lblDateEnd,
+            onPicked: (d) => setState(() => _eventDateEnd = d)),
         const SizedBox(height: 14),
 
-        _buildTextField(
-          label: 'Start Time (e.g. 09:00)',
-          controller: _startTimeController,
-          hint: '09:00',
-          keyboardType: TextInputType.datetime,
-        ),
+        _buildTextField(label: s.lblStart, controller: _startTimeController,
+            hint: '09:00', keyboardType: TextInputType.datetime),
         const SizedBox(height: 14),
 
         Row(children: [
-          Expanded(child: _buildTextField(
-            label: 'Fee (e.g. Free, ¥2000)',
-            controller: _feeController,
-            hint: '¥2,000',
-          )),
+          Expanded(child: _buildTextField(label: s.lblFee, controller: _feeController,
+              hint: '¥2,000')),
           const SizedBox(width: 12),
-          Expanded(child: _buildTextField(
-            label: 'Max Participants',
-            controller: _maxParticipantsController,
-            hint: 'e.g. 64',
-            keyboardType: TextInputType.number,
-          )),
+          Expanded(child: _buildTextField(label: s.lblMax, controller: _maxController,
+              hint: 'e.g. 64', keyboardType: TextInputType.number)),
         ]),
         const SizedBox(height: 20),
 
@@ -633,23 +607,19 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Accept payment through Pikuru App?',
-                  style: TextStyle(
-                      color: _textDark, fontSize: 13, fontWeight: FontWeight.w700)),
+              Text(s.lblStripe, style: const TextStyle(
+                  color: _textDark, fontSize: 13, fontWeight: FontWeight.w700)),
               const SizedBox(height: 12),
               Row(children: [
-                _buildRadioOption('Yes', true, _acceptStripe,
+                _buildRadioOption(s.yes, true, _acceptStripe,
                         (v) => setState(() => _acceptStripe = v)),
                 const SizedBox(width: 24),
-                _buildRadioOption('No', false, _acceptStripe,
+                _buildRadioOption(s.no, false, _acceptStripe,
                         (v) => setState(() => _acceptStripe = v)),
               ]),
               const SizedBox(height: 8),
-              const Text(
-                '*Stripe fees plus a ¥100 fee per participant will apply.',
-                style: TextStyle(
-                    color: _textLight, fontSize: 11, fontStyle: FontStyle.italic),
-              ),
+              Text(s.stripeSub, style: const TextStyle(
+                  color: _textLight, fontSize: 11, fontStyle: FontStyle.italic)),
             ]),
           ),
         ]),
@@ -664,34 +634,33 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _buildPageHeader(
-            'Divisions & Levels', 'Who can participate?', Icons.emoji_events_outlined),
+        _buildPageHeader(s.s3, Icons.emoji_events_outlined),
 
-        _buildLabel('Skill Level'),
+        _buildLabel(s.lblSkill),
         const SizedBox(height: 10),
         Row(children: [
-          Expanded(child: _buildSkillChip('Beginner', _skillBeginner,
+          Expanded(child: _buildSkillChip(s.skillBeginner, _skillBeginner,
                   (v) => setState(() => _skillBeginner = v))),
           const SizedBox(width: 10),
-          Expanded(child: _buildSkillChip('Amateur', _skillAmateur,
+          Expanded(child: _buildSkillChip(s.skillAmateur, _skillAmateur,
                   (v) => setState(() => _skillAmateur = v))),
           const SizedBox(width: 10),
-          Expanded(child: _buildSkillChip('Pro', _skillPro,
+          Expanded(child: _buildSkillChip(s.skillPro, _skillPro,
                   (v) => setState(() => _skillPro = v))),
         ]),
 
         const SizedBox(height: 24),
-        _buildLabel('Event Category'),
+        _buildLabel(s.lblCat),
         const SizedBox(height: 10),
         _buildSectionCard(children: [
-          _buildCategoryRow("Men's Singles",   _catMensSingles,   (v) => setState(() => _catMensSingles = v),   Icons.person_outline),
-          _buildCategoryRow("Women's Singles", _catWomensSingles, (v) => setState(() => _catWomensSingles = v), Icons.person_outline),
-          _buildCategoryRow("Men's Doubles",   _catMensDoubles,   (v) => setState(() => _catMensDoubles = v),   Icons.people_outline),
-          _buildCategoryRow("Women's Doubles", _catWomensDoubles, (v) => setState(() => _catWomensDoubles = v), Icons.people_outline),
-          _buildCategoryRow("Mixed Doubles",   _catMixedDoubles,  (v) => setState(() => _catMixedDoubles = v),  Icons.people_outline),
-          _buildCategoryRow("Juniors",         _catJuniors,       (v) => setState(() => _catJuniors = v),       Icons.child_care_outlined),
-          _buildCategoryRow("Collegiate",      _catCollegiate,    (v) => setState(() => _catCollegiate = v),    Icons.school_outlined),
-          _buildCategoryRow("Seniors",         _catSeniors,       (v) => setState(() => _catSeniors = v),       Icons.elderly_outlined),
+          _buildCategoryRow(s.catMs, _catMs, (v) => setState(() => _catMs = v), Icons.person_outline),
+          _buildCategoryRow(s.catWs, _catWs, (v) => setState(() => _catWs = v), Icons.person_outline),
+          _buildCategoryRow(s.catMd, _catMd, (v) => setState(() => _catMd = v), Icons.people_outline),
+          _buildCategoryRow(s.catWd, _catWd, (v) => setState(() => _catWd = v), Icons.people_outline),
+          _buildCategoryRow(s.catMx, _catMx, (v) => setState(() => _catMx = v), Icons.people_outline),
+          _buildCategoryRow(s.catJu, _catJu, (v) => setState(() => _catJu = v), Icons.child_care_outlined),
+          _buildCategoryRow(s.catCo, _catCo, (v) => setState(() => _catCo = v), Icons.school_outlined),
+          _buildCategoryRow(s.catSe, _catSe, (v) => setState(() => _catSe = v), Icons.elderly_outlined),
         ]),
 
         const SizedBox(height: 24),
@@ -699,20 +668,17 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('Tourist Friendly?',
-                  style: TextStyle(
-                      color: _textDark, fontSize: 13, fontWeight: FontWeight.w700)),
+              Text(s.lblTourist, style: const TextStyle(
+                  color: _textDark, fontSize: 13, fontWeight: FontWeight.w700)),
               const SizedBox(height: 4),
-              const Text(
-                'Welcoming to visitors and tourists, including non-Japanese speakers.',
-                style: TextStyle(color: _textLight, fontSize: 11, height: 1.4),
-              ),
+              Text(s.touristSub, style: const TextStyle(
+                  color: _textLight, fontSize: 11, height: 1.4)),
               const SizedBox(height: 12),
               Row(children: [
-                _buildRadioOption('Yes', true, _touristFriendly,
+                _buildRadioOption(s.yes, true, _touristFriendly,
                         (v) => setState(() => _touristFriendly = v)),
                 const SizedBox(width: 24),
-                _buildRadioOption('No', false, _touristFriendly,
+                _buildRadioOption(s.no, false, _touristFriendly,
                         (v) => setState(() => _touristFriendly = v)),
               ]),
             ]),
@@ -723,60 +689,44 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Page 4 – Venue  (Google Map + search bar)
+  // Page 4 – Venue
   // ─────────────────────────────────────────────────────────────────────────
   Widget _buildVenuePage() {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _buildPageHeader(
-            'Location & Org', 'Search or tap the map to set the venue',
-            Icons.place_outlined),
+        _buildPageHeader(s.s4, Icons.place_outlined),
 
-        // ── Embedded map with search overlay ──────────────────────────────
+        // ── Embedded map ──────────────────────────────────────────────────
         ClipRRect(
           borderRadius: BorderRadius.circular(16),
           child: Container(
             height: 300,
             decoration: BoxDecoration(
-              border: Border.all(color: _border),
-              borderRadius: BorderRadius.circular(16),
-            ),
+                border: Border.all(color: _border),
+                borderRadius: BorderRadius.circular(16)),
             child: Stack(children: [
-
-              // Google Map
               GoogleMap(
                 initialCameraPosition:
                 CameraPosition(target: _mapCenter, zoom: 13),
                 onMapCreated: (c) => _mapController = c,
                 onTap: _onMapTap,
-                markers: _markerPos != null
-                    ? {
-                  Marker(
-                    markerId: const MarkerId('venue'),
-                    position: _markerPos!,
-                    infoWindow: const InfoWindow(title: 'Event Venue'),
-                  ),
-                }
-                    : {},
+                markers: _markerPos != null ? {
+                  Marker(markerId: const MarkerId('venue'),
+                      position: _markerPos!,
+                      infoWindow: const InfoWindow(title: 'Event Venue')),
+                } : {},
                 myLocationButtonEnabled: false,
                 zoomControlsEnabled: true,
               ),
-
               // Search bar
               Positioned(
                 top: 12, left: 12, right: 12,
                 child: Container(
-                  decoration: BoxDecoration(
-                    color: _surface,
+                  decoration: BoxDecoration(color: _surface,
                     borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.14),
-                        blurRadius: 10,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.14),
+                        blurRadius: 10, offset: const Offset(0, 3))],
                   ),
                   child: TextField(
                     controller: _mapSearchController,
@@ -785,31 +735,22 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
                     textInputAction: TextInputAction.search,
                     style: const TextStyle(color: _textDark, fontSize: 14),
                     decoration: InputDecoration(
-                      hintText: 'Search venue or address…',
-                      hintStyle:
-                      const TextStyle(color: _textLight, fontSize: 13),
+                      hintText: s.searchVenue,
+                      hintStyle: const TextStyle(color: _textLight, fontSize: 13),
                       prefixIcon: _searchLoading
                           ? const Padding(
-                        padding: EdgeInsets.all(13),
-                        child: SizedBox(
-                          width: 16, height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor:
-                            AlwaysStoppedAnimation(_accent),
-                          ),
-                        ),
-                      )
-                          : const Icon(Icons.search_rounded,
-                          color: _textLight, size: 20),
+                          padding: EdgeInsets.all(13),
+                          child: SizedBox(width: 16, height: 16,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation(_accent))))
+                          : const Icon(Icons.search_rounded, color: _textLight, size: 20),
                       suffixIcon: ValueListenableBuilder<TextEditingValue>(
                         valueListenable: _mapSearchController,
                         builder: (_, v, __) => v.text.isNotEmpty
-                            ? IconButton(
-                          icon: const Icon(Icons.clear,
-                              color: _textLight, size: 18),
-                          onPressed: () => _mapSearchController.clear(),
-                        )
+                            ? IconButton(icon: const Icon(Icons.clear,
+                            color: _textLight, size: 18),
+                            onPressed: () => _mapSearchController.clear())
                             : const SizedBox.shrink(),
                       ),
                       border: InputBorder.none,
@@ -819,72 +760,40 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
                   ),
                 ),
               ),
-
-              // "Tap to drop pin" hint
               if (_markerPos == null)
-                Positioned(
-                  bottom: 12, left: 0, right: 0,
-                  child: Center(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 7),
-                      decoration: BoxDecoration(
+                Positioned(bottom: 12, left: 0, right: 0,
+                  child: Center(child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                    decoration: BoxDecoration(
                         color: _textDark.withOpacity(0.72),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Text(
-                        'Tap map to drop a pin',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ),
+                        borderRadius: BorderRadius.circular(20)),
+                    child: Text(s.tapToDrop, style: const TextStyle(
+                        color: Colors.white, fontSize: 12,
+                        fontWeight: FontWeight.w600)),
+                  )),
                 ),
             ]),
           ),
         ),
 
         const SizedBox(height: 16),
-
-        // ── Auto-filled fields (editable) ──────────────────────────────────
-        _buildTextField(
-          label: 'Event Address *',
-          controller: _venueAddressController,
-          hint: 'Auto-filled from map or type manually',
-        ),
+        _buildTextField(label: s.lblAddress, controller: _venueAddressController,
+            hint: 'Auto-filled from map or type manually'),
         const SizedBox(height: 14),
-
-        _buildTextField(
-          label: 'Google Maps Link',
-          controller: _venueMapLinkController,
-          hint: 'Auto-filled from map or paste link',
-          keyboardType: TextInputType.url,
-        ),
+        _buildTextField(label: s.lblMapLink, controller: _venueMapLinkController,
+            hint: 'Auto-filled from map or paste link',
+            keyboardType: TextInputType.url),
         const SizedBox(height: 14),
-
         Row(children: [
-          Expanded(child: _buildTextField(
-            label: 'Venue Name / Hosted By',
-            controller: _venueNameController,
-            hint: 'e.g. Shibuya Sports Center',
-          )),
+          Expanded(child: _buildTextField(label: s.lblVenue,
+              controller: _venueNameController, hint: 'e.g. Shibuya Sports Center')),
           const SizedBox(width: 12),
-          Expanded(child: _buildTextField(
-            label: 'Organization Name',
-            controller: _orgNameController,
-            hint: 'e.g. Tokyo Pickleball Assoc.',
-          )),
+          Expanded(child: _buildTextField(label: s.lblOrgName,
+              controller: _orgNameController, hint: 'e.g. Tokyo Pickleball Assoc.')),
         ]),
         const SizedBox(height: 14),
-
-        _buildTextField(
-          label: 'Contact Email *',
-          controller: _contactController,
-          hint: 'email@example.com',
-          keyboardType: TextInputType.emailAddress,
-        ),
+        _buildTextField(label: s.lblContact, controller: _contactController,
+            hint: 'email@example.com', keyboardType: TextInputType.emailAddress),
       ]),
     );
   }
@@ -896,30 +805,22 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        _buildPageHeader(
-            'Description & Media', 'Tell players about this event',
-            Icons.image_outlined),
+        _buildPageHeader(s.s5, Icons.image_outlined),
 
-        _buildTextField(
-          label: 'Event Description *',
-          controller: _descController,
-          hint: 'Talk about the event, rules, schedule, etc.',
-          maxLines: 6,
-        ),
+        _buildTextField(label: s.lblDesc, controller: _descController,
+            hint: s.plDesc, maxLines: 6),
         const SizedBox(height: 6),
-        // ── Translation hint, consistent with title field ──────────────────
         Row(children: [
           Icon(Icons.translate_rounded, size: 13, color: _textLight),
           const SizedBox(width: 5),
-          const Text('Auto-translated to both EN & JP on submit',
-              style: TextStyle(color: _textLight, fontSize: 11)),
+          Text(s.translateHint,
+              style: const TextStyle(color: _textLight, fontSize: 11)),
         ]),
         const SizedBox(height: 20),
 
-        _buildLabel('Event Flyer / Cover Image'),
+        _buildLabel(s.lblCover),
         const SizedBox(height: 4),
-        const Text("We'll use this as the event thumbnail.",
-            style: TextStyle(color: _textLight, fontSize: 11)),
+        Text(s.imgSub, style: const TextStyle(color: _textLight, fontSize: 11)),
         const SizedBox(height: 8),
         GestureDetector(
           onTap: _pickImage,
@@ -930,31 +831,27 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
               color: _imageFile != null ? Colors.transparent : _surface,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: _imageFile != null ? _accent : _border,
-                width: _imageFile != null ? 1.5 : 1,
-              ),
+                  color: _imageFile != null ? _accent : _border,
+                  width: _imageFile != null ? 1.5 : 1),
             ),
             clipBehavior: Clip.hardEdge,
             child: _imageFile != null
                 ? Stack(fit: StackFit.expand, children: [
               Image.file(_imageFile!, fit: BoxFit.cover),
-              Positioned(
-                bottom: 8, right: 8,
+              Positioned(bottom: 8, right: 8,
                 child: Container(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
-                    color: _textDark.withOpacity(0.75),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.edit_rounded, size: 13, color: Colors.white),
-                    SizedBox(width: 5),
-                    Text('Change',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600)),
+                      color: _textDark.withOpacity(0.75),
+                      borderRadius: BorderRadius.circular(20)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.edit_rounded, size: 13,
+                        color: Colors.white),
+                    const SizedBox(width: 5),
+                    const Text('Change', style: TextStyle(
+                        color: Colors.white, fontSize: 12,
+                        fontWeight: FontWeight.w600)),
                   ]),
                 ),
               ),
@@ -969,14 +866,12 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
                     color: _primary, size: 24),
               ),
               const SizedBox(height: 8),
-              const Text('Select Event Image',
-                  style: TextStyle(
-                      color: _textMid,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600)),
+              Text(s.selImg, style: const TextStyle(
+                  color: _textMid, fontSize: 13,
+                  fontWeight: FontWeight.w600)),
               const SizedBox(height: 2),
-              const Text('Used as thumbnail automatically',
-                  style: TextStyle(color: _textLight, fontSize: 11)),
+              Text(s.imgSub, style: const TextStyle(
+                  color: _textLight, fontSize: 11)),
             ]),
           ),
         ),
@@ -985,44 +880,35 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Bottom Nav
+  // Bottom nav
   // ─────────────────────────────────────────────────────────────────────────
   Widget _buildBottomNav() {
     final isLast = _currentPage == _stepLabels.length - 1;
     return Container(
       color: _surface,
       padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).padding.bottom + 16,
-        left: 20, right: 20, top: 16,
-      ),
+          bottom: MediaQuery.of(context).padding.bottom + 16,
+          left: 20, right: 20, top: 16),
       child: Row(children: [
         if (_currentPage > 0) ...[
-          Expanded(
-            child: OutlinedButton(
-              onPressed: () => _pageController.previousPage(
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOut),
-              style: OutlinedButton.styleFrom(
+          Expanded(child: OutlinedButton(
+            onPressed: () => _pageController.previousPage(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut),
+            style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: _border, width: 1.5),
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14)),
-              ),
-              child: const Text('Back',
-                  style: TextStyle(
-                      color: _textMid,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15)),
-            ),
-          ),
+                    borderRadius: BorderRadius.circular(14))),
+            child: Text(s.back, style: const TextStyle(
+                color: _textMid, fontWeight: FontWeight.w600, fontSize: 15)),
+          )),
           const SizedBox(width: 12),
         ],
         Expanded(
           flex: 2,
           child: ElevatedButton(
-            onPressed: _isLoading
-                ? null
-                : () {
+            onPressed: _isLoading ? null : () {
               if (isLast) {
                 _submitForm();
               } else {
@@ -1032,26 +918,19 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
               }
             },
             style: ElevatedButton.styleFrom(
-              backgroundColor: _primary,
-              disabledBackgroundColor: _accent.withOpacity(0.4),
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14)),
-            ),
+                backgroundColor: _primary,
+                disabledBackgroundColor: _accent.withOpacity(0.4),
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14))),
             child: _isLoading
-                ? const SizedBox(
-                height: 20, width: 20,
-                child: CircularProgressIndicator(
-                    strokeWidth: 2,
+                ? const SizedBox(height: 20, width: 20,
+                child: CircularProgressIndicator(strokeWidth: 2,
                     valueColor: AlwaysStoppedAnimation(Colors.white)))
-                : Text(
-              isLast ? 'Create Event' : 'Continue',
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 15),
-            ),
+                : Text(isLast ? s.create : s.cont,
+                style: const TextStyle(color: Colors.white,
+                    fontWeight: FontWeight.w700, fontSize: 15)),
           ),
         ),
       ]),
@@ -1061,41 +940,22 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
   // ─────────────────────────────────────────────────────────────────────────
   // Shared widget helpers
   // ─────────────────────────────────────────────────────────────────────────
-
-  Widget _buildPageHeader(String title, String subtitle, IconData icon) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 24),
-      child: Row(children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-              color: _accentSoft, borderRadius: BorderRadius.circular(14)),
-          child: Icon(icon, color: _primary, size: 22),
-        ),
-        const SizedBox(width: 14),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(title,
-              style: const TextStyle(
-                  color: _textDark,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 18,
-                  letterSpacing: -0.3)),
-          const SizedBox(height: 2),
-          Text(subtitle,
-              style: const TextStyle(color: _textLight, fontSize: 12)),
-        ])),
-      ]),
-    );
-  }
-
-  Widget _buildLabel(String text) => Text(
-    text,
-    style: const TextStyle(
-        color: _textMid,
-        fontSize: 13,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 0.2),
+  Widget _buildPageHeader(String title, IconData icon) => Padding(
+    padding: const EdgeInsets.only(bottom: 24),
+    child: Row(children: [
+      Container(padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(color: _accentSoft,
+              borderRadius: BorderRadius.circular(14)),
+          child: Icon(icon, color: _primary, size: 22)),
+      const SizedBox(width: 14),
+      Text(title, style: const TextStyle(color: _textDark,
+          fontWeight: FontWeight.w800, fontSize: 18, letterSpacing: -0.3)),
+    ]),
   );
+
+  Widget _buildLabel(String text) => Text(text, style: const TextStyle(
+      color: _textMid, fontSize: 13, fontWeight: FontWeight.w700,
+      letterSpacing: 0.2));
 
   Widget _buildTextField({
     required String label,
@@ -1103,85 +963,71 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
     required String hint,
     TextInputType keyboardType = TextInputType.text,
     int maxLines = 1,
-  }) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _buildLabel(label),
-      const SizedBox(height: 6),
-      TextField(
-        controller: controller,
-        keyboardType: keyboardType,
-        maxLines: maxLines,
-        style: const TextStyle(
-            color: _textDark, fontSize: 14, fontWeight: FontWeight.w500),
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: const TextStyle(color: _textLight, fontSize: 14),
-          filled: true,
-          fillColor: _surface,
-          border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: _border, width: 1)),
-          enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: _border, width: 1)),
-          focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: _accent, width: 1.5)),
-          contentPadding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-        ),
+  }) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+    _buildLabel(label),
+    const SizedBox(height: 6),
+    TextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      maxLines: maxLines,
+      style: const TextStyle(color: _textDark, fontSize: 14,
+          fontWeight: FontWeight.w500),
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: const TextStyle(color: _textLight, fontSize: 14),
+        filled: true, fillColor: _surface,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: _border, width: 1)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: _border, width: 1)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: _accent, width: 1.5)),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
       ),
-    ]);
-  }
+    ),
+  ]);
 
   Widget _buildDatePicker({
     required DateTime? value,
     required String hint,
     required ValueChanged<DateTime> onPicked,
-  }) {
-    return GestureDetector(
-      onTap: () async {
-        final picked = await showDatePicker(
-          context: context,
-          initialDate: value ?? DateTime.now().add(const Duration(days: 7)),
-          firstDate: DateTime.now(),
-          lastDate: DateTime.now().add(const Duration(days: 365 * 3)),
-          builder: (ctx, child) => Theme(
-            data: Theme.of(ctx).copyWith(
-              colorScheme: const ColorScheme.light(
-                  primary: _primary, onSurface: _textDark),
-            ),
-            child: child!,
-          ),
-        );
-        if (picked != null) onPicked(picked);
-      },
-      child: Container(
-        padding:
-        const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        decoration: BoxDecoration(
-          color: _surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: value != null ? _accent : _border),
+  }) => GestureDetector(
+    onTap: () async {
+      final picked = await showDatePicker(
+        context: context,
+        initialDate: value ?? DateTime.now().add(const Duration(days: 7)),
+        firstDate: DateTime.now(),
+        lastDate: DateTime.now().add(const Duration(days: 365 * 3)),
+        builder: (ctx, child) => Theme(
+          data: Theme.of(ctx).copyWith(colorScheme: const ColorScheme.light(
+              primary: _primary, onSurface: _textDark)),
+          child: child!,
         ),
-        child: Row(children: [
-          Icon(Icons.calendar_month_rounded,
-              color: value != null ? _primary : _textLight, size: 18),
-          const SizedBox(width: 10),
-          Text(
-            value != null
-                ? '${value.year}/${value.month.toString().padLeft(2, '0')}/${value.day.toString().padLeft(2, '0')}'
-                : hint,
-            style: TextStyle(
-              color: value != null ? _textDark : _textLight,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ]),
+      );
+      if (picked != null) onPicked(picked);
+    },
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: _surface, borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: value != null ? _accent : _border),
       ),
-    );
-  }
+      child: Row(children: [
+        Icon(Icons.calendar_month_rounded,
+            color: value != null ? _primary : _textLight, size: 18),
+        const SizedBox(width: 10),
+        Text(
+          value != null
+              ? s.isJa
+              ? '${value.year}年${value.month}月${value.day}日'
+              : '${value.year}/${value.month.toString().padLeft(2,'0')}/${value.day.toString().padLeft(2,'0')}'
+              : hint,
+          style: TextStyle(color: value != null ? _textDark : _textLight,
+              fontSize: 14, fontWeight: FontWeight.w500),
+        ),
+      ]),
+    ),
+  );
 
   Widget _buildRadioOption<T>(
       String label, T optionValue, T groupValue, ValueChanged<T> onChanged) {
@@ -1192,29 +1038,17 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
         AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           width: 20, height: 20,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: Border.all(
-                color: selected ? _primary : _border, width: 2),
-          ),
-          child: selected
-              ? Center(
-            child: Container(
-              width: 10, height: 10,
-              decoration: const BoxDecoration(
-                  color: _primary, shape: BoxShape.circle),
-            ),
-          )
-              : null,
+          decoration: BoxDecoration(shape: BoxShape.circle,
+              border: Border.all(
+                  color: selected ? _primary : _border, width: 2)),
+          child: selected ? Center(child: Container(width: 10, height: 10,
+              decoration: const BoxDecoration(color: _primary,
+                  shape: BoxShape.circle))) : null,
         ),
         const SizedBox(width: 8),
-        Text(label,
-            style: TextStyle(
-              color: selected ? _textDark : _textMid,
-              fontSize: 14,
-              fontWeight:
-              selected ? FontWeight.w600 : FontWeight.w500,
-            )),
+        Text(label, style: TextStyle(
+            color: selected ? _textDark : _textMid, fontSize: 14,
+            fontWeight: selected ? FontWeight.w600 : FontWeight.w500)),
       ]),
     );
   }
@@ -1224,135 +1058,91 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
     required List<String> items,
     required ValueChanged<String?> onChanged,
     required String Function(String) labelBuilder,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: _surface,
+  }) => Container(
+    decoration: BoxDecoration(color: _surface,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _border),
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: value,
-          isExpanded: true,
-          icon: const Icon(Icons.keyboard_arrow_down_rounded,
-              color: _textLight, size: 20),
-          dropdownColor: _surface,
-          style: const TextStyle(
-              color: _textDark,
-              fontSize: 14,
-              fontWeight: FontWeight.w500),
-          items: items
-              .map((item) => DropdownMenuItem(
-            value: item,
+        border: Border.all(color: _border)),
+    padding: const EdgeInsets.symmetric(horizontal: 16),
+    child: DropdownButtonHideUnderline(
+      child: DropdownButton<String>(
+        value: value, isExpanded: true,
+        icon: const Icon(Icons.keyboard_arrow_down_rounded,
+            color: _textLight, size: 20),
+        dropdownColor: _surface,
+        style: const TextStyle(color: _textDark, fontSize: 14,
+            fontWeight: FontWeight.w500),
+        items: items.map((item) => DropdownMenuItem(value: item,
             child: Text(labelBuilder(item),
-                style: const TextStyle(
-                    color: _textDark, fontSize: 14)),
-          ))
-              .toList(),
-          onChanged: onChanged,
-        ),
+                style: const TextStyle(color: _textDark, fontSize: 14)))).toList(),
+        onChanged: onChanged,
       ),
-    );
-  }
+    ),
+  );
 
-  Widget _buildSkillChip(
-      String label, bool selected, ValueChanged<bool> onChanged) {
-    return GestureDetector(
-      onTap: () => onChanged(!selected),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: selected ? _primary : _surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-              color: selected ? _primary : _border,
-              width: selected ? 1.5 : 1),
-          boxShadow: selected
-              ? [BoxShadow(
-              color: _primary.withOpacity(0.25),
-              blurRadius: 8,
-              offset: const Offset(0, 3))]
-              : [BoxShadow(
-              color: _primary.withOpacity(0.04),
-              blurRadius: 4,
-              offset: const Offset(0, 1))],
-        ),
-        child: Text(
-          label,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: selected ? Colors.white : _textMid,
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
+  Widget _buildSkillChip(String label, bool selected, ValueChanged<bool> onChanged) =>
+      GestureDetector(
+        onTap: () => onChanged(!selected),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: selected ? _primary : _surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: selected ? _primary : _border,
+                width: selected ? 1.5 : 1),
+            boxShadow: selected
+                ? [BoxShadow(color: _primary.withOpacity(0.25),
+                blurRadius: 8, offset: const Offset(0, 3))]
+                : [BoxShadow(color: _primary.withOpacity(0.04),
+                blurRadius: 4, offset: const Offset(0, 1))],
           ),
+          child: Text(label, textAlign: TextAlign.center,
+              style: TextStyle(color: selected ? Colors.white : _textMid,
+                  fontSize: 13, fontWeight: FontWeight.w700)),
         ),
-      ),
-    );
-  }
+      );
 
-  Widget _buildSectionCard({required List<Widget> children}) {
-    return Container(
-      decoration: BoxDecoration(
-        color: _surface,
+  Widget _buildSectionCard({required List<Widget> children}) => Container(
+    decoration: BoxDecoration(color: _surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _border),
-        boxShadow: [BoxShadow(
-            color: _primary.withOpacity(0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2))],
-      ),
-      child: Column(
-        children: children.asMap().entries.map((e) {
-          final isLast = e.key == children.length - 1;
-          return Column(mainAxisSize: MainAxisSize.min, children: [
-            e.value,
-            if (!isLast)
-              const Divider(
-                  height: 1, color: _border, indent: 16, endIndent: 16),
-          ]);
-        }).toList(),
-      ),
-    );
-  }
+        boxShadow: [BoxShadow(color: _primary.withOpacity(0.04),
+            blurRadius: 8, offset: const Offset(0, 2))]),
+    child: Column(
+      children: children.asMap().entries.map((e) {
+        final isLast = e.key == children.length - 1;
+        return Column(mainAxisSize: MainAxisSize.min, children: [
+          e.value,
+          if (!isLast) const Divider(height: 1, color: _border,
+              indent: 16, endIndent: 16),
+        ]);
+      }).toList(),
+    ),
+  );
 
-  Widget _buildCategoryRow(
-      String label, bool value, ValueChanged<bool> onChanged, IconData icon) {
-    return InkWell(
-      onTap: () => onChanged(!value),
-      borderRadius: BorderRadius.circular(16),
-      child: Padding(
-        padding:
-        const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-        child: Row(children: [
-          Icon(icon,
-              size: 18, color: value ? _primary : _textLight),
-          const SizedBox(width: 12),
-          Expanded(
-              child: Text(label,
-                  style: TextStyle(
-                    color: value ? _textDark : _textMid,
-                    fontSize: 14,
-                    fontWeight:
-                    value ? FontWeight.w600 : FontWeight.w500,
-                  ))),
-          AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            width: 22, height: 22,
-            decoration: BoxDecoration(
-              color: value ? _primary : Colors.transparent,
-              border: Border.all(
-                  color: value ? _primary : _border, width: 1.5),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: value
-                ? const Icon(Icons.check, size: 14, color: Colors.white)
-                : null,
+  Widget _buildCategoryRow(String label, bool value,
+      ValueChanged<bool> onChanged, IconData icon) => InkWell(
+    onTap: () => onChanged(!value),
+    borderRadius: BorderRadius.circular(16),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+      child: Row(children: [
+        Icon(icon, size: 18, color: value ? _primary : _textLight),
+        const SizedBox(width: 12),
+        Expanded(child: Text(label, style: TextStyle(
+            color: value ? _textDark : _textMid, fontSize: 14,
+            fontWeight: value ? FontWeight.w600 : FontWeight.w500))),
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          width: 22, height: 22,
+          decoration: BoxDecoration(
+            color: value ? _primary : Colors.transparent,
+            border: Border.all(color: value ? _primary : _border, width: 1.5),
+            borderRadius: BorderRadius.circular(6),
           ),
-        ]),
-      ),
-    );
-  }
+          child: value ? const Icon(Icons.check, size: 14, color: Colors.white) : null,
+        ),
+      ]),
+    ),
+  );
 }
