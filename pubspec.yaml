@@ -52,6 +52,8 @@ dependencies:
   geocoding: ^3.0.0
   geolocator: ^11.0.0
   firebase_storage: ^13.0.6
+  sign_in_with_apple: ^6.1.4
+  crypto: ^3.0.3
 
 dev_dependencies:
   flutter_test:
