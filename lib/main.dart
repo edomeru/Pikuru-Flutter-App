@@ -62,6 +62,8 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Pikuru',
       debugShowCheckedModeBanner: false,
+      // ── Required for FCM tap navigation to work ───────────────────────────
+      navigatorKey: NotificationService.navigatorKey,
       theme: ThemeData(
         fontFamily: 'Rubik',
         colorScheme: ColorScheme.fromSeed(
