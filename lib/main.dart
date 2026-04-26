@@ -7,12 +7,31 @@ import 'package:pikuru/loginpage.dart';
 import 'package:pikuru/main_navigation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:pikuru/services/notification_service.dart';
+
+// Must be top-level — registered before runApp
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+  // Register background handler
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+  // Init notification service
+  await NotificationService.instance.init();
+
+  // TEMPORARY - just to get your token for testing
+  final token = await FirebaseMessaging.instance.getToken();
+  debugPrint('════════════════════════════════');
+  debugPrint('FCM TOKEN: $token');
+  debugPrint('════════════════════════════════');
 
   // ── iOS Keychain fix ─────────────────────────────────────────────
   // iOS keeps Firebase Auth session in Keychain even after app deletion.

@@ -13,6 +13,9 @@
        <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
        <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
        <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+       <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+       <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+       <uses-permission android:name="android.permission.VIBRATE"/>
 
     <application
         android:label="pikuru"
@@ -60,6 +63,20 @@
         <meta-data
             android:name="com.google.android.geo.API_KEY"
             android:value="AIzaSyA-fyd6Kwg5R2H4ea-PFYI5ulsV7XTTmtQ"/>
+        <!-- FCM default channel -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="pikuru_notifications"/>
+
+        <!-- Notification icon (create this drawable) -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@drawable/pikuru_full_logo"/>
+
+        <!-- Notification color -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/notification_color"/>
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

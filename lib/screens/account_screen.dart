@@ -9,6 +9,7 @@ import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:pikuru/screens/resources_screen.dart';
 import 'package:pikuru/screens/edit_profile_screen.dart';
 import 'package:pikuru/screens/settings_screen.dart';
+import 'package:pikuru/services/notification_service.dart'; // ← add this import
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Localization
@@ -507,6 +508,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen>
         await FirebaseFirestore.instance.terminate();
         await FirebaseFirestore.instance.clearPersistence();
       } catch (_) {}
+      await NotificationService.instance.removeToken();
       await FirebaseAuth.instance.signOut();
       if (context.mounted) {
         Navigator.pushAndRemoveUntil(

@@ -29,6 +29,11 @@ const _L = {
     'handle':             'Handle / Short Name *',
     'handleHint':         'e.g. tokyo_pickleball',
     'groupType':          'Group Type',
+    'visibility':         'Active and Publicly Listed',
+    'visPub':             'Public',
+    'visPubDesc':         'Searchable and open for anyone to join',
+    'visPriv':            'Private',
+    'visPrivDesc':        'Accessible via a private link that you can share',
     'description':        'Description',
     'descHint':           'Tell people about this group...',
     'translateNote':      "You can enter Name, Description, City and Prefecture in English or Japanese — we'll auto-translate the other language for you.",
@@ -81,6 +86,7 @@ const _L = {
     'reviewName':         'Name',
     'reviewHandle':       'Handle',
     'reviewType':         'Type',
+    'reviewVisibility':   'Visibility',
     'reviewDesc':         'Description',
     'reviewLoc':          'Location',
     'reviewCity':         'City',
@@ -124,6 +130,11 @@ const _L = {
     'handle':             'ハンドル名 *',
     'handleHint':         '例: tokyo_pickleball',
     'groupType':          'グループタイプ',
+    'visibility':         '公開設定',
+    'visPub':             '公開',
+    'visPubDesc':         '検索可能で、誰でも参加できます',
+    'visPriv':            '非公開',
+    'visPrivDesc':        '共有可能なプライベートリンク経由でのみアクセス可能',
     'description':        '説明',
     'descHint':           'このグループについて教えてください...',
     'translateNote':      '名前・説明・市区町村・都道府県は英語または日本語で入力できます。もう一方の言語は自動翻訳されます。',
@@ -176,6 +187,7 @@ const _L = {
     'reviewName':         '名前',
     'reviewHandle':       'ハンドル名',
     'reviewType':         'タイプ',
+    'reviewVisibility':   '公開設定',
     'reviewDesc':         '説明',
     'reviewLoc':          '場所',
     'reviewCity':         '市区町村',
@@ -252,6 +264,9 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
     'Nonprofit / Federation',
     'Local Group',
   ];
+
+  // ── Visibility ────────────────────────────────────────────────────────────
+  bool _isPublic = true;
 
   bool _mon = false, _tue = false, _wed = false, _thu = false;
   bool _fri = false, _sat = false, _sun = false;
@@ -508,7 +523,7 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
         'org_name_jp':         nameMap['jp'],
         'org_prefecture':      prefMap['en'],
         'org_prefecture_jp':   prefMap['jp'],
-        'org_public':          false,
+        'org_public':          _isPublic,  // ← uses the toggle value
         'org_skill_advance':   _skillAdvance,
         'org_skill_beginner':  _skillBeginner,
         'org_skill_intermediate': _skillIntermediate,
@@ -543,7 +558,6 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
   // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    // Watch the global provider — every string re-resolves on language change
     final lang = ref.watch(appLangProvider);
     final t    = (String key) => _t(lang, key);
     final isJp = lang == kLangJa;
@@ -589,7 +603,6 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
                   color: _accent, fontWeight: FontWeight.w500, fontSize: 12)),
         ]),
         centerTitle: true,
-        // EN/JP toggle now drives the global provider
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 12),
@@ -597,7 +610,6 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
               onTap: () async {
                 final newLang = isJp ? kLangEn : kLangJa;
                 await ref.read(appLangProvider.notifier).setLang(newLang);
-                // Pre-fetch JP translations when navigating to Review
                 if (newLang == kLangJa &&
                     _currentPage == 5 &&
                     _nameJp.isEmpty) {
@@ -710,6 +722,13 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
         const SizedBox(height: 8),
         _buildSegmentedType(),
         const SizedBox(height: 20),
+
+        // ── Visibility (Public / Private) ─────────────────────────────────
+        _buildLabel(t('visibility')),
+        const SizedBox(height: 10),
+        _buildVisibilitySelector(lang),
+        const SizedBox(height: 20),
+
         _buildTextField(
             label: t('description'),
             controller: _descController,
@@ -738,6 +757,160 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
         ),
       ]),
     );
+  }
+
+  // ── Visibility Selector ───────────────────────────────────────────────────
+  Widget _buildVisibilitySelector(String lang) {
+    final t = (String key) => _t(lang, key);
+    return Row(children: [
+      // Public option
+      Expanded(
+        child: GestureDetector(
+          onTap: () => setState(() => _isPublic = true),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: _isPublic ? _primary.withOpacity(0.08) : _surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: _isPublic ? _primary : _border,
+                width: _isPublic ? 1.5 : 1,
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: 18,
+                  height: 18,
+                  margin: const EdgeInsets.only(top: 1),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _isPublic ? _primary : Colors.transparent,
+                    border: Border.all(
+                      color: _isPublic ? _primary : _border,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: _isPublic
+                      ? Center(
+                    child: Container(
+                      width: 8, height: 8,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white,
+                      ),
+                    ),
+                  )
+                      : null,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        t('visPub'),
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: _isPublic ? _primary : _textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        t('visPubDesc'),
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: _textLight,
+                          height: 1.3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      const SizedBox(width: 10),
+      // Private option
+      Expanded(
+        child: GestureDetector(
+          onTap: () => setState(() => _isPublic = false),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: !_isPublic ? _primary.withOpacity(0.08) : _surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: !_isPublic ? _primary : _border,
+                width: !_isPublic ? 1.5 : 1,
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: 18,
+                  height: 18,
+                  margin: const EdgeInsets.only(top: 1),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: !_isPublic ? _primary : Colors.transparent,
+                    border: Border.all(
+                      color: !_isPublic ? _primary : _border,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: !_isPublic
+                      ? Center(
+                    child: Container(
+                      width: 8, height: 8,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white,
+                      ),
+                    ),
+                  )
+                      : null,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        t('visPriv'),
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: !_isPublic ? _primary : _textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        t('visPrivDesc'),
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: _textLight,
+                          height: 1.3,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ]);
   }
 
   Widget _buildSegmentedType() {
@@ -1110,10 +1283,11 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
           ),
 
         _buildReviewSection(t('reviewBasics'), Icons.groups_outlined, [
-          _buildReviewRow(t('reviewName'),   reviewName),
-          _buildReviewRow(t('reviewHandle'), _handleController.text.trim()),
-          _buildReviewRow(t('reviewType'),   _orgType),
-          _buildReviewRow(t('reviewDesc'),   reviewDesc),
+          _buildReviewRow(t('reviewName'),       reviewName),
+          _buildReviewRow(t('reviewHandle'),     _handleController.text.trim()),
+          _buildReviewRow(t('reviewType'),       _orgType),
+          _buildReviewRow(t('reviewVisibility'), _isPublic ? t('visPub') : t('visPriv')),
+          _buildReviewRow(t('reviewDesc'),       reviewDesc),
         ]),
         const SizedBox(height: 14),
         _buildReviewSection(t('reviewLocation'), Icons.place_outlined, [
@@ -1276,7 +1450,6 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
                 _pageController.nextPage(
                     duration: const Duration(milliseconds: 300),
                     curve: Curves.easeInOut);
-                // Pre-fetch JP translations when arriving at Review
                 if (_currentPage == 4 &&
                     lang == kLangJa &&
                     _nameJp.isEmpty) {

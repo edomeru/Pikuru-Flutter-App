@@ -10,6 +10,7 @@ import 'package:pikuru/Utils/auth_service.dart';
 import 'package:pikuru/screens/reset_password_dialog.dart';
 import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import 'package:pikuru/services/notification_service.dart'; // ← add this import
 import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
@@ -96,8 +97,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   String password = '';
 
   // ── Ensure SSO users have a registration doc using 'nickname' ──────────────
-  // Matches the web app's ensureRegistrationDoc which writes 'nickname'
-  // (not firstName/lastName) to the registration collection.
   Future<void> _ensureRegistrationDoc(User user) async {
     try {
       final docRef  = FirebaseFirestore.instance
@@ -138,7 +137,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // ✅ Watch global lang provider — rebuilds whenever lang changes anywhere
     final lang = ref.watch(appLangProvider);
 
     return Scaffold(
@@ -207,6 +205,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           try {
                             await _auth.signInWithEmailAndPassword(
                                 email: email.trim(), password: password);
+                            await NotificationService.instance.init(); // re-saves token with new uid
                             setState(() => showSpinner = false);
                             if (!mounted) return;
                             Navigator.pushReplacement(
@@ -275,6 +274,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             if (result != null) {
                               await result.user!.getIdToken(true);
                               await _ensureRegistrationDoc(result.user!);
+                              await NotificationService.instance.init(); // re-saves token with new uid
                               if (!mounted) return;
                               Navigator.pushReplacement(
                                 context,
@@ -367,7 +367,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
-  /// Generates a cryptographically secure nonce for Apple Sign-In
   String _generateNonce([int length = 32]) {
     const charset =
         '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
@@ -376,7 +375,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         .join();
   }
 
-  /// SHA-256 hash of the nonce (sent to Apple, verified by Firebase)
   String _sha256ofString(String input) {
     final bytes = utf8.encode(input);
     final digest = sha256.convert(bytes);
@@ -405,7 +403,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       final result = await FirebaseAuth.instance.signInWithCredential(oauthCredential);
       final user = result.user!;
 
-      // Apple only sends name on the FIRST sign-in — save it before it's gone
       if (appleCredential.givenName != null) {
         final fullName =
         '${appleCredential.givenName ?? ''} ${appleCredential.familyName ?? ''}'.trim();
@@ -414,6 +411,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       }
 
       await _ensureRegistrationDoc(user);
+      await NotificationService.instance.init(); // re-saves token with new uid
 
       if (!mounted) return;
       Navigator.pushReplacement(
@@ -421,7 +419,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         MaterialPageRoute(builder: (_) => const MainNavigation()),
       );
     } on SignInWithAppleAuthorizationException catch (e) {
-      // User cancelled — don't show an error
       if (e.code != AuthorizationErrorCode.canceled) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
@@ -438,7 +435,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
-  // ── Header with lang toggle ──────────────────────────────────────────────────
   Widget _buildHeader(BuildContext context, String lang) {
     final w = MediaQuery.of(context).size.width;
     return SizedBox(
@@ -463,8 +459,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 shape: BoxShape.circle),
           ),
         ),
-
-        // ── Title ────────────────────────────────────────────────────────────
         Positioned(
           top: 68, left: 28,
           child: Text(
@@ -476,8 +470,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 letterSpacing: 0.3),
           ),
         ),
-
-        // ── EN / JP language toggle — top-right of header ─────────────────
         Positioned(
           top: 60, right: 20,
           child: SafeArea(
@@ -488,7 +480,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             ),
           ),
         ),
-
         Positioned(
           bottom: 0, left: 0, right: 0,
           child: Image.asset('assets/pikuru_full_logo.png',
@@ -500,7 +491,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Language Toggle — same pill style as HomeScreen / CourtsScreen
+// Language Toggle
 // ─────────────────────────────────────────────────────────────────────────────
 class _LangToggle extends StatelessWidget {
   final String lang;
@@ -530,7 +521,6 @@ class _LangToggle extends StatelessWidget {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          // Active: white pill with green text (mirrors web app LangToggleLight)
           color: active ? Colors.white.withOpacity(0.95) : Colors.transparent,
           borderRadius: BorderRadius.circular(16),
         ),
@@ -540,7 +530,7 @@ class _LangToggle extends StatelessWidget {
             fontSize: 11,
             fontWeight: FontWeight.w700,
             color: active
-                ? const Color(0xFF2d6a3f) // green text on white — matches web
+                ? const Color(0xFF2d6a3f)
                 : Colors.white.withOpacity(0.75),
           ),
         ),
@@ -550,7 +540,7 @@ class _LangToggle extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Shared widget helpers (unchanged from original)
+// Shared widget helpers
 // ─────────────────────────────────────────────────────────────────────────────
 InputDecoration _inputDecoration(String hint) {
   return InputDecoration(
