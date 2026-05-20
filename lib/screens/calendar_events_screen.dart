@@ -4,76 +4,89 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/providers/providers.dart';
-import 'package:pikuru/providers/app_language_provider.dart'; // ← global lang
+import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:intl/intl.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// i18n — mirrors web app T object exactly
+// i18n
 // ─────────────────────────────────────────────────────────────────────────────
 class _S {
   final String lang;
   const _S(this.lang);
   bool get isJa => lang == kLangJa;
 
-  String get page         => isJa ? 'カレンダー'          : 'Calendar Events';
+  String get page         => isJa ? 'カレンダー'              : 'Calendar Events';
   String get noEvents     => isJa ? 'この日のイベントはありません' : 'No events on this day';
-  String get moreInfo     => isJa ? '詳細情報'            : 'More Information';
-  String get free         => isJa ? '無料'                : 'Free';
-  String get filters      => isJa ? 'フィルター'           : 'Filters';
-  String get filterActive => isJa ? 'Active'             : 'Active';
-  String get allCountries => isJa ? 'すべての国'           : 'All Countries';
-  String get clearAll     => isJa ? 'クリア'              : 'Clear All';
-  String get applyFilters => isJa ? 'フィルターを適用'     : 'APPLY FILTERS';
-  String get loading      => isJa ? '読み込み中...'        : 'Loading...';
+  String get moreInfo     => isJa ? '詳細情報'                : 'More Information';
+  String get free         => isJa ? '無料'                    : 'Free';
+  String get filters      => isJa ? 'フィルター'               : 'Filters';
+  String get filterActive => isJa ? 'Active'                 : 'Active';
+  String get allCountries => isJa ? 'すべての国'               : 'All Countries';
+  String get clearAll     => isJa ? 'クリア'                  : 'Clear All';
+  String get applyFilters => isJa ? 'フィルターを適用'         : 'APPLY FILTERS';
+  String get loading      => isJa ? '読み込み中...'            : 'Loading...';
+  String get viewOnMaps   => isJa ? 'Googleマップで見る'       : 'View on Google Maps';
+  String get saveEvent       => isJa ? '保存済み'       : 'My Events';
+  String get saveEventSub    => isJa ? '参加予定のイベント' : "Events you're planning to join";
+  String get interested      => isJa ? '興味あり'        : 'Interested';
+  String get interestedSub   => isJa ? '注目しているイベント' : "Events you'd like to keep an eye on";
+  String get registration    => isJa ? '登録'            : 'REGISTRATION';
+  String get registerBtn     => isJa ? 'このイベントに登録する' : 'Register for this Event';
 
-  // section labels in filter modal
-  String get secLocation  => isJa ? '場所'                : 'LOCATION';
-  String get secSkill     => isJa ? 'スキルレベル'         : 'SKILL LEVELS';
-  String get secCat       => isJa ? 'カテゴリー'           : 'CATEGORIES';
-  String get secOther     => isJa ? 'その他'              : 'OTHER';
+  // section labels
+  String get secLocation  => isJa ? '場所'          : 'LOCATION';
+  String get secSkill     => isJa ? 'スキルレベル'   : 'SKILL LEVELS';
+  String get secCat       => isJa ? 'カテゴリー'     : 'CATEGORIES';
+  String get secOther     => isJa ? 'その他'         : 'OTHER';
+  String get secDateTime  => isJa ? '日時'           : 'DATE & TIME';
+  String get secCatSkill  => isJa ? 'カテゴリー・スキルレベル' : 'CATEGORIES & SKILL LEVEL';
+  String get secLoc       => isJa ? '場所'           : 'LOCATION';
+  String get secSave      => isJa ? '保存'           : 'SAVE';
+
+  // detail labels
+  String get ends         => isJa ? '終了日：'        : 'Ends:';
+  String get partLimit    => isJa ? '参加人数上限：'   : 'Participant limit:';
+  String get contact      => isJa ? '連絡先：'        : 'Contact:';
 
   // filter labels
-  String get fCountry     => isJa ? '国'                  : 'Country';
-  String get fPrefecture  => isJa ? '都道府県'             : 'Prefecture';
-  String get fCity        => isJa ? '市区町村'             : 'City';
-  String get fType        => isJa ? 'イベントの種類'        : 'Event Type';
-  String get fAllCountries=> isJa ? 'すべての国'           : 'All countries';
-  String get fAll         => isJa ? 'すべて'              : 'All';
-  String get fAllTypes    => isJa ? 'すべての種類'         : 'All types';
+  String get fCountry     => isJa ? '国'              : 'Country';
+  String get fPrefecture  => isJa ? '都道府県'         : 'Prefecture';
+  String get fCity        => isJa ? '市区町村'         : 'City';
+  String get fType        => isJa ? 'イベントの種類'    : 'Event Type';
+  String get fAllCountries=> isJa ? 'すべての国'       : 'All countries';
+  String get fAll         => isJa ? 'すべて'           : 'All';
+  String get fAllTypes    => isJa ? 'すべての種類'     : 'All types';
 
   // skill
-  String get skillPro     => isJa ? '上級'  : 'Pro';
-  String get skillAmateur => isJa ? '中級'  : 'Amateur';
-  String get skillBeginner=> isJa ? '初級'  : 'Beginner';
+  String get skillPro     => isJa ? '上級'      : 'Pro';
+  String get skillAmateur => isJa ? '中級'      : 'Amateur';
+  String get skillBeginner=> isJa ? '初級'      : 'Beginner';
 
-  // categories — mirrors web app T.ja.cats
+  // categories
   String get catMx => isJa ? 'ミックスダブルス' : 'Mixed Doubles';
-  String get catMd => isJa ? '男子ダブルス'   : "Men's Doubles";
-  String get catWd => isJa ? '女子ダブルス'   : "Women's Doubles";
-  String get catMs => isJa ? '男子シングルス'  : "Men's Singles";
-  String get catWs => isJa ? '女子シングルス'  : "Women's Singles";
-  String get catSe => isJa ? 'シニア'        : 'Seniors';
-  String get catJu => isJa ? 'ジュニア'      : 'Juniors';
-  String get catCo => isJa ? '学生'          : 'Collegiate';
+  String get catMd => isJa ? '男子ダブルス'    : "Men's Doubles";
+  String get catWd => isJa ? '女子ダブルス'    : "Women's Doubles";
+  String get catMs => isJa ? '男子シングルス'   : "Men's Singles";
+  String get catWs => isJa ? '女子シングルス'   : "Women's Singles";
+  String get catSe => isJa ? 'シニア'          : 'Seniors';
+  String get catJu => isJa ? 'ジュニア'        : 'Juniors';
+  String get catCo => isJa ? '学生'            : 'Collegiate';
 
   // other
   String get tourist => isJa ? '観光客歓迎' : 'Tourist Friendly';
 
-  // month names — mirrors web app T.ja.months
   List<String> get months => isJa
       ? ['1月','2月','3月','4月','5月','6月','7月','8月','9月','10月','11月','12月']
       : ['January','February','March','April','May','June',
     'July','August','September','October','November','December'];
 
-  // weekday headers — mirrors web app T.ja.weekdays
   List<String> get weekdays => isJa
       ? ['日','月','火','水','木','金','土']
       : ['SU','MO','TU','WE','TH','FR','SA'];
 
-  // event count suffix
   String eventCount(int n) => isJa ? '$n件のイベント' : '$n event${n == 1 ? '' : 's'}';
 
-  // event-type localiser — mirrors web app exactly
   String localizeType(String key) {
     if (!isJa) return key;
     const m = {
@@ -89,21 +102,27 @@ class _S {
     return m[key] ?? key;
   }
 
-  // formatted date for selected-day header — mirrors web app formatDateDisplay
   String formatDate(DateTime d) {
     if (isJa) return '${d.year}年${months[d.month - 1]}${d.day}日';
     return '${months[d.month - 1]} ${d.day}, ${d.year}';
   }
 
-  // formatted month header — mirrors web app calendar header
   String formatMonth(DateTime d) {
     if (isJa) return '${d.year}年 ${months[d.month - 1]}';
     return '${months[d.month - 1]} ${d.year}';
   }
+
+  String formatDateLong(DateTime d) {
+    if (isJa) {
+      const days = ['日曜日','月曜日','火曜日','水曜日','木曜日','金曜日','土曜日'];
+      return '${days[d.weekday % 7]}、${d.year}年${months[d.month - 1]}${d.day}日';
+    }
+    return DateFormat('EEEE, MMMM d, yyyy').format(d);
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Filter state (unchanged logic, labels now come from _S)
+// Filter state
 // ─────────────────────────────────────────────────────────────────────────────
 class _CalFilter {
   String country;
@@ -151,6 +170,11 @@ class _CalFilter {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Save status type — mirrors web app's SaveStatus
+// ─────────────────────────────────────────────────────────────────────────────
+enum _SaveStatus { none, myEvents, interested }
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Screen
 // ─────────────────────────────────────────────────────────────────────────────
 class CalendarEventsScreen extends ConsumerStatefulWidget {
@@ -163,20 +187,17 @@ class CalendarEventsScreen extends ConsumerStatefulWidget {
 class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     with TickerProviderStateMixin {
 
-  // ── Palette (light, matches app) ──────────────────────────────────────────
-  static const Color _bg       = Color(0xFFF7F8FA);
-  static const Color _surface  = Colors.white;
-  static const Color _border   = Color(0xFFEEEFF1);
-  static const Color _borderMd = Color(0xFFDDDEE1);
-  static const Color _cardBg   = Color(0xFFF2F3F5);
-  static const Color _textDark = Color(0xFF0D0D0D);
-  static const Color _textMid  = Color(0xFF555760);
-  static const Color _textLight= Color(0xFF888A90);
+  static const Color _bg        = Color(0xFFF7F8FA);
+  static const Color _surface   = Colors.white;
+  static const Color _border    = Color(0xFFEEEFF1);
+  static const Color _borderMd  = Color(0xFFDDDEE1);
+  static const Color _cardBg    = Color(0xFFF2F3F5);
+  static const Color _textDark  = Color(0xFF0D0D0D);
+  static const Color _textMid   = Color(0xFF555760);
+  static const Color _textLight = Color(0xFF888A90);
 
-  // ── Global lang ───────────────────────────────────────────────────────────
   _S get s => _S(ref.watch(appLangProvider));
 
-  // ── State ─────────────────────────────────────────────────────────────────
   _CalFilter _filter = _CalFilter(country: 'Japan', prefecture: 'Tokyo');
 
   static const List<String> _eventTypeKeys = [
@@ -192,6 +213,11 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
   late final Animation<double>   _fadeAnim;
   late final AnimationController _slideCtrl;
   late final Animation<Offset>   _slideAnim;
+
+  // ── Firestore-backed save statuses ─────────────────────────────────────────
+  // Maps eventId → _SaveStatus, loaded from user_events collection on init.
+  final Map<String, _SaveStatus> _saveStatuses = {};
+  final Map<String, bool> _savingIds = {};
 
   @override
   void initState() {
@@ -217,14 +243,100 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     super.dispose();
   }
 
-  // ── Location label shown in header ────────────────────────────────────────
+  String? get _currentUid => FirebaseAuth.instance.currentUser?.uid;
+
+  // ── Load all save statuses for the visible events from Firestore ───────────
+  // Mirrors web app's loadSaveStatuses() effect.
+  Future<void> _loadSaveStatuses(List<Map<String, dynamic>> events) async {
+    final uid = _currentUid;
+    if (uid == null || events.isEmpty) return;
+
+    await Future.wait(events.map((ev) async {
+      final eventId = (ev['_doc_id'] ?? '').toString();
+      if (eventId.isEmpty) return;
+      try {
+        final snap = await FirebaseFirestore.instance
+            .collection('user_events')
+            .doc('${uid}_$eventId')
+            .get();
+
+        if (!mounted) return;
+        if (!snap.exists) {
+          setState(() => _saveStatuses[eventId] = _SaveStatus.none);
+        } else {
+          final status = (snap.data()?['status'] ?? '').toString().trim();
+          setState(() {
+            _saveStatuses[eventId] = status == 'my_events'
+                ? _SaveStatus.myEvents
+                : status == 'interested'
+                ? _SaveStatus.interested
+                : _SaveStatus.none;
+          });
+        }
+      } catch (_) {}
+    }));
+  }
+
+  // ── Write save status to Firestore — mirrors web app's handleSaveStatus() ──
+  Future<void> _handleSaveStatus(
+      String eventId,
+      _SaveStatus next,
+      Map<String, dynamic> event,
+      ) async {
+    final uid = _currentUid;
+    if (uid == null) return;
+
+    setState(() => _savingIds[eventId] = true);
+    try {
+      final docRef = FirebaseFirestore.instance
+          .collection('user_events')
+          .doc('${uid}_$eventId');
+
+      await docRef.set({
+        'user_id':     uid,
+        'event_id':    eventId,
+        'status':      next == _SaveStatus.myEvents ? 'my_events' : 'interested',
+        'event_title': (event['event_title'] ?? '').toString(),
+        'event_pic':   (event['event_pic'] ??
+            event['event_pic_thumbnail'] ??
+            event['event_image'] ?? '').toString(),
+        'saved_at':    FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      if (mounted) setState(() => _saveStatuses[eventId] = next);
+    } catch (e) {
+      debugPrint('[CalendarEvents] Save failed: $e');
+    } finally {
+      if (mounted) setState(() => _savingIds[eventId] = false);
+    }
+  }
+
+  // ── Remove a save status from Firestore (toggle off) ──────────────────────
+  Future<void> _handleRemoveSaveStatus(String eventId) async {
+    final uid = _currentUid;
+    if (uid == null) return;
+
+    setState(() => _savingIds[eventId] = true);
+    try {
+      await FirebaseFirestore.instance
+          .collection('user_events')
+          .doc('${uid}_$eventId')
+          .delete();
+
+      if (mounted) setState(() => _saveStatuses[eventId] = _SaveStatus.none);
+    } catch (e) {
+      debugPrint('[CalendarEvents] Remove save failed: $e');
+    } finally {
+      if (mounted) setState(() => _savingIds[eventId] = false);
+    }
+  }
+
   String get _locationLabel {
     if (_filter.prefecture.isNotEmpty) return _filter.prefecture;
     if (_filter.country.isNotEmpty)    return _filter.country;
     return s.allCountries;
   }
 
-  // ── Location filter matching ───────────────────────────────────────────────
   bool _matchesLocation(Map<String, dynamic> event) {
     if (_filter.country.isEmpty) return true;
     final targetCountry = _filter.country.toLowerCase();
@@ -279,9 +391,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     return true;
   }
 
-  // ── Enrich events with resolved location data ─────────────────────────────
-  // Mirrors web app resolveLocation() — reads loc_name_jp, loc_address_jp,
-  // loc_prefecture_jp, loc_city_jp, loc_country_jp fields
   Future<List<Map<String, dynamic>>> _enrichEvents(
       List<Map<String, dynamic>> raw) async {
     final locIds = raw
@@ -303,20 +412,19 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
       } catch (_) {}
     }
 
-    return raw.map((e) {
+    final enriched = raw.map((e) {
       final locId = (e['event_loc_id'] ?? '').toString().trim();
       final loc   = locId.isNotEmpty ? (locCache[locId] ?? <String, dynamic>{}) : <String, dynamic>{};
 
       String get(String key) =>
           ((loc.isNotEmpty ? loc[key] : null) ?? e[key] ?? '').toString().trim();
 
-      // EN location fields
       final prefEn = [
         get('loc_prefecture_en'), get('loc_prefecture'),
         get('event_prefecture'), get('prefecture'),
       ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
 
-      final cityEn = get('loc_city_en').isNotEmpty ? get('loc_city_en') : get('loc_city');
+      final cityEn  = get('loc_city_en').isNotEmpty ? get('loc_city_en') : get('loc_city');
       final country = get('loc_country');
 
       final label = cityEn.isNotEmpty && prefEn.isNotEmpty
@@ -325,15 +433,10 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
           : prefEn.isNotEmpty ? prefEn
           : country;
 
-      // JP location fields — mirrors web app resolveLocation jp fields
-      final prefJp  = get('loc_prefecture_jp').isNotEmpty
-          ? get('loc_prefecture_jp') : prefEn;
-      final cityJp  = get('loc_city_jp').isNotEmpty
-          ? get('loc_city_jp') : cityEn;
-      final countryJp = get('loc_country_jp').isNotEmpty
-          ? get('loc_country_jp') : (country == 'Japan' ? '日本' : country);
-      final addrJp  = get('loc_address_jp').isNotEmpty
-          ? get('loc_address_jp') : get('loc_address');
+      final prefJp    = get('loc_prefecture_jp').isNotEmpty ? get('loc_prefecture_jp') : prefEn;
+      final cityJp    = get('loc_city_jp').isNotEmpty       ? get('loc_city_jp')       : cityEn;
+      final countryJp = get('loc_country_jp').isNotEmpty    ? get('loc_country_jp')    : (country == 'Japan' ? '日本' : country);
+      final addrJp    = get('loc_address_jp').isNotEmpty    ? get('loc_address_jp')    : get('loc_address');
 
       final labelJp = cityJp.isNotEmpty && prefJp.isNotEmpty
           ? '$prefJp$cityJp'
@@ -345,27 +448,31 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
         get('loc_googlelink'), get('event_googlelink'), get('event_venue_link'),
       ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
 
-      // Organizer name (JP mirror)
       final orgNameEn = [get('org_name'), get('event_org_name')].firstWhere((v) => v.isNotEmpty, orElse: () => '');
       final orgNameJp = get('org_name_jp').isNotEmpty ? get('org_name_jp') : orgNameEn;
 
+      final fullAddr   = get('loc_address').isNotEmpty ? get('loc_address') : get('event_venue_address');
+      final fullAddrJp = addrJp.isNotEmpty ? addrJp : fullAddr;
+
       return {
         ...e,
-        // EN fields
         'location':            label.isNotEmpty ? label : get('event_venue_name'),
-        'event_address':       get('loc_address').isNotEmpty ? get('loc_address') : get('event_venue_address'),
+        'event_address':       fullAddr,
         'event_googlelink':    googleLink,
         'org_name':            orgNameEn,
-        // JP fields — mirrors web app enriched fields
         'location_jp':         labelJp.isNotEmpty ? labelJp : get('event_venue_name'),
-        'event_address_jp':    addrJp,
+        'event_address_jp':    fullAddrJp,
         'org_name_jp':         orgNameJp,
-        // resolved fields used for filtering
         '_resolvedPrefecture': prefEn,
         '_resolvedCountry':    country,
         '_resolvedCity':       cityEn,
       };
     }).toList();
+
+    // After enriching, load Firestore save statuses for current user
+    await _loadSaveStatuses(enriched);
+
+    return enriched;
   }
 
   Map<String, List<Map<String, String>>> _buildLocationMap(
@@ -399,9 +506,9 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
       final dtStart  = (tsStart as Timestamp).toDate();
       final keyStart = DateTime(dtStart.year, dtStart.month, dtStart.day);
 
-      final tsEnd   = e['event_date_end'];
-      final dtEnd   = tsEnd != null ? (tsEnd as Timestamp).toDate() : keyStart;
-      final keyEnd  = DateTime(dtEnd.year, dtEnd.month, dtEnd.day);
+      final tsEnd  = e['event_date_end'];
+      final dtEnd  = tsEnd != null ? (tsEnd as Timestamp).toDate() : keyStart;
+      final keyEnd = DateTime(dtEnd.year, dtEnd.month, dtEnd.day);
 
       DateTime current = keyStart;
       int loop = 0;
@@ -432,9 +539,7 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Filter modal
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── Filter modal ─────────────────────────────────────────────────────────
   void _showFilterModal(List<Map<String, dynamic>> enrichedEvents) {
     _CalFilter temp = _filter;
     final locationMap = _buildLocationMap(enrichedEvents);
@@ -459,8 +564,8 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
             Container(
               width: 3, height: 14,
               margin: const EdgeInsets.only(right: 8),
-              decoration: BoxDecoration(color: AppColors.primary,
-                  borderRadius: BorderRadius.circular(2)),
+              decoration: BoxDecoration(
+                  color: AppColors.primary, borderRadius: BorderRadius.circular(2)),
             ),
             Text(text, style: const TextStyle(fontSize: 12,
                 fontWeight: FontWeight.w800, color: _textMid, letterSpacing: 0.8)),
@@ -496,10 +601,13 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                     border: Border.all(
                         color: value ? AppColors.primary : _borderMd, width: 1.5),
                   ),
-                  child: value ? const Icon(Icons.check, size: 10, color: Colors.white) : null,
+                  child: value
+                      ? const Icon(Icons.check, size: 10, color: Colors.white)
+                      : null,
                 ),
                 const SizedBox(width: 8),
-                Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
+                Text(label, style: TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w600,
                     color: value ? AppColors.primary : _textMid)),
               ]),
             ),
@@ -535,8 +643,10 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                     DropdownMenuItem(value: '',
                         child: Text(allLabel,
                             style: const TextStyle(color: _textLight))),
-                    ...options.map((o) => DropdownMenuItem(value: o,
-                        child: Text(o, style: const TextStyle(color: _textDark)))),
+                    ...options.map((o) => DropdownMenuItem(
+                        value: o,
+                        child: Text(o,
+                            style: const TextStyle(color: _textDark)))),
                   ],
                   onChanged: (v) => onChange(v ?? ''),
                 ),
@@ -546,25 +656,31 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
         }
 
         final availablePrefs = temp.country.isNotEmpty
-            ? (locationMap[temp.country] ?? []) : <Map<String, String>>[];
-        final sortedPrefs = availablePrefs.map((p) => p['en']!).toList()..sort();
+            ? (locationMap[temp.country] ?? [])
+            : <Map<String, String>>[];
+        final sortedPrefs =
+        availablePrefs.map((p) => p['en']!).toList()..sort();
 
         return Container(
-          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.92),
-          decoration: const BoxDecoration(color: _surface,
+          constraints:
+          BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.92),
+          decoration: const BoxDecoration(
+              color: _surface,
               borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
           child: Column(children: [
             Container(
               margin: const EdgeInsets.only(top: 12, bottom: 4),
               width: 36, height: 4,
-              decoration: BoxDecoration(color: _borderMd,
-                  borderRadius: BorderRadius.circular(2)),
+              decoration: BoxDecoration(
+                  color: _borderMd, borderRadius: BorderRadius.circular(2)),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 12, 12, 12),
               child: Row(children: [
-                Text(curS.filters, style: const TextStyle(fontSize: 22,
-                    fontWeight: FontWeight.w800, color: _textDark, letterSpacing: -0.4)),
+                Text(curS.filters,
+                    style: const TextStyle(fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                        color: _textDark, letterSpacing: -0.4)),
                 const Spacer(),
                 if (_filter.isActive) ...[
                   Container(
@@ -573,9 +689,10 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                       color: AppColors.primary.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Text(curS.filterActive, style: const TextStyle(
-                        fontSize: 11, fontWeight: FontWeight.w700,
-                        color: AppColors.primary)),
+                    child: Text(curS.filterActive,
+                        style: const TextStyle(fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primary)),
                   ),
                   const SizedBox(width: 8),
                 ],
@@ -583,7 +700,8 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                   onTap: () => Navigator.pop(ctx),
                   child: Container(
                     width: 34, height: 34,
-                    decoration: BoxDecoration(color: _cardBg, shape: BoxShape.circle,
+                    decoration: BoxDecoration(
+                        color: _cardBg, shape: BoxShape.circle,
                         border: Border.all(color: _borderMd)),
                     child: const Icon(Icons.close_rounded, color: _textMid, size: 18),
                   ),
@@ -591,19 +709,18 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
               ]),
             ),
             const Divider(height: 1, color: _borderMd),
-
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
 
-                  // ── LOCATION ───────────────────────────────────────────
                   sectionLabel(curS.secLocation),
                   Row(children: [
                     Expanded(child: dropdownField(
                       curS.fCountry, temp.country,
                       locationMap.keys.toList(), curS.fAllCountries,
-                          (v) => setS(() => temp = temp.copyWith(country: v, prefecture: '', city: '')),
+                          (v) => setS(() => temp =
+                          temp.copyWith(country: v, prefecture: '', city: '')),
                     )),
                     const SizedBox(width: 12),
                     Expanded(child: dropdownField(
@@ -629,42 +746,46 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
 
                   divider(),
 
-                  // ── SKILL LEVELS ────────────────────────────────────────
                   sectionLabel(curS.secSkill),
                   Wrap(spacing: 8, runSpacing: 8, children: [
-                    checkPill(curS.skillPro,      temp.skillPro,
-                            () => setS(() => temp = temp.copyWith(skillPro:      !temp.skillPro))),
-                    checkPill(curS.skillAmateur,  temp.skillAmateur,
-                            () => setS(() => temp = temp.copyWith(skillAmateur:  !temp.skillAmateur))),
+                    checkPill(curS.skillPro, temp.skillPro,
+                            () => setS(() => temp = temp.copyWith(skillPro: !temp.skillPro))),
+                    checkPill(curS.skillAmateur, temp.skillAmateur,
+                            () => setS(() => temp = temp.copyWith(skillAmateur: !temp.skillAmateur))),
                     checkPill(curS.skillBeginner, temp.skillBeginner,
                             () => setS(() => temp = temp.copyWith(skillBeginner: !temp.skillBeginner))),
                   ]),
 
                   divider(),
 
-                  // ── CATEGORIES ──────────────────────────────────────────
                   sectionLabel(curS.secCat),
                   Wrap(spacing: 8, runSpacing: 8, children: [
-                    checkPill(curS.catMx, temp.catMx, () => setS(() => temp = temp.copyWith(catMx: !temp.catMx))),
-                    checkPill(curS.catMd, temp.catMd, () => setS(() => temp = temp.copyWith(catMd: !temp.catMd))),
-                    checkPill(curS.catWd, temp.catWd, () => setS(() => temp = temp.copyWith(catWd: !temp.catWd))),
-                    checkPill(curS.catMs, temp.catMs, () => setS(() => temp = temp.copyWith(catMs: !temp.catMs))),
-                    checkPill(curS.catWs, temp.catWs, () => setS(() => temp = temp.copyWith(catWs: !temp.catWs))),
-                    checkPill(curS.catSe, temp.catSe, () => setS(() => temp = temp.copyWith(catSe: !temp.catSe))),
-                    checkPill(curS.catJu, temp.catJu, () => setS(() => temp = temp.copyWith(catJu: !temp.catJu))),
-                    checkPill(curS.catCo, temp.catCo, () => setS(() => temp = temp.copyWith(catCo: !temp.catCo))),
+                    checkPill(curS.catMx, temp.catMx,
+                            () => setS(() => temp = temp.copyWith(catMx: !temp.catMx))),
+                    checkPill(curS.catMd, temp.catMd,
+                            () => setS(() => temp = temp.copyWith(catMd: !temp.catMd))),
+                    checkPill(curS.catWd, temp.catWd,
+                            () => setS(() => temp = temp.copyWith(catWd: !temp.catWd))),
+                    checkPill(curS.catMs, temp.catMs,
+                            () => setS(() => temp = temp.copyWith(catMs: !temp.catMs))),
+                    checkPill(curS.catWs, temp.catWs,
+                            () => setS(() => temp = temp.copyWith(catWs: !temp.catWs))),
+                    checkPill(curS.catSe, temp.catSe,
+                            () => setS(() => temp = temp.copyWith(catSe: !temp.catSe))),
+                    checkPill(curS.catJu, temp.catJu,
+                            () => setS(() => temp = temp.copyWith(catJu: !temp.catJu))),
+                    checkPill(curS.catCo, temp.catCo,
+                            () => setS(() => temp = temp.copyWith(catCo: !temp.catCo))),
                   ]),
 
                   divider(),
 
-                  // ── OTHER ───────────────────────────────────────────────
                   sectionLabel(curS.secOther),
                   checkPill(curS.tourist, temp.tourist,
                           () => setS(() => temp = temp.copyWith(tourist: !temp.tourist))),
 
                   const SizedBox(height: 28),
 
-                  // ── Action buttons ──────────────────────────────────────
                   Row(children: [
                     Expanded(
                       child: GestureDetector(
@@ -701,8 +822,8 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                           ),
                           child: Center(child: Text(curS.applyFilters,
                               style: const TextStyle(fontSize: 15,
-                                  fontWeight: FontWeight.w800, color: Colors.white,
-                                  letterSpacing: 0.6))),
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white, letterSpacing: 0.6))),
                         ),
                       ),
                     ),
@@ -721,7 +842,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
   // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    // Watch global lang — rebuilds entire screen when lang changes anywhere
     ref.watch(appLangProvider);
     final eventsAsync = ref.watch(calendarEventsProvider);
 
@@ -757,9 +877,10 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                       color: _textDark, size: 20),
                   onPressed: () => Navigator.pop(context),
                 ),
-                title: Text(s.page, style: const TextStyle(
-                    color: _textDark, fontWeight: FontWeight.w800,
-                    fontSize: 18, letterSpacing: -0.3)),
+                title: Text(s.page,
+                    style: const TextStyle(color: _textDark,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 18, letterSpacing: -0.3)),
                 actions: [
                   Padding(
                     padding: const EdgeInsets.only(right: 12),
@@ -780,18 +901,21 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                                 color: _filter.isActive
                                     ? Colors.white : AppColors.primary),
                             const SizedBox(width: 4),
-                            Text(_locationLabel, style: TextStyle(
-                                fontSize: 12, fontWeight: FontWeight.w700,
-                                color: _filter.isActive
-                                    ? Colors.white : AppColors.primary)),
+                            Text(_locationLabel,
+                                style: TextStyle(fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: _filter.isActive
+                                        ? Colors.white : AppColors.primary)),
                             const SizedBox(width: 2),
-                            Icon(Icons.keyboard_arrow_down_rounded, size: 14,
+                            Icon(Icons.keyboard_arrow_down_rounded,
+                                size: 14,
                                 color: _filter.isActive
                                     ? Colors.white : AppColors.primary),
                           ]),
                         ),
                         if (_filter.hasNonLocationFilters)
-                          Positioned(top: -3, right: -3,
+                          Positioned(
+                            top: -3, right: -3,
                             child: Container(
                               width: 10, height: 10,
                               decoration: const BoxDecoration(
@@ -821,7 +945,7 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                     position: _slideAnim,
                     child: Column(children: [
 
-                      // ── Calendar Card ──────────────────────────────────
+                      // ── Calendar Card ────────────────────────────────────
                       Container(
                         margin: const EdgeInsets.fromLTRB(16, 20, 16, 0),
                         decoration: BoxDecoration(
@@ -833,8 +957,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                               blurRadius: 16, offset: const Offset(0, 4))],
                         ),
                         child: Column(children: [
-
-                          // Month navigation
                           Padding(
                             padding: const EdgeInsets.fromLTRB(8, 18, 8, 10),
                             child: Row(
@@ -847,12 +969,10 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                                   padding: EdgeInsets.zero,
                                   constraints: const BoxConstraints(),
                                 ),
-                                // Month header — mirrors web app formatMonth
                                 Text(s.formatMonth(_focusedMonth),
-                                  style: const TextStyle(fontSize: 18,
-                                      fontWeight: FontWeight.w800, color: _textDark,
-                                      letterSpacing: -0.3),
-                                ),
+                                    style: const TextStyle(fontSize: 18,
+                                        fontWeight: FontWeight.w800,
+                                        color: _textDark, letterSpacing: -0.3)),
                                 IconButton(
                                   onPressed: _nextMonth,
                                   icon: const Icon(Icons.chevron_right_rounded,
@@ -863,23 +983,19 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                               ],
                             ),
                           ),
-
-                          // Weekday headers — localized
                           Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 12),
                             child: Row(
                               children: s.weekdays.map((d) => Expanded(
-                                child: Center(child: Text(d, style: TextStyle(
-                                    fontSize: 11, fontWeight: FontWeight.w700,
-                                    color: Colors.grey.shade400,
-                                    letterSpacing: 0.5))),
+                                child: Center(child: Text(d,
+                                    style: TextStyle(fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.grey.shade400,
+                                        letterSpacing: 0.5))),
                               )).toList(),
                             ),
                           ),
-
                           const SizedBox(height: 10),
-
-                          // Calendar grid
                           Padding(
                             padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
                             child: _buildGrid(eventMap),
@@ -889,15 +1005,15 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
 
                       const SizedBox(height: 20),
 
-                      // ── Selected date header ───────────────────────────
+                      // ── Selected date header ─────────────────────────────
                       Padding(
                         padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                         child: Row(children: [
                           Container(width: 4, height: 18,
-                              decoration: BoxDecoration(color: AppColors.primary,
+                              decoration: BoxDecoration(
+                                  color: AppColors.primary,
                                   borderRadius: BorderRadius.circular(2))),
                           const SizedBox(width: 8),
-                          // Date display — mirrors web app formatDateDisplay
                           Text(s.formatDate(_selectedDate),
                               style: const TextStyle(fontSize: 16,
                                   fontWeight: FontWeight.w800, color: _textDark)),
@@ -918,15 +1034,38 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                         ]),
                       ),
 
-                      // ── Events or empty state ──────────────────────────
+                      // ── Events or empty state ────────────────────────────
                       if (selectedEvts.isEmpty)
                         _buildEmptyState()
                       else
-                        ...selectedEvts.map((e) => _EventCard(
-                          event: e,
-                          lang: ref.watch(appLangProvider),
-                          onOpenLink: _openLink,
-                        )),
+                        ...selectedEvts.map((e) {
+                          final docId = (e['_doc_id'] ?? '').toString();
+                          final saveStatus = _saveStatuses[docId] ?? _SaveStatus.none;
+                          final isSaving = _savingIds[docId] ?? false;
+
+                          return _EventCard(
+                            event: e,
+                            lang: ref.watch(appLangProvider),
+                            onOpenLink: _openLink,
+                            saveStatus: saveStatus,
+                            isSaving: isSaving,
+                            isLoggedIn: _currentUid != null,
+                            onToggleMyEvents: (id) async {
+                              if (saveStatus == _SaveStatus.myEvents) {
+                                await _handleRemoveSaveStatus(id);
+                              } else {
+                                await _handleSaveStatus(id, _SaveStatus.myEvents, e);
+                              }
+                            },
+                            onToggleInterested: (id) async {
+                              if (saveStatus == _SaveStatus.interested) {
+                                await _handleRemoveSaveStatus(id);
+                              } else {
+                                await _handleSaveStatus(id, _SaveStatus.interested, e);
+                              }
+                            },
+                          );
+                        }),
 
                       const SizedBox(height: 40),
                     ]),
@@ -942,11 +1081,11 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
 
   // ── Calendar grid ─────────────────────────────────────────────────────────
   Widget _buildGrid(Map<DateTime, List<Map<String, dynamic>>> eventMap) {
-    final firstDay    = DateTime(_focusedMonth.year, _focusedMonth.month, 1);
-    final daysInMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 1, 0).day;
-    final startWeekday= firstDay.weekday % 7; // Sun = 0
-    final todayNorm   = DateTime.now();
-    final todayKey    = DateTime(todayNorm.year, todayNorm.month, todayNorm.day);
+    final firstDay     = DateTime(_focusedMonth.year, _focusedMonth.month, 1);
+    final daysInMonth  = DateTime(_focusedMonth.year, _focusedMonth.month + 1, 0).day;
+    final startWeekday = firstDay.weekday % 7;
+    final todayNorm    = DateTime.now();
+    final todayKey     = DateTime(todayNorm.year, todayNorm.month, todayNorm.day);
 
     final cells = <Widget>[];
     for (int i = 0; i < startWeekday; i++) cells.add(const SizedBox());
@@ -956,16 +1095,18 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
       final dayEvents  = _eventsForDate(eventMap, date);
       final hasEvents  = dayEvents.isNotEmpty;
       final isToday    = date == todayKey;
-      final isSelected = date == DateTime(
-          _selectedDate.year, _selectedDate.month, _selectedDate.day);
+      final isSelected = date ==
+          DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
       final isPast     = date.isBefore(todayKey);
 
       cells.add(GestureDetector(
         onTap: () => setState(() => _selectedDate = date),
         child: hasEvents
-            ? _EventThumbCell(day: day, events: dayEvents,
+            ? _EventThumbCell(
+            day: day, events: dayEvents,
             isSelected: isSelected, isToday: isToday)
-            : _EmptyDayCell(day: day, isSelected: isSelected,
+            : _EmptyDayCell(
+            day: day, isSelected: isSelected,
             isToday: isToday, isPast: isPast),
       ));
     }
@@ -982,32 +1123,38 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
   Widget _buildEmptyState() => Container(
     margin: const EdgeInsets.symmetric(horizontal: 16),
     padding: const EdgeInsets.all(20),
-    decoration: BoxDecoration(color: _surface,
-        borderRadius: BorderRadius.circular(16), border: Border.all(color: _border)),
+    decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFEEEFF1))),
     child: Row(children: [
       Icon(Icons.event_available_rounded, color: Colors.grey.shade300, size: 32),
       const SizedBox(width: 16),
-      Text(s.noEvents, style: TextStyle(fontSize: 14,
-          color: Colors.grey.shade400, fontWeight: FontWeight.w500)),
+      Text(s.noEvents,
+          style: TextStyle(fontSize: 14,
+              color: Colors.grey.shade400, fontWeight: FontWeight.w500)),
     ]),
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Calendar cells (unchanged visually)
+// Calendar cells
 // ─────────────────────────────────────────────────────────────────────────────
 class _EventThumbCell extends StatelessWidget {
   final int day;
   final List<Map<String, dynamic>> events;
   final bool isSelected, isToday;
-  const _EventThumbCell({required this.day, required this.events,
-    required this.isSelected, required this.isToday});
+  const _EventThumbCell({
+    required this.day, required this.events,
+    required this.isSelected, required this.isToday,
+  });
 
   @override
   Widget build(BuildContext context) {
     final count    = events.length;
     final imageUrl = (events.first['event_pic'] ??
-        events.first['event_pic_thumbnail'] ?? events.first['event_image'] ?? '').toString();
+        events.first['event_pic_thumbnail'] ??
+        events.first['event_image'] ?? '').toString();
 
     return Container(
       margin: const EdgeInsets.all(2),
@@ -1018,34 +1165,47 @@ class _EventThumbCell extends StatelessWidget {
               ? Image.network(imageUrl, fit: BoxFit.cover,
               errorBuilder: (_, __, ___) => Container(
                   color: AppColors.primary.withOpacity(0.12),
-                  child: const Icon(Icons.event, size: 16, color: AppColors.primary)))
-              : Container(color: AppColors.primary.withOpacity(0.12),
-              child: const Icon(Icons.event, size: 16, color: AppColors.primary)),
+                  child: const Icon(Icons.event,
+                      size: 16, color: AppColors.primary)))
+              : Container(
+              color: AppColors.primary.withOpacity(0.12),
+              child: const Icon(Icons.event,
+                  size: 16, color: AppColors.primary)),
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                colors: [Colors.black.withOpacity(0.06), Colors.black.withOpacity(0.50)],
+                colors: [
+                  Colors.black.withOpacity(0.06),
+                  Colors.black.withOpacity(0.50),
+                ],
               ),
             ),
           ),
           if (isSelected) Container(color: AppColors.primary.withOpacity(0.52)),
-          Positioned(left: 5, bottom: 4,
-              child: Text('$day', style: const TextStyle(fontSize: 12,
-                  fontWeight: FontWeight.w800, color: Colors.white,
-                  shadows: [Shadow(color: Colors.black54, blurRadius: 4, offset: Offset(0, 1))]))),
-          Positioned(top: 4, right: 4,
+          Positioned(
+            left: 5, bottom: 4,
+            child: Text('$day',
+                style: const TextStyle(fontSize: 12,
+                    fontWeight: FontWeight.w800, color: Colors.white,
+                    shadows: [Shadow(
+                        color: Colors.black54, blurRadius: 4,
+                        offset: Offset(0, 1))])),
+          ),
+          Positioned(
+            top: 4, right: 4,
             child: Container(
               width: 16, height: 16,
               decoration: BoxDecoration(
                 color: isSelected ? Colors.white : AppColors.primary,
                 shape: BoxShape.circle,
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2),
+                boxShadow: [BoxShadow(
+                    color: Colors.black.withOpacity(0.2),
                     blurRadius: 4, offset: const Offset(0, 1))],
               ),
-              child: Center(child: Text('$count', style: TextStyle(
-                  fontSize: 8, fontWeight: FontWeight.w900,
-                  color: isSelected ? AppColors.primary : Colors.white))),
+              child: Center(child: Text('$count',
+                  style: TextStyle(fontSize: 8, fontWeight: FontWeight.w900,
+                      color: isSelected ? AppColors.primary : Colors.white))),
             ),
           ),
         ]),
@@ -1057,68 +1217,102 @@ class _EventThumbCell extends StatelessWidget {
 class _EmptyDayCell extends StatelessWidget {
   final int day;
   final bool isSelected, isToday, isPast;
-  const _EmptyDayCell({required this.day, required this.isSelected,
-    required this.isToday, required this.isPast});
+  const _EmptyDayCell({
+    required this.day, required this.isSelected,
+    required this.isToday, required this.isPast,
+  });
 
   @override
   Widget build(BuildContext context) => Container(
     margin: const EdgeInsets.all(2),
     decoration: BoxDecoration(
-      color: isSelected ? AppColors.primary
-          : isToday ? AppColors.primary.withOpacity(0.10) : Colors.transparent,
+      color: isSelected
+          ? AppColors.primary
+          : isToday
+          ? AppColors.primary.withOpacity(0.10)
+          : Colors.transparent,
       borderRadius: BorderRadius.circular(10),
       border: isToday && !isSelected
-          ? Border.all(color: AppColors.primary.withOpacity(0.35), width: 1.5) : null,
+          ? Border.all(color: AppColors.primary.withOpacity(0.35), width: 1.5)
+          : null,
     ),
-    child: Center(child: Text('$day', style: TextStyle(
-      fontSize: 13,
-      fontWeight: isSelected || isToday ? FontWeight.w800 : FontWeight.w500,
-      color: isSelected ? Colors.white
-          : isPast ? Colors.grey.shade300 : const Color(0xFF1A1A1A),
-    ))),
+    child: Center(
+      child: Text('$day',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: isSelected || isToday ? FontWeight.w800 : FontWeight.w500,
+            color: isSelected
+                ? Colors.white
+                : isPast
+                ? Colors.grey.shade300
+                : const Color(0xFF1A1A1A),
+          )),
+    ),
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Event card — now fully localised via lang parameter
+// Event Card — updated to use _SaveStatus + Firestore callbacks
 // ─────────────────────────────────────────────────────────────────────────────
 class _EventCard extends StatelessWidget {
   final Map<String, dynamic> event;
   final String               lang;
   final Future<void> Function(String) onOpenLink;
 
-  const _EventCard({required this.event, required this.lang, required this.onOpenLink});
+  // ── Firestore-backed save state (passed from parent) ──
+  final _SaveStatus saveStatus;
+  final bool        isSaving;
+  final bool        isLoggedIn;
+  final Future<void> Function(String id) onToggleMyEvents;
+  final Future<void> Function(String id) onToggleInterested;
+
+  const _EventCard({
+    required this.event,
+    required this.lang,
+    required this.onOpenLink,
+    required this.saveStatus,
+    required this.isSaving,
+    required this.isLoggedIn,
+    required this.onToggleMyEvents,
+    required this.onToggleInterested,
+  });
 
   bool get _isJa => lang == kLangJa;
 
-  // ── Title: prefer event_title_jp when Japanese — mirrors web app ──────────
   String get _title => _isJa
       ? (event['event_title_jp'] ?? event['event_title'] ?? 'Untitled Event').toString()
       : (event['event_title'] ?? 'Untitled Event').toString();
 
-  // ── Location: prefer location_jp when Japanese — mirrors web app ──────────
   String get _location => _isJa
       ? (event['location_jp'] ?? event['location'] ?? event['event_venue_name'] ?? '').toString()
       : (event['location'] ?? event['event_venue_name'] ?? '').toString();
 
-  // ── Address: prefer event_address_jp when Japanese ────────────────────────
   String get _address => _isJa
       ? (event['event_address_jp'] ?? event['event_address'] ?? event['event_venue_address'] ?? '').toString()
       : (event['event_address'] ?? event['event_venue_address'] ?? '').toString();
 
-  // ── Org: prefer org_name_jp when Japanese — mirrors web app ──────────────
   String get _orgName => _isJa
       ? (event['org_name_jp'] ?? event['org_name'] ?? event['event_org_name'] ?? '').toString()
       : (event['org_name'] ?? event['event_org_name'] ?? '').toString();
 
   String get _imageUrl =>
       (event['event_pic'] ?? event['event_pic_thumbnail'] ?? event['event_image'] ?? '').toString();
+
   String get _url =>
       (event['event_link'] ?? event['event_url'] ?? '').toString();
+
   String get _googleLink =>
       (event['event_googlelink'] ?? event['event_venue_link'] ?? '').toString();
 
-  // Fee — mirrors web app feeStr logic
+  String get _contact =>
+      (event['event_contact'] ?? event['event_email'] ?? '').toString();
+
+  int? get _participantLimit {
+    final v = event['event_participant_limit'] ?? event['event_max_participants'];
+    if (v == null) return null;
+    return int.tryParse(v.toString());
+  }
+
   String _fee(String freeLabel) {
     final f = event['event_fee'];
     if (f == null || f.toString().isEmpty ||
@@ -1126,48 +1320,96 @@ class _EventCard extends StatelessWidget {
     return '¥${f.toString()}';
   }
 
-  String _time() {
-    final raw = event['event_time'] ?? event['event_start_time'];
+  DateTime? get _startDate {
+    final ts = event['event_date'] ?? event['event_start_date'];
+    if (ts == null) return null;
+    return (ts as Timestamp).toDate();
+  }
+
+  DateTime? get _endDate {
+    final ts = event['event_date_end'];
+    if (ts == null) return null;
+    return (ts as Timestamp).toDate();
+  }
+
+  String _formatTime(dynamic raw) {
     if (raw == null) return '';
     if (raw is Timestamp) {
       final dt = raw.toDate();
-      if (_isJa) return '${dt.hour}:${dt.minute.toString().padLeft(2,'0')}';
+      if (_isJa) return '${dt.hour}:${dt.minute.toString().padLeft(2, '0')}';
       return DateFormat('h:mm a').format(dt);
     }
     return raw.toString();
   }
 
+  List<String> _getSkillTags() {
+    final tags = <String>[];
+    if (event['event_skill_level_pro']      == true) tags.add(_isJa ? '上級' : 'PRO');
+    if (event['event_skill_level_amateur']   == true) tags.add(_isJa ? '中級' : 'AMATEUR');
+    if (event['event_skill_level_beginner']  == true) tags.add(_isJa ? '初級' : 'BEGINNER');
+    return tags;
+  }
+
+  List<String> _getCategoryTags() {
+    final tags = <String>[];
+    if (event['event_category_menssingle']    == true) tags.add(_isJa ? '男子シングルス' : "MEN'S SINGLES");
+    if (event['event_category_womenssingle']  == true) tags.add(_isJa ? '女子シングルス' : "WOMEN'S SINGLES");
+    if (event['event_category_mixeddoubles']  == true) tags.add(_isJa ? 'ミックスダブルス' : 'MIXED DOUBLES');
+    if (event['event_category_mensdoubles']   == true) tags.add(_isJa ? '男子ダブルス' : "MEN'S DOUBLES");
+    if (event['event_category_womensdoubles'] == true) tags.add(_isJa ? '女子ダブルス' : "WOMEN'S DOUBLES");
+    if (event['event_category_juniors']       == true) tags.add(_isJa ? 'ジュニア' : 'JUNIORS');
+    if (event['event_category_collegiate']    == true) tags.add(_isJa ? '学生' : 'COLLEGIATE');
+    if (event['event_category_seniors']       == true) tags.add(_isJa ? 'シニア' : 'SENIORS');
+    return tags;
+  }
+
   static const Color _surface  = Colors.white;
   static const Color _border   = Color(0xFFEEEFF1);
   static const Color _textDark = Color(0xFF0D0D0D);
+  static const Color _textMid  = Color(0xFF555760);
+  static const Color _textLight = Color(0xFF888A90);
 
   @override
   Widget build(BuildContext context) {
-    final freeLabel  = _isJa ? '無料' : 'Free';
-    final moreInfo   = _isJa ? '詳細情報' : 'More Information';
-    final feeStr     = _fee(freeLabel);
-    final isFree     = feeStr == freeLabel;
-    final timeStr    = _time();
-    final hasImage   = _imageUrl.isNotEmpty;
-    final hasTime    = timeStr.isNotEmpty;
-    final hasLoc     = _location.isNotEmpty || _address.isNotEmpty;
-    final hasOrg     = _orgName.isNotEmpty;
-    final hasLink    = _url.isNotEmpty;
-    final hasGMap    = _googleLink.isNotEmpty;
-    final locDisplay = _location.isNotEmpty ? _location : _address;
+    final _S s      = _S(lang);
+    final freeLabel = s.free;
+    final feeStr    = _fee(freeLabel);
+    final isFree    = feeStr == freeLabel;
+    final startDate = _startDate;
+    final endDate   = _endDate;
+    final timeRaw   = event['event_time'] ?? event['event_start_time'];
+    final timeStr   = _formatTime(timeRaw);
+    final hasImage  = _imageUrl.isNotEmpty;
+    final hasLink   = _url.isNotEmpty;
+    final hasGMap   = _googleLink.isNotEmpty;
+    final hasOrg    = _orgName.isNotEmpty;
+    final address   = _address;
+    final location  = _location;
+    final locDisplay = location.isNotEmpty ? location : address;
+    final skillTags = _getSkillTags();
+    final catTags   = _getCategoryTags();
+    final allTags   = [...skillTags, ...catTags];
+    final limit     = _participantLimit;
+    final contact   = _contact;
+    final docId     = (event['_doc_id'] ?? '').toString();
+
+    // Derived save state booleans for UI rendering
+    final isSavedMyEvents  = saveStatus == _SaveStatus.myEvents;
+    final isSavedInterested = saveStatus == _SaveStatus.interested;
 
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 20),
       decoration: BoxDecoration(
         color: _surface,
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: _border),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04),
-            blurRadius: 14, offset: const Offset(0, 3))],
+        boxShadow: [BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 16, offset: const Offset(0, 4))],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
 
-        // Image
+        // ── Hero image ───────────────────────────────────────────────────
         if (hasImage)
           ClipRRect(
             borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
@@ -1176,7 +1418,8 @@ class _EventCard extends StatelessWidget {
               child: Image.network(_imageUrl, fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => Container(
                       color: AppColors.primary.withOpacity(0.08),
-                      child: const Icon(Icons.event, size: 40, color: AppColors.primary))),
+                      child: const Icon(Icons.event,
+                          size: 40, color: AppColors.primary))),
             ),
           ),
 
@@ -1184,25 +1427,29 @@ class _EventCard extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
 
-            // Title + fee
+            // ── Title + fee ──────────────────────────────────────────────
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Expanded(child: Text(_title, style: const TextStyle(
-                  fontSize: 17, fontWeight: FontWeight.w800,
-                  color: _textDark, letterSpacing: -0.2))),
+              Expanded(child: Text(_title,
+                  style: const TextStyle(fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                      color: _textDark, letterSpacing: -0.3))),
               const SizedBox(width: 10),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
                 decoration: BoxDecoration(
-                  color: isFree ? Colors.green.shade50 : AppColors.primary.withOpacity(0.09),
+                  color: isFree
+                      ? Colors.green.shade50
+                      : AppColors.primary.withOpacity(0.09),
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: Text(feeStr, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700,
-                    color: isFree ? Colors.green.shade600 : AppColors.primary)),
+                child: Text(feeStr,
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
+                        color: isFree ? Colors.green.shade600 : AppColors.primary)),
               ),
             ]),
 
-            // Time
-            if (hasTime) ...[
+            // ── Time ────────────────────────────────────────────────────
+            if (timeStr.isNotEmpty) ...[
               const SizedBox(height: 8),
               Row(children: [
                 Icon(Icons.access_time_rounded, size: 14, color: Colors.grey.shade400),
@@ -1212,21 +1459,20 @@ class _EventCard extends StatelessWidget {
               ]),
             ],
 
-            // Location — shows JP field when Japanese
-            if (hasLoc) ...[
-              const SizedBox(height: 8),
+            // ── Location summary ─────────────────────────────────────────
+            if (locDisplay.isNotEmpty) ...[
+              const SizedBox(height: 6),
               GestureDetector(
                 onTap: hasGMap ? () => onOpenLink(_googleLink) : null,
                 child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Icon(Icons.location_on_rounded, size: 14,
                       color: hasGMap ? AppColors.primary : Colors.grey.shade400),
                   const SizedBox(width: 5),
-                  Expanded(child: Text(locDisplay, style: TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w500,
-                    color: hasGMap ? AppColors.primary : Colors.grey.shade500,
-                    decoration: hasGMap ? TextDecoration.underline : TextDecoration.none,
-                    decorationColor: AppColors.primary,
-                  ))),
+                  Expanded(child: Text(locDisplay,
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500,
+                          color: hasGMap ? AppColors.primary : Colors.grey.shade500,
+                          decoration: hasGMap ? TextDecoration.underline : TextDecoration.none,
+                          decorationColor: AppColors.primary))),
                   if (hasGMap) ...[
                     const SizedBox(width: 4),
                     Icon(Icons.open_in_new_rounded, size: 12, color: AppColors.primary),
@@ -1235,42 +1481,375 @@ class _EventCard extends StatelessWidget {
               ),
             ],
 
-            // Org name — shows JP field when Japanese
+            // ── Organizer ────────────────────────────────────────────────
             if (hasOrg) ...[
               const SizedBox(height: 6),
               Row(children: [
                 Icon(Icons.person_outline_rounded, size: 14, color: Colors.grey.shade400),
                 const SizedBox(width: 5),
-                Expanded(child: Text(_orgName, style: TextStyle(
-                    fontSize: 13, color: Colors.grey.shade500,
-                    fontWeight: FontWeight.w500))),
+                Expanded(child: Text(_orgName,
+                    style: TextStyle(fontSize: 13,
+                        color: Colors.grey.shade500, fontWeight: FontWeight.w500))),
               ]),
             ],
 
-            const SizedBox(height: 14),
+            const SizedBox(height: 20),
+            Container(height: 1, color: _border),
+            const SizedBox(height: 20),
 
-            // CTA button
+            // ── DATE & TIME ──────────────────────────────────────────────
+            if (startDate != null) ...[
+              _SectionLabel(label: _isJa ? '日時' : 'DATE & TIME'),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF2F8F4),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.primary.withOpacity(0.15)),
+                ),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Container(
+                    width: 40, height: 40,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.calendar_today_rounded,
+                        color: AppColors.primary, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(s.formatDateLong(startDate),
+                            style: const TextStyle(fontSize: 15,
+                                fontWeight: FontWeight.w800, color: _textDark)),
+                        if (timeStr.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 3),
+                            child: Text(timeStr,
+                                style: TextStyle(fontSize: 13,
+                                    color: Colors.grey.shade500)),
+                          ),
+                        if (endDate != null) ...[
+                          const SizedBox(height: 6),
+                          RichText(text: TextSpan(children: [
+                            TextSpan(text: '${s.ends} ',
+                                style: TextStyle(fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.grey.shade600)),
+                            TextSpan(text: s.formatDateLong(endDate),
+                                style: TextStyle(fontSize: 13,
+                                    color: Colors.grey.shade500)),
+                          ])),
+                        ],
+                        if (limit != null) ...[
+                          const SizedBox(height: 6),
+                          RichText(text: TextSpan(children: [
+                            TextSpan(text: '${s.partLimit} ',
+                                style: TextStyle(fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.grey.shade600)),
+                            TextSpan(text: '$limit',
+                                style: TextStyle(fontSize: 13,
+                                    color: Colors.grey.shade500)),
+                          ])),
+                        ],
+                        if (contact.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          RichText(text: TextSpan(children: [
+                            TextSpan(text: '${s.contact} ',
+                                style: TextStyle(fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.grey.shade600)),
+                            TextSpan(text: contact,
+                                style: const TextStyle(fontSize: 13,
+                                    color: AppColors.primary)),
+                          ])),
+                        ],
+                      ])),
+                ]),
+              ),
+              const SizedBox(height: 20),
+              Container(height: 1, color: _border),
+              const SizedBox(height: 20),
+            ],
+
+            // ── CATEGORIES & SKILL LEVEL ─────────────────────────────────
+            if (allTags.isNotEmpty) ...[
+              _SectionLabel(
+                  label: _isJa ? 'カテゴリー・スキルレベル' : 'CATEGORIES & SKILL LEVEL'),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8, runSpacing: 8,
+                children: allTags.map((tag) => Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(30),
+                    border: Border.all(color: AppColors.primary.withOpacity(0.4)),
+                  ),
+                  child: Text(tag,
+                      style: const TextStyle(fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primary,
+                          letterSpacing: 0.3)),
+                )).toList(),
+              ),
+              const SizedBox(height: 20),
+              Container(height: 1, color: _border),
+              const SizedBox(height: 20),
+            ],
+
+            // ── LOCATION ─────────────────────────────────────────────────
+            if (locDisplay.isNotEmpty || address.isNotEmpty) ...[
+              _SectionLabel(label: _isJa ? '場所' : 'LOCATION'),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF2F8F4),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.primary.withOpacity(0.15)),
+                ),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Container(
+                      width: 36, height: 36,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.location_on_rounded,
+                          color: AppColors.primary, size: 18),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(locDisplay,
+                              style: const TextStyle(fontSize: 15,
+                                  fontWeight: FontWeight.w800, color: _textDark)),
+                          if (address.isNotEmpty && address != locDisplay)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 3),
+                              child: Text(address,
+                                  style: TextStyle(fontSize: 13,
+                                      color: Colors.grey.shade500)),
+                            ),
+                        ])),
+                  ]),
+                  if (hasGMap) ...[
+                    const SizedBox(height: 12),
+                    GestureDetector(
+                      onTap: () => onOpenLink(_googleLink),
+                      child: Row(children: [
+                        const Icon(Icons.location_on_rounded,
+                            size: 16, color: AppColors.primary),
+                        const SizedBox(width: 6),
+                        Text(s.viewOnMaps,
+                            style: const TextStyle(fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primary,
+                                decoration: TextDecoration.underline,
+                                decorationColor: AppColors.primary)),
+                      ]),
+                    ),
+                  ],
+                ]),
+              ),
+              const SizedBox(height: 20),
+              Container(height: 1, color: _border),
+              const SizedBox(height: 20),
+            ],
+
+            // ── SAVE ─────────────────────────────────────────────────────
+            if (isLoggedIn) ...[
+              _SectionLabel(label: _isJa ? '保存' : 'SAVE'),
+              const SizedBox(height: 12),
+
+              // ── My Events row ─────────────────────────────────────────
+              GestureDetector(
+                onTap: isSaving ? null : () => onToggleMyEvents(docId),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: isSavedMyEvents
+                        ? AppColors.primary.withOpacity(0.06)
+                        : const Color(0xFFF2F8F4),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: isSavedMyEvents
+                          ? AppColors.primary.withOpacity(0.5)
+                          : AppColors.primary.withOpacity(0.15),
+                    ),
+                  ),
+                  child: Row(children: [
+                    Container(
+                      width: 44, height: 44,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        isSavedMyEvents
+                            ? Icons.bookmark_rounded
+                            : Icons.bookmark_border_rounded,
+                        color: AppColors.primary, size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(_isJa ? 'マイイベント' : 'My Events',
+                              style: const TextStyle(fontSize: 15,
+                                  fontWeight: FontWeight.w800, color: _textDark)),
+                          Text(
+                            _isJa ? '参加予定のイベント' : "Events you're planning to join",
+                            style: const TextStyle(fontSize: 12, color: _textLight),
+                          ),
+                        ])),
+                    // ── trailing: spinner, check, or chevron ──────────────
+                    if (isSaving)
+                      const SizedBox(
+                        width: 20, height: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: AppColors.primary),
+                      )
+                    else if (isSavedMyEvents)
+                      const Icon(Icons.check_rounded,
+                          color: AppColors.primary, size: 22)
+                    else
+                      const Icon(Icons.chevron_right_rounded,
+                          color: _textLight, size: 20),
+                  ]),
+                ),
+              ),
+
+              const SizedBox(height: 10),
+
+              // ── Interested row ────────────────────────────────────────
+              GestureDetector(
+                onTap: isSaving ? null : () => onToggleInterested(docId),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: isSavedInterested
+                        ? const Color(0xFFFFF8E7)
+                        : const Color(0xFFF2F8F4),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: isSavedInterested
+                          ? const Color(0xFFD4A017).withOpacity(0.5)
+                          : AppColors.primary.withOpacity(0.15),
+                    ),
+                  ),
+                  child: Row(children: [
+                    Container(
+                      width: 44, height: 44,
+                      decoration: BoxDecoration(
+                        color: isSavedInterested
+                            ? const Color(0xFFFFF0C0)
+                            : AppColors.primary.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        isSavedInterested
+                            ? Icons.star_rounded
+                            : Icons.star_border_rounded,
+                        color: isSavedInterested
+                            ? const Color(0xFFD4A017)
+                            : AppColors.primary,
+                        size: 22,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(_isJa ? '興味あり' : 'Interested',
+                              style: const TextStyle(fontSize: 15,
+                                  fontWeight: FontWeight.w800, color: _textDark)),
+                          Text(
+                            _isJa ? '注目しているイベント' : "Events you'd like to keep an eye on",
+                            style: const TextStyle(fontSize: 12, color: _textLight),
+                          ),
+                        ])),
+                    // ── trailing: spinner, check, or chevron ──────────────
+                    if (isSaving)
+                      const SizedBox(
+                        width: 20, height: 20,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: AppColors.primary),
+                      )
+                    else if (isSavedInterested)
+                      Icon(Icons.check_rounded,
+                          color: const Color(0xFFD4A017), size: 22)
+                    else
+                      const Icon(Icons.chevron_right_rounded,
+                          color: _textLight, size: 20),
+                  ]),
+                ),
+              ),
+
+              const SizedBox(height: 20),
+              Container(height: 1, color: _border),
+              const SizedBox(height: 20),
+            ],
+
+            // ── REGISTRATION ─────────────────────────────────────────────
+            _SectionLabel(label: _isJa ? '登録' : 'REGISTRATION'),
+            const SizedBox(height: 12),
+
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
                 onPressed: hasLink ? () => onOpenLink(_url) : null,
-                icon: const Icon(Icons.open_in_new_rounded, size: 16, color: Colors.white),
-                label: Text(moreInfo, style: const TextStyle(
-                    fontWeight: FontWeight.w700, color: Colors.white, fontSize: 14)),
+                icon: const Icon(Icons.group_rounded,
+                    size: 18, color: Colors.white),
+                label: Text(
+                  _isJa ? 'このイベントに登録する' : 'Register for this Event',
+                  style: const TextStyle(fontWeight: FontWeight.w800,
+                      color: Colors.white, fontSize: 15),
+                ),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   disabledBackgroundColor: Colors.grey.shade200,
                   disabledForegroundColor: Colors.grey.shade400,
                   elevation: 0,
-                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12)),
+                      borderRadius: BorderRadius.circular(14)),
                 ),
               ),
             ),
+            const SizedBox(height: 8),
           ]),
         ),
       ]),
     );
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Section label widget
+// ─────────────────────────────────────────────────────────────────────────────
+class _SectionLabel extends StatelessWidget {
+  final String label;
+  const _SectionLabel({required this.label});
+
+  @override
+  Widget build(BuildContext context) => Text(
+    label,
+    style: const TextStyle(
+      fontSize: 11,
+      fontWeight: FontWeight.w800,
+      color: AppColors.primary,
+      letterSpacing: 1.2,
+    ),
+  );
 }

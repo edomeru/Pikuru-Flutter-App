@@ -116,22 +116,22 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.primary,
+      backgroundColor: Colors.white,
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(
-              Icons.sports_tennis,
-              size: 80,
-              color: Colors.white,
+            Image.asset(
+              'assets/pikuru_full_logo.png',
+              width: 160,
+              height: 160,
             ),
             const SizedBox(height: 20),
             const Text(
-              'Pikuru',
+              'Play Pickleball anywhere with Pikuru',
               style: TextStyle(
-                color: Colors.white,
-                fontSize: 36,
+                color: AppColors.primary,
+                fontSize: 15,
                 fontWeight: FontWeight.bold,
                 fontFamily: 'Rubik',
               ),
