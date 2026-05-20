@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:pikuru/screens/individual_chat_screen.dart';
@@ -18,6 +19,24 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 @pragma('vm:entry-point')
 void notificationTapBackground(NotificationResponse response) {
   debugPrint('[FCM] Background tap: ${response.payload}');
+}
+
+// ── Helper: true when running on iOS Simulator (not a real device) ────────────
+// kDebugMode is true in debug builds. On a real device, APNS works fine even
+// in debug mode, but the simulator never has a valid APNS token.
+bool get _isIosSimulator => Platform.isIOS && kDebugMode && _checkSimulator();
+
+bool _checkSimulator() {
+  // The simulator sets TARGET_IPHONE_SIMULATOR env var, but that's not always
+  // reliable in Flutter. A safer check: try to read SIMULATOR_DEVICE_NAME.
+  // If unavailable, fall back to always skipping token on iOS debug builds
+  // (real device debug builds still work fine with getToken).
+  try {
+    return Platform.environment['SIMULATOR_DEVICE_NAME'] != null ||
+        Platform.environment['SIMULATOR_UDID'] != null;
+  } catch (_) {
+    return false;
+  }
 }
 
 class NotificationService {
@@ -57,9 +76,17 @@ class NotificationService {
       }
     });
 
-    await _saveToken();
+    // ── Guard: skip token fetch on iOS Simulator ──────────────────────────
+    // The simulator has no APNS support. Calling getToken() throws:
+    // [firebase_messaging/apns-token-not-set] and crashes the app before
+    // runApp() completes, causing a permanent white screen.
+    if (!_isIosSimulator) {
+      await _saveToken();
+      _fcm.onTokenRefresh.listen(_saveTokenToFirestore);
+    } else {
+      debugPrint('[FCM] iOS Simulator detected — skipping token fetch');
+    }
 
-    _fcm.onTokenRefresh.listen(_saveTokenToFirestore);
     FirebaseMessaging.onMessage.listen(_onForegroundMessage);
     FirebaseMessaging.onMessageOpenedApp.listen(_onTap);
 
@@ -92,7 +119,10 @@ class NotificationService {
         ledColor: Color(0xFF3A7D44),
       );
 
-      await _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()?.createNotificationChannel(channel);
+      await _plugin
+          .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>()
+          ?.createNotificationChannel(channel);
     }
 
     final initSettings = InitializationSettings(
@@ -117,14 +147,27 @@ class NotificationService {
 
   // ── Token management ──────────────────────────────────────────────────────
   Future<void> _saveToken() async {
+    if (_isIosSimulator) {
+      debugPrint('[FCM] Skipping token save — iOS Simulator');
+      return;
+    }
+
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
       debugPrint('[FCM] Skipping token save — no user logged in');
       return;
     }
-    final token = await _fcm.getToken();
-    if (token != null) {
-      await _saveTokenToFirestore(token);
+
+    try {
+      final token = await _fcm
+          .getToken()
+          .timeout(const Duration(seconds: 10), onTimeout: () => null);
+      if (token != null) {
+        await _saveTokenToFirestore(token);
+      }
+    } catch (e) {
+      // Non-fatal — app continues normally without FCM token
+      debugPrint('[FCM] getToken error (non-fatal): $e');
     }
   }
 
@@ -135,7 +178,10 @@ class NotificationService {
       return;
     }
     try {
-      await FirebaseFirestore.instance.collection('registration').doc(uid).set({
+      await FirebaseFirestore.instance
+          .collection('registration')
+          .doc(uid)
+          .set({
         'fcm_token'      : token,
         'fcm_tokens'     : FieldValue.arrayUnion([token]),
         'platform'       : Platform.isIOS ? 'ios' : 'android',
@@ -148,11 +194,16 @@ class NotificationService {
   }
 
   Future<void> removeToken() async {
+    if (_isIosSimulator) return;
+
     final uid   = FirebaseAuth.instance.currentUser?.uid;
-    final token = await _fcm.getToken();
+    final token = await _fcm.getToken().catchError((_) => null);
     if (uid == null || token == null) return;
     try {
-      await FirebaseFirestore.instance.collection('registration').doc(uid).update({
+      await FirebaseFirestore.instance
+          .collection('registration')
+          .doc(uid)
+          .update({
         'fcm_tokens' : FieldValue.arrayRemove([token]),
         'fcm_token'  : FieldValue.delete(),
       });
@@ -224,7 +275,7 @@ class NotificationService {
       final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
 
       // chatId is formatted as uid1_uid2 — find the other uid
-      final parts = chatId.split('_');
+      final parts    = chatId.split('_');
       final otherUid = parts.firstWhere(
             (p) => p != currentUid,
         orElse: () => '',
@@ -232,18 +283,18 @@ class NotificationService {
       if (otherUid.isEmpty) return;
 
       // Look up other user's info from registration
-      final doc = await FirebaseFirestore.instance
+      final doc  = await FirebaseFirestore.instance
           .collection('registration')
           .doc(otherUid)
           .get();
-      final data    = doc.data() ?? {};
+      final data      = doc.data() ?? {};
       final nickname  = (data['nickname']  ?? '').toString().trim();
       final firstName = (data['firstName'] ?? '').toString().trim();
       final lastName  = (data['lastName']  ?? '').toString().trim();
-      final name = nickname.isNotEmpty
+      final name      = nickname.isNotEmpty
           ? nickname
           : [firstName, lastName].where((s) => s.isNotEmpty).join(' ');
-      final avatar = (data['profile_img'] ?? '').toString();
+      final avatar    = (data['profile_img'] ?? '').toString();
 
       if (!context.mounted) return;
       Navigator.of(context).push(

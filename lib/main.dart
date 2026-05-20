@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -21,19 +22,38 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
   // Register background handler
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
   // Init notification service
   await NotificationService.instance.init();
 
-  // TEMPORARY - just to get your token for testing
-  final token = await FirebaseMessaging.instance.getToken();
-  debugPrint('════════════════════════════════');
-  debugPrint('FCM TOKEN: $token');
-  debugPrint('════════════════════════════════');
+  // ── FCM token (skip on iOS simulator — no APNS support) ──────────────────
+  // iOS simulator throws [firebase_messaging/apns-token-not-set] which crashes
+  // the app before runApp() is called, causing a permanent white screen.
+  try {
+    final bool isIosSimulator =
+        Platform.isIOS && !const bool.fromEnvironment('dart.vm.product');
 
-  // ── iOS Keychain fix ─────────────────────────────────────────────
+    if (!isIosSimulator) {
+      final token = await FirebaseMessaging.instance
+          .getToken()
+          .timeout(const Duration(seconds: 10), onTimeout: () => null);
+      debugPrint('════════════════════════════════');
+      debugPrint('FCM TOKEN: $token');
+      debugPrint('════════════════════════════════');
+    } else {
+      debugPrint('════════════════════════════════');
+      debugPrint('FCM TOKEN: skipped (iOS simulator)');
+      debugPrint('════════════════════════════════');
+    }
+  } catch (e) {
+    // Never let FCM token failure block the app from starting
+    debugPrint('FCM token error (non-fatal): $e');
+  }
+
+  // ── iOS Keychain fix ─────────────────────────────────────────────────────
   // iOS keeps Firebase Auth session in Keychain even after app deletion.
   // We use SharedPreferences (cleared on uninstall) to detect fresh installs
   // and sign out automatically so the login screen always shows.
@@ -47,7 +67,6 @@ void main() async {
   }
 
   runApp(
-    // Wrap with ProviderScope for Riverpod
     const ProviderScope(
       child: MyApp(),
     ),
@@ -78,7 +97,7 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// ── Splash Screen ─────────────────────────────────────────────────────
+// ── Splash Screen ─────────────────────────────────────────────────────────────
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -125,6 +144,10 @@ class _SplashScreenState extends State<SplashScreen> {
               'assets/pikuru_full_logo.png',
               width: 160,
               height: 160,
+              errorBuilder: (context, error, stackTrace) {
+                debugPrint('Logo load error: $error');
+                return const SizedBox(width: 160, height: 160);
+              },
             ),
             const SizedBox(height: 20),
             const Text(
@@ -138,7 +161,7 @@ class _SplashScreenState extends State<SplashScreen> {
             ),
             const SizedBox(height: 40),
             const CircularProgressIndicator(
-              color: Colors.white,
+              color: AppColors.primary, // ← was Colors.white (invisible on white bg)
               strokeWidth: 2.5,
             ),
           ],
