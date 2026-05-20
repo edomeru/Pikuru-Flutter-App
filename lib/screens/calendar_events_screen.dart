@@ -18,52 +18,78 @@ class _S {
 
   String get page         => isJa ? 'カレンダー'              : 'Calendar Events';
   String get noEvents     => isJa ? 'この日のイベントはありません' : 'No events on this day';
-  String get moreInfo     => isJa ? '詳細情報'                : 'More Information';
   String get free         => isJa ? '無料'                    : 'Free';
   String get filters      => isJa ? 'フィルター'               : 'Filters';
   String get filterActive => isJa ? 'Active'                 : 'Active';
   String get allCountries => isJa ? 'すべての国'               : 'All Countries';
   String get clearAll     => isJa ? 'クリア'                  : 'Clear All';
   String get applyFilters => isJa ? 'フィルターを適用'         : 'APPLY FILTERS';
-  String get loading      => isJa ? '読み込み中...'            : 'Loading...';
   String get viewOnMaps   => isJa ? 'Googleマップで見る'       : 'View on Google Maps';
-  String get saveEvent       => isJa ? '保存済み'       : 'My Events';
-  String get saveEventSub    => isJa ? '参加予定のイベント' : "Events you're planning to join";
-  String get interested      => isJa ? '興味あり'        : 'Interested';
-  String get interestedSub   => isJa ? '注目しているイベント' : "Events you'd like to keep an eye on";
-  String get registration    => isJa ? '登録'            : 'REGISTRATION';
-  String get registerBtn     => isJa ? 'このイベントに登録する' : 'Register for this Event';
 
-  // section labels
+  // Save
+  String get secSave           => isJa ? '保存'           : 'SAVE';
+  String get saveMyEvents      => isJa ? 'マイイベント'     : 'My Events';
+  String get saveMyEventsSub   => isJa ? '参加予定のイベント' : "Events you're planning to join";
+  String get saveInterested    => isJa ? '興味あり'        : 'Interested';
+  String get saveInterestedSub => isJa ? '注目しているイベント' : "Events you'd like to keep an eye on";
+
+  // Save modals
+  String get saveMarkMyEvents      => isJa ? 'My Eventsに追加？'   : 'Add to My Events?';
+  String get saveMarkMyEventsBody  => isJa ? 'このイベントをMy Eventsリストに保存します。' : 'This event will be saved to your My Events list.';
+  String get saveMarkInterested    => isJa ? '「気になる」に登録？'   : 'Mark as Interested?';
+  String get saveMarkInterestedBody=> isJa ? 'このイベントを「気になる」リストに保存します。' : 'This event will be saved to your Interested list.';
+  String get saveYes               => isJa ? 'はい'  : 'Yes';
+  String get saveMark              => isJa ? '保存'  : 'Save';
+  String get modalCancel           => isJa ? 'キャンセル' : 'Cancel';
+
+  // Visit site modal (shown after saving to My Events or Interested)
+  String get visitSiteTitle => isJa ? 'イベントサイトへ？'   : 'Visit Event Website?';
+  String get visitSiteBody  => isJa ? '詳細や登録は公式イベントページでご確認いただけます。サイトを開きますか？'
+      : 'Would you like to go to the official event page for more details and registration?';
+  String get visitSiteYes   => isJa ? 'サイトを見る'  : 'Visit Website';
+  String get visitSiteNo    => isJa ? 'いいえ'        : 'No thanks';
+
+  // Registration
+  String get secRegistration        => isJa ? '登録'              : 'REGISTRATION';
+  String get registerBtn            => isJa ? 'このイベントに登録する' : 'Register for this Event';
+  String get registerConfirmTitle   => isJa ? 'このイベントに登録しますか？'    : 'Register for this event?';
+  String get registerConfirmBody    => isJa ? '登録情報は主催者に送信され、承認を待ちます。' : 'Your registration will be sent to the organizer for review.';
+  String get registering            => isJa ? '登録中…'           : 'Registering…';
+  String get loginToRegister        => isJa ? '登録にはログインが必要です' : 'Log in to register for events';
+  String get registrationPending    => isJa ? '登録中（承認待ち）' : 'Registration Pending';
+  String get registrationApproved   => isJa ? '登録承認済み'       : 'Registration Approved';
+  String get registrationRejected   => isJa ? '登録却下'          : 'Registration Rejected';
+  String get alreadyRegistered      => isJa ? 'このイベントに登録済みです。' : 'You are registered for this event.';
+  String get regApprovedMsg         => isJa ? '登録が承認されました！' : 'Your registration has been approved!';
+  String get regRejectedMsg         => isJa ? '登録は承認されませんでした。' : 'Your registration was not approved.';
+  String get cancelReg              => isJa ? '登録をキャンセル'  : 'Cancel Registration';
+  String get cancelRegTitle         => isJa ? '登録をキャンセルしますか？' : 'Cancel your registration?';
+  String get cancelRegBody          => isJa ? 'このイベントから登録が削除されます。' : 'This will remove your registration from this event.';
+
+  // Section labels
+  String get secDateTime  => isJa ? '日時'   : 'DATE & TIME';
+  String get secCatSkill  => isJa ? 'カテゴリー・スキルレベル' : 'CATEGORIES & SKILL LEVEL';
+  String get secLoc       => isJa ? '場所'   : 'LOCATION';
+
+  // Detail labels
+  String get ends      => isJa ? '終了日：'      : 'Ends:';
+  String get partLimit => isJa ? '参加人数上限：' : 'Participant limit:';
+  String get contact   => isJa ? '連絡先：'      : 'Contact:';
+
+  // Filter labels
+  String get fCountry     => isJa ? '国'           : 'Country';
+  String get fPrefecture  => isJa ? '都道府県'      : 'Prefecture';
+  String get fCity        => isJa ? '市区町村'      : 'City';
+  String get fType        => isJa ? 'イベントの種類' : 'Event Type';
+  String get fAll         => isJa ? 'すべて'        : 'All';
+  String get fAllTypes    => isJa ? 'すべての種類'   : 'All types';
   String get secLocation  => isJa ? '場所'          : 'LOCATION';
   String get secSkill     => isJa ? 'スキルレベル'   : 'SKILL LEVELS';
   String get secCat       => isJa ? 'カテゴリー'     : 'CATEGORIES';
   String get secOther     => isJa ? 'その他'         : 'OTHER';
-  String get secDateTime  => isJa ? '日時'           : 'DATE & TIME';
-  String get secCatSkill  => isJa ? 'カテゴリー・スキルレベル' : 'CATEGORIES & SKILL LEVEL';
-  String get secLoc       => isJa ? '場所'           : 'LOCATION';
-  String get secSave      => isJa ? '保存'           : 'SAVE';
-
-  // detail labels
-  String get ends         => isJa ? '終了日：'        : 'Ends:';
-  String get partLimit    => isJa ? '参加人数上限：'   : 'Participant limit:';
-  String get contact      => isJa ? '連絡先：'        : 'Contact:';
-
-  // filter labels
-  String get fCountry     => isJa ? '国'              : 'Country';
-  String get fPrefecture  => isJa ? '都道府県'         : 'Prefecture';
-  String get fCity        => isJa ? '市区町村'         : 'City';
-  String get fType        => isJa ? 'イベントの種類'    : 'Event Type';
-  String get fAllCountries=> isJa ? 'すべての国'       : 'All countries';
-  String get fAll         => isJa ? 'すべて'           : 'All';
-  String get fAllTypes    => isJa ? 'すべての種類'     : 'All types';
-
-  // skill
   String get skillPro     => isJa ? '上級'      : 'Pro';
   String get skillAmateur => isJa ? '中級'      : 'Amateur';
   String get skillBeginner=> isJa ? '初級'      : 'Beginner';
-
-  // categories
   String get catMx => isJa ? 'ミックスダブルス' : 'Mixed Doubles';
   String get catMd => isJa ? '男子ダブルス'    : "Men's Doubles";
   String get catWd => isJa ? '女子ダブルス'    : "Women's Doubles";
@@ -72,8 +98,6 @@ class _S {
   String get catSe => isJa ? 'シニア'          : 'Seniors';
   String get catJu => isJa ? 'ジュニア'        : 'Juniors';
   String get catCo => isJa ? '学生'            : 'Collegiate';
-
-  // other
   String get tourist => isJa ? '観光客歓迎' : 'Tourist Friendly';
 
   List<String> get months => isJa
@@ -147,12 +171,12 @@ class _CalFilter {
     bool? catMx, bool? catMd, bool? catMs, bool? catWs,
     bool? catWd, bool? catSe, bool? catJu, bool? catCo, bool? tourist,
   }) => _CalFilter(
-    country:       country       ?? this.country,
-    prefecture:    prefecture    ?? this.prefecture,
-    city:          city          ?? this.city,
-    type:          type          ?? this.type,
-    skillPro:      skillPro      ?? this.skillPro,
-    skillAmateur:  skillAmateur  ?? this.skillAmateur,
+    country: country ?? this.country,
+    prefecture: prefecture ?? this.prefecture,
+    city: city ?? this.city,
+    type: type ?? this.type,
+    skillPro: skillPro ?? this.skillPro,
+    skillAmateur: skillAmateur ?? this.skillAmateur,
     skillBeginner: skillBeginner ?? this.skillBeginner,
     catMx: catMx ?? this.catMx, catMd: catMd ?? this.catMd,
     catMs: catMs ?? this.catMs, catWs: catWs ?? this.catWs,
@@ -170,9 +194,14 @@ class _CalFilter {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Save status type — mirrors web app's SaveStatus
+// Save status type
 // ─────────────────────────────────────────────────────────────────────────────
 enum _SaveStatus { none, myEvents, interested }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Registration status type
+// ─────────────────────────────────────────────────────────────────────────────
+enum _RegStatus { none, pending, approved, rejected }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen
@@ -214,10 +243,16 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
   late final AnimationController _slideCtrl;
   late final Animation<Offset>   _slideAnim;
 
-  // ── Firestore-backed save statuses ─────────────────────────────────────────
-  // Maps eventId → _SaveStatus, loaded from user_events collection on init.
+  // ── Save state ─────────────────────────────────────────────────────────────
+  // Maps eventDocId → save status loaded from Firestore
   final Map<String, _SaveStatus> _saveStatuses = {};
   final Map<String, bool> _savingIds = {};
+
+  // ── Registration state ──────────────────────────────────────────────────────
+  // Maps eventDocId → reg status loaded from Firestore
+  final Map<String, _RegStatus> _regStatuses = {};
+  final Map<String, String>     _regDocIds   = {}; // eventDocId → registrationDocId
+  final Map<String, bool>       _regLoading  = {};
 
   @override
   void initState() {
@@ -243,58 +278,77 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     super.dispose();
   }
 
-  String? get _currentUid => FirebaseAuth.instance.currentUser?.uid;
-
-  // ── Load all save statuses for the visible events from Firestore ───────────
-  // Mirrors web app's loadSaveStatuses() effect.
-  Future<void> _loadSaveStatuses(List<Map<String, dynamic>> events) async {
-    final uid = _currentUid;
-    if (uid == null || events.isEmpty) return;
+  // ── Load save & reg statuses for all events ───────────────────────────────
+  Future<void> _loadStatuses(List<Map<String, dynamic>> events) async {
+    final firebaseUser = FirebaseAuth.instance.currentUser;
+    if (firebaseUser == null) return;
+    final uid = firebaseUser.uid;
+    final db  = FirebaseFirestore.instance;
 
     await Future.wait(events.map((ev) async {
-      final eventId = (ev['_doc_id'] ?? '').toString();
-      if (eventId.isEmpty) return;
-      try {
-        final snap = await FirebaseFirestore.instance
-            .collection('user_events')
-            .doc('${uid}_$eventId')
-            .get();
+      final docId = (ev['_doc_id'] ?? '').toString();
+      if (docId.isEmpty) return;
 
+      // Save status from user_events
+      try {
+        final snap = await db.doc('user_events/${uid}_$docId').get();
         if (!mounted) return;
-        if (!snap.exists) {
-          setState(() => _saveStatuses[eventId] = _SaveStatus.none);
-        } else {
-          final status = (snap.data()?['status'] ?? '').toString().trim();
+        if (snap.exists) {
+          final status = (snap.data()?['status'] ?? '').toString();
           setState(() {
-            _saveStatuses[eventId] = status == 'my_events'
+            _saveStatuses[docId] = status == 'my_events'
                 ? _SaveStatus.myEvents
                 : status == 'interested'
                 ? _SaveStatus.interested
                 : _SaveStatus.none;
+          });
+        } else {
+          setState(() => _saveStatuses[docId] = _SaveStatus.none);
+        }
+      } catch (_) {}
+
+      // Registration status from event_registrations
+      try {
+        final snap = await db
+            .collection('event_registrations')
+            .where('event_id', isEqualTo: docId)
+            .where('user_id', isEqualTo: uid)
+            .limit(1)
+            .get();
+        if (!mounted) return;
+        if (snap.docs.isEmpty) {
+          setState(() => _regStatuses[docId] = _RegStatus.none);
+        } else {
+          final d      = snap.docs.first;
+          final status = (d.data()['status'] ?? '').toString();
+          setState(() {
+            _regDocIds[docId]  = d.id;
+            _regStatuses[docId] = status == 'approved'
+                ? _RegStatus.approved
+                : status == 'rejected'
+                ? _RegStatus.rejected
+                : _RegStatus.pending;
           });
         }
       } catch (_) {}
     }));
   }
 
-  // ── Write save status to Firestore — mirrors web app's handleSaveStatus() ──
-  Future<void> _handleSaveStatus(
-      String eventId,
-      _SaveStatus next,
-      Map<String, dynamic> event,
-      ) async {
-    final uid = _currentUid;
-    if (uid == null) return;
+  // ── Save handler (My Events / Interested) ─────────────────────────────────
+  Future<void> _handleSave(
+      Map<String, dynamic> event, _SaveStatus next) async {
+    final firebaseUser = FirebaseAuth.instance.currentUser;
+    if (firebaseUser == null) return;
+    final docId = (event['_doc_id'] ?? '').toString();
+    if (docId.isEmpty) return;
 
-    setState(() => _savingIds[eventId] = true);
+    setState(() => _savingIds[docId] = true);
     try {
-      final docRef = FirebaseFirestore.instance
-          .collection('user_events')
-          .doc('${uid}_$eventId');
-
-      await docRef.set({
+      final db  = FirebaseFirestore.instance;
+      final uid = firebaseUser.uid;
+      await db.doc('user_events/${uid}_$docId').set({
         'user_id':     uid,
-        'event_id':    eventId,
+        'event_id':    docId,
         'status':      next == _SaveStatus.myEvents ? 'my_events' : 'interested',
         'event_title': (event['event_title'] ?? '').toString(),
         'event_pic':   (event['event_pic'] ??
@@ -302,35 +356,497 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
             event['event_image'] ?? '').toString(),
         'saved_at':    FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
-
-      if (mounted) setState(() => _saveStatuses[eventId] = next);
+      if (mounted) setState(() => _saveStatuses[docId] = next);
     } catch (e) {
-      debugPrint('[CalendarEvents] Save failed: $e');
+      debugPrint('Save failed: $e');
     } finally {
-      if (mounted) setState(() => _savingIds[eventId] = false);
+      if (mounted) setState(() => _savingIds[docId] = false);
     }
   }
 
-  // ── Remove a save status from Firestore (toggle off) ──────────────────────
-  Future<void> _handleRemoveSaveStatus(String eventId) async {
-    final uid = _currentUid;
-    if (uid == null) return;
+  // ── Register handler ──────────────────────────────────────────────────────
+  Future<void> _handleRegister(Map<String, dynamic> event) async {
+    final firebaseUser = FirebaseAuth.instance.currentUser;
+    if (firebaseUser == null) return;
+    final docId = (event['_doc_id'] ?? '').toString();
+    if (docId.isEmpty) return;
 
-    setState(() => _savingIds[eventId] = true);
+    setState(() => _regLoading[docId] = true);
     try {
-      await FirebaseFirestore.instance
-          .collection('user_events')
-          .doc('${uid}_$eventId')
-          .delete();
+      final db  = FirebaseFirestore.instance;
+      final uid = firebaseUser.uid;
 
-      if (mounted) setState(() => _saveStatuses[eventId] = _SaveStatus.none);
+      // 1. Create registration record
+      final ref = await db.collection('event_registrations').add({
+        'event_id':    docId,
+        'user_id':     uid,
+        'user_name':   firebaseUser.displayName ?? '',
+        'user_email':  firebaseUser.email ?? '',
+        'user_avatar': firebaseUser.photoURL ?? '',
+        'status':      'pending',
+        'registered_at': FieldValue.serverTimestamp(),
+      });
+
+      // 2. Write to user_events (shows up in My Events history)
+      await db.doc('user_events/${uid}_$docId').set({
+        'user_id':     uid,
+        'event_id':    docId,
+        'status':      'my_events',
+        'event_title': (event['event_title'] ?? '').toString(),
+        'event_pic':   (event['event_pic'] ??
+            event['event_pic_thumbnail'] ??
+            event['event_image'] ?? '').toString(),
+        'saved_at':    FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      if (mounted) {
+        setState(() {
+          _regDocIds[docId]   = ref.id;
+          _regStatuses[docId] = _RegStatus.pending;
+          _saveStatuses[docId] = _SaveStatus.myEvents;
+        });
+      }
     } catch (e) {
-      debugPrint('[CalendarEvents] Remove save failed: $e');
+      debugPrint('Registration failed: $e');
     } finally {
-      if (mounted) setState(() => _savingIds[eventId] = false);
+      if (mounted) setState(() => _regLoading[docId] = false);
     }
   }
 
+  // ── Cancel registration handler ───────────────────────────────────────────
+  Future<void> _handleCancelRegistration(Map<String, dynamic> event) async {
+    final firebaseUser = FirebaseAuth.instance.currentUser;
+    if (firebaseUser == null) return;
+    final docId    = (event['_doc_id'] ?? '').toString();
+    final regDocId = _regDocIds[docId];
+    if (regDocId == null) return;
+
+    setState(() => _regLoading[docId] = true);
+    try {
+      final db  = FirebaseFirestore.instance;
+      final uid = firebaseUser.uid;
+      // 1. Remove registration record
+      await db.doc('event_registrations/$regDocId').delete();
+      // 2. Remove from user_events
+      await db.doc('user_events/${uid}_$docId').delete().catchError((_) {});
+      if (mounted) {
+        setState(() {
+          _regStatuses.remove(docId);
+          _regDocIds.remove(docId);
+          _regStatuses[docId]  = _RegStatus.none;
+          _saveStatuses[docId] = _SaveStatus.none;
+        });
+      }
+    } catch (e) {
+      debugPrint('Cancel registration failed: $e');
+    } finally {
+      if (mounted) setState(() => _regLoading[docId] = false);
+    }
+  }
+
+  // ── Confirmation modals ───────────────────────────────────────────────────
+
+  Future<void> _showSaveConfirmModal(
+      Map<String, dynamic> event, _SaveStatus next) async {
+    final _S ls = _S(ref.read(appLangProvider));
+    final isMyEvents = next == _SaveStatus.myEvents;
+
+    await showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.55),
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 340),
+          decoration: BoxDecoration(
+            color: const Color(0xFF07170C),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: Colors.white.withOpacity(0.08)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.55),
+                blurRadius: 80, offset: const Offset(0, 24),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.all(24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(
+              width: 56, height: 56,
+              decoration: BoxDecoration(
+                color: isMyEvents
+                    ? AppColors.primary.withOpacity(0.14)
+                    : const Color(0xFFF5B23B).withOpacity(0.14),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                isMyEvents ? Icons.bookmark_rounded : Icons.star_rounded,
+                color: isMyEvents ? AppColors.primary : const Color(0xFFF5B23B),
+                size: 26,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              isMyEvents ? ls.saveMarkMyEvents : ls.saveMarkInterested,
+              style: const TextStyle(
+                color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isMyEvents ? ls.saveMarkMyEventsBody : ls.saveMarkInterestedBody,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.55), fontSize: 13, height: 1.5,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            Row(children: [
+              Expanded(
+                child: TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  style: TextButton.styleFrom(
+                    backgroundColor: Colors.black.withOpacity(0.18),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(color: Colors.white.withOpacity(0.16)),
+                    ),
+                  ),
+                  child: Text(ls.modalCancel,
+                      style: TextStyle(
+                          color: Colors.white.withOpacity(0.8),
+                          fontWeight: FontWeight.w800, fontSize: 13)),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    await _handleSave(event, next);
+                    // After saving, offer to visit the event website
+                    final eventUrl = (event['event_link'] ?? event['event_url'] ?? '').toString().trim();
+                    if (eventUrl.isNotEmpty && mounted) {
+                      await _showVisitSiteModal(eventUrl);
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isMyEvents
+                        ? AppColors.primary
+                        : const Color(0xFFF5B23B),
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                  ),
+                  child: Text(
+                    isMyEvents ? ls.saveYes : ls.saveMark,
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800, fontSize: 13),
+                  ),
+                ),
+              ),
+            ]),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  // ── Visit Event Website modal ─────────────────────────────────────────────
+  // Shown after user saves to My Events or Interested, matching web app flow.
+  Future<void> _showVisitSiteModal(String url) async {
+    final _S ls = _S(ref.read(appLangProvider));
+
+    await showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.60),
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 340),
+          decoration: BoxDecoration(
+            color: const Color(0xFF07170C),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: const Color(0xFF6ABF7A).withOpacity(0.20)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.60),
+                blurRadius: 80, offset: const Offset(0, 24),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.all(24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            // Globe icon
+            Container(
+              width: 56, height: 56,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.language_rounded,
+                  color: AppColors.primary, size: 26),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              ls.visitSiteTitle,
+              style: const TextStyle(
+                  color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              ls.visitSiteBody,
+              style: TextStyle(
+                  color: Colors.white.withOpacity(0.55), fontSize: 13, height: 1.5),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            Row(children: [
+              Expanded(
+                child: TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  style: TextButton.styleFrom(
+                    backgroundColor: Colors.black.withOpacity(0.18),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(color: Colors.white.withOpacity(0.16)),
+                    ),
+                  ),
+                  child: Text(ls.visitSiteNo,
+                      style: TextStyle(
+                          color: Colors.white.withOpacity(0.8),
+                          fontWeight: FontWeight.w800, fontSize: 13)),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    final uri = Uri.tryParse(url);
+                    if (uri != null && await canLaunchUrl(uri)) {
+                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.open_in_new_rounded,
+                          size: 15, color: Colors.white),
+                      const SizedBox(width: 6),
+                      Text(ls.visitSiteYes,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w800, fontSize: 13)),
+                    ],
+                  ),
+                ),
+              ),
+            ]),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showRegisterConfirmModal(Map<String, dynamic> event) async {
+    final _S ls = _S(ref.read(appLangProvider));
+
+    await showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.55),
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 340),
+          decoration: BoxDecoration(
+            color: const Color(0xFF07170C),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: Colors.white.withOpacity(0.08)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.55),
+                blurRadius: 80, offset: const Offset(0, 24),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.all(24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(
+              width: 56, height: 56,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.14),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.group_rounded,
+                  color: AppColors.primary, size: 26),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              ls.registerConfirmTitle,
+              style: const TextStyle(
+                  color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              ls.registerConfirmBody,
+              style: TextStyle(
+                  color: Colors.white.withOpacity(0.55), fontSize: 13, height: 1.5),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            Row(children: [
+              Expanded(
+                child: TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  style: TextButton.styleFrom(
+                    backgroundColor: Colors.black.withOpacity(0.18),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(color: Colors.white.withOpacity(0.16)),
+                    ),
+                  ),
+                  child: Text(ls.modalCancel,
+                      style: TextStyle(
+                          color: Colors.white.withOpacity(0.8),
+                          fontWeight: FontWeight.w800, fontSize: 13)),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _handleRegister(event);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                  ),
+                  child: Text(ls.registerBtn,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800, fontSize: 13)),
+                ),
+              ),
+            ]),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showCancelRegConfirmModal(Map<String, dynamic> event) async {
+    final _S ls = _S(ref.read(appLangProvider));
+
+    await showDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.55),
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 340),
+          decoration: BoxDecoration(
+            color: const Color(0xFF07170C),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: Colors.white.withOpacity(0.08)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.55),
+                blurRadius: 80, offset: const Offset(0, 24),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.all(24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(
+              width: 56, height: 56,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEF476F).withOpacity(0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.cancel_outlined,
+                  color: Color(0xFFEF476F), size: 26),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              ls.cancelRegTitle,
+              style: const TextStyle(
+                  color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              ls.cancelRegBody,
+              style: TextStyle(
+                  color: Colors.white.withOpacity(0.55), fontSize: 13, height: 1.5),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            Row(children: [
+              Expanded(
+                child: TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  style: TextButton.styleFrom(
+                    backgroundColor: Colors.black.withOpacity(0.18),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(color: Colors.white.withOpacity(0.16)),
+                    ),
+                  ),
+                  child: Text(ls.modalCancel,
+                      style: TextStyle(
+                          color: Colors.white.withOpacity(0.8),
+                          fontWeight: FontWeight.w800, fontSize: 13)),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _handleCancelRegistration(event);
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFEF476F),
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                  ),
+                  child: Text(ls.cancelReg,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800, fontSize: 13)),
+                ),
+              ),
+            ]),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  // ── Location helpers ──────────────────────────────────────────────────────
   String get _locationLabel {
     if (_filter.prefecture.isNotEmpty) return _filter.prefecture;
     if (_filter.country.isNotEmpty)    return _filter.country;
@@ -412,7 +928,7 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
       } catch (_) {}
     }
 
-    final enriched = raw.map((e) {
+    return raw.map((e) {
       final locId = (e['event_loc_id'] ?? '').toString().trim();
       final loc   = locId.isNotEmpty ? (locCache[locId] ?? <String, dynamic>{}) : <String, dynamic>{};
 
@@ -468,11 +984,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
         '_resolvedCity':       cityEn,
       };
     }).toList();
-
-    // After enriching, load Firestore save statuses for current user
-    await _loadSaveStatuses(enriched);
-
-    return enriched;
   }
 
   Map<String, List<Map<String, String>>> _buildLocationMap(
@@ -718,7 +1229,7 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                   Row(children: [
                     Expanded(child: dropdownField(
                       curS.fCountry, temp.country,
-                      locationMap.keys.toList(), curS.fAllCountries,
+                      locationMap.keys.toList(), curS.allCountries,
                           (v) => setS(() => temp =
                           temp.copyWith(country: v, prefecture: '', city: '')),
                     )),
@@ -844,6 +1355,7 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
   Widget build(BuildContext context) {
     ref.watch(appLangProvider);
     final eventsAsync = ref.watch(calendarEventsProvider);
+    final firebaseUser = FirebaseAuth.instance.currentUser;
 
     return Scaffold(
       backgroundColor: _bg,
@@ -862,6 +1374,11 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
             final events       = snapshot.data ?? [];
             final eventMap     = _buildEventMap(events);
             final selectedEvts = _eventsForDate(eventMap, _selectedDate);
+
+            // Load statuses once events are ready and user is logged in
+            if (snapshot.hasData && firebaseUser != null) {
+              _loadStatuses(events);
+            }
 
             return CustomScrollView(slivers: [
 
@@ -1040,30 +1557,23 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                       else
                         ...selectedEvts.map((e) {
                           final docId = (e['_doc_id'] ?? '').toString();
-                          final saveStatus = _saveStatuses[docId] ?? _SaveStatus.none;
-                          final isSaving = _savingIds[docId] ?? false;
-
                           return _EventCard(
                             event: e,
                             lang: ref.watch(appLangProvider),
                             onOpenLink: _openLink,
-                            saveStatus: saveStatus,
-                            isSaving: isSaving,
-                            isLoggedIn: _currentUid != null,
-                            onToggleMyEvents: (id) async {
-                              if (saveStatus == _SaveStatus.myEvents) {
-                                await _handleRemoveSaveStatus(id);
-                              } else {
-                                await _handleSaveStatus(id, _SaveStatus.myEvents, e);
-                              }
-                            },
-                            onToggleInterested: (id) async {
-                              if (saveStatus == _SaveStatus.interested) {
-                                await _handleRemoveSaveStatus(id);
-                              } else {
-                                await _handleSaveStatus(id, _SaveStatus.interested, e);
-                              }
-                            },
+                            isLoggedIn: firebaseUser != null,
+                            saveStatus: _saveStatuses[docId] ?? _SaveStatus.none,
+                            isSaving:   _savingIds[docId] ?? false,
+                            regStatus:  _regStatuses[docId] ?? _RegStatus.none,
+                            isRegLoading: _regLoading[docId] ?? false,
+                            onTapMyEvents: () =>
+                                _showSaveConfirmModal(e, _SaveStatus.myEvents),
+                            onTapInterested: () =>
+                                _showSaveConfirmModal(e, _SaveStatus.interested),
+                            onTapRegister: () =>
+                                _showRegisterConfirmModal(e),
+                            onTapCancelReg: () =>
+                                _showCancelRegConfirmModal(e),
                           );
                         }),
 
@@ -1252,29 +1762,35 @@ class _EmptyDayCell extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Event Card — updated to use _SaveStatus + Firestore callbacks
+// Event Card
 // ─────────────────────────────────────────────────────────────────────────────
 class _EventCard extends StatelessWidget {
   final Map<String, dynamic> event;
-  final String               lang;
+  final String lang;
   final Future<void> Function(String) onOpenLink;
-
-  // ── Firestore-backed save state (passed from parent) ──
+  final bool isLoggedIn;
   final _SaveStatus saveStatus;
-  final bool        isSaving;
-  final bool        isLoggedIn;
-  final Future<void> Function(String id) onToggleMyEvents;
-  final Future<void> Function(String id) onToggleInterested;
+  final bool isSaving;
+  final _RegStatus regStatus;
+  final bool isRegLoading;
+  final VoidCallback onTapMyEvents;
+  final VoidCallback onTapInterested;
+  final VoidCallback onTapRegister;
+  final VoidCallback onTapCancelReg;
 
   const _EventCard({
     required this.event,
     required this.lang,
     required this.onOpenLink,
+    required this.isLoggedIn,
     required this.saveStatus,
     required this.isSaving,
-    required this.isLoggedIn,
-    required this.onToggleMyEvents,
-    required this.onToggleInterested,
+    required this.regStatus,
+    required this.isRegLoading,
+    required this.onTapMyEvents,
+    required this.onTapInterested,
+    required this.onTapRegister,
+    required this.onTapCancelReg,
   });
 
   bool get _isJa => lang == kLangJa;
@@ -1298,20 +1814,11 @@ class _EventCard extends StatelessWidget {
   String get _imageUrl =>
       (event['event_pic'] ?? event['event_pic_thumbnail'] ?? event['event_image'] ?? '').toString();
 
-  String get _url =>
-      (event['event_link'] ?? event['event_url'] ?? '').toString();
-
   String get _googleLink =>
       (event['event_googlelink'] ?? event['event_venue_link'] ?? '').toString();
 
   String get _contact =>
       (event['event_contact'] ?? event['event_email'] ?? '').toString();
-
-  int? get _participantLimit {
-    final v = event['event_participant_limit'] ?? event['event_max_participants'];
-    if (v == null) return null;
-    return int.tryParse(v.toString());
-  }
 
   String _fee(String freeLabel) {
     final f = event['event_fee'];
@@ -1363,10 +1870,9 @@ class _EventCard extends StatelessWidget {
     return tags;
   }
 
-  static const Color _surface  = Colors.white;
-  static const Color _border   = Color(0xFFEEEFF1);
-  static const Color _textDark = Color(0xFF0D0D0D);
-  static const Color _textMid  = Color(0xFF555760);
+  static const Color _surface   = Colors.white;
+  static const Color _border    = Color(0xFFEEEFF1);
+  static const Color _textDark  = Color(0xFF0D0D0D);
   static const Color _textLight = Color(0xFF888A90);
 
   @override
@@ -1380,7 +1886,6 @@ class _EventCard extends StatelessWidget {
     final timeRaw   = event['event_time'] ?? event['event_start_time'];
     final timeStr   = _formatTime(timeRaw);
     final hasImage  = _imageUrl.isNotEmpty;
-    final hasLink   = _url.isNotEmpty;
     final hasGMap   = _googleLink.isNotEmpty;
     final hasOrg    = _orgName.isNotEmpty;
     final address   = _address;
@@ -1389,11 +1894,8 @@ class _EventCard extends StatelessWidget {
     final skillTags = _getSkillTags();
     final catTags   = _getCategoryTags();
     final allTags   = [...skillTags, ...catTags];
-    final limit     = _participantLimit;
     final contact   = _contact;
-    final docId     = (event['_doc_id'] ?? '').toString();
 
-    // Derived save state booleans for UI rendering
     final isSavedMyEvents  = saveStatus == _SaveStatus.myEvents;
     final isSavedInterested = saveStatus == _SaveStatus.interested;
 
@@ -1448,7 +1950,6 @@ class _EventCard extends StatelessWidget {
               ),
             ]),
 
-            // ── Time ────────────────────────────────────────────────────
             if (timeStr.isNotEmpty) ...[
               const SizedBox(height: 8),
               Row(children: [
@@ -1459,7 +1960,6 @@ class _EventCard extends StatelessWidget {
               ]),
             ],
 
-            // ── Location summary ─────────────────────────────────────────
             if (locDisplay.isNotEmpty) ...[
               const SizedBox(height: 6),
               GestureDetector(
@@ -1481,7 +1981,6 @@ class _EventCard extends StatelessWidget {
               ),
             ],
 
-            // ── Organizer ────────────────────────────────────────────────
             if (hasOrg) ...[
               const SizedBox(height: 6),
               Row(children: [
@@ -1499,7 +1998,7 @@ class _EventCard extends StatelessWidget {
 
             // ── DATE & TIME ──────────────────────────────────────────────
             if (startDate != null) ...[
-              _SectionLabel(label: _isJa ? '日時' : 'DATE & TIME'),
+              _SectionLabel(label: s.secDateTime),
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(14),
@@ -1544,18 +2043,6 @@ class _EventCard extends StatelessWidget {
                                     color: Colors.grey.shade500)),
                           ])),
                         ],
-                        if (limit != null) ...[
-                          const SizedBox(height: 6),
-                          RichText(text: TextSpan(children: [
-                            TextSpan(text: '${s.partLimit} ',
-                                style: TextStyle(fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.grey.shade600)),
-                            TextSpan(text: '$limit',
-                                style: TextStyle(fontSize: 13,
-                                    color: Colors.grey.shade500)),
-                          ])),
-                        ],
                         if (contact.isNotEmpty) ...[
                           const SizedBox(height: 6),
                           RichText(text: TextSpan(children: [
@@ -1578,8 +2065,7 @@ class _EventCard extends StatelessWidget {
 
             // ── CATEGORIES & SKILL LEVEL ─────────────────────────────────
             if (allTags.isNotEmpty) ...[
-              _SectionLabel(
-                  label: _isJa ? 'カテゴリー・スキルレベル' : 'CATEGORIES & SKILL LEVEL'),
+              _SectionLabel(label: s.secCatSkill),
               const SizedBox(height: 12),
               Wrap(
                 spacing: 8, runSpacing: 8,
@@ -1604,7 +2090,7 @@ class _EventCard extends StatelessWidget {
 
             // ── LOCATION ─────────────────────────────────────────────────
             if (locDisplay.isNotEmpty || address.isNotEmpty) ...[
-              _SectionLabel(label: _isJa ? '場所' : 'LOCATION'),
+              _SectionLabel(label: s.secLoc),
               const SizedBox(height: 12),
               Container(
                 padding: const EdgeInsets.all(14),
@@ -1666,12 +2152,12 @@ class _EventCard extends StatelessWidget {
 
             // ── SAVE ─────────────────────────────────────────────────────
             if (isLoggedIn) ...[
-              _SectionLabel(label: _isJa ? '保存' : 'SAVE'),
+              _SectionLabel(label: s.secSave),
               const SizedBox(height: 12),
 
-              // ── My Events row ─────────────────────────────────────────
+              // My Events row
               GestureDetector(
-                onTap: isSaving ? null : () => onToggleMyEvents(docId),
+                onTap: isSaving ? null : onTapMyEvents,
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
                   padding: const EdgeInsets.all(16),
@@ -1704,15 +2190,12 @@ class _EventCard extends StatelessWidget {
                     Expanded(child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(_isJa ? 'マイイベント' : 'My Events',
+                          Text(s.saveMyEvents,
                               style: const TextStyle(fontSize: 15,
                                   fontWeight: FontWeight.w800, color: _textDark)),
-                          Text(
-                            _isJa ? '参加予定のイベント' : "Events you're planning to join",
-                            style: const TextStyle(fontSize: 12, color: _textLight),
-                          ),
+                          Text(s.saveMyEventsSub,
+                              style: const TextStyle(fontSize: 12, color: _textLight)),
                         ])),
-                    // ── trailing: spinner, check, or chevron ──────────────
                     if (isSaving)
                       const SizedBox(
                         width: 20, height: 20,
@@ -1731,9 +2214,9 @@ class _EventCard extends StatelessWidget {
 
               const SizedBox(height: 10),
 
-              // ── Interested row ────────────────────────────────────────
+              // Interested row
               GestureDetector(
-                onTap: isSaving ? null : () => onToggleInterested(docId),
+                onTap: isSaving ? null : onTapInterested,
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
                   padding: const EdgeInsets.all(16),
@@ -1771,15 +2254,12 @@ class _EventCard extends StatelessWidget {
                     Expanded(child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(_isJa ? '興味あり' : 'Interested',
+                          Text(s.saveInterested,
                               style: const TextStyle(fontSize: 15,
                                   fontWeight: FontWeight.w800, color: _textDark)),
-                          Text(
-                            _isJa ? '注目しているイベント' : "Events you'd like to keep an eye on",
-                            style: const TextStyle(fontSize: 12, color: _textLight),
-                          ),
+                          Text(s.saveInterestedSub,
+                              style: const TextStyle(fontSize: 12, color: _textLight)),
                         ])),
-                    // ── trailing: spinner, check, or chevron ──────────────
                     if (isSaving)
                       const SizedBox(
                         width: 20, height: 20,
@@ -1787,8 +2267,8 @@ class _EventCard extends StatelessWidget {
                             strokeWidth: 2, color: AppColors.primary),
                       )
                     else if (isSavedInterested)
-                      Icon(Icons.check_rounded,
-                          color: const Color(0xFFD4A017), size: 22)
+                      const Icon(Icons.check_rounded,
+                          color: Color(0xFFD4A017), size: 22)
                     else
                       const Icon(Icons.chevron_right_rounded,
                           color: _textLight, size: 20),
@@ -1802,31 +2282,146 @@ class _EventCard extends StatelessWidget {
             ],
 
             // ── REGISTRATION ─────────────────────────────────────────────
-            _SectionLabel(label: _isJa ? '登録' : 'REGISTRATION'),
+            _SectionLabel(label: s.secRegistration),
             const SizedBox(height: 12),
 
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: hasLink ? () => onOpenLink(_url) : null,
-                icon: const Icon(Icons.group_rounded,
-                    size: 18, color: Colors.white),
-                label: Text(
-                  _isJa ? 'このイベントに登録する' : 'Register for this Event',
-                  style: const TextStyle(fontWeight: FontWeight.w800,
-                      color: Colors.white, fontSize: 15),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  disabledBackgroundColor: Colors.grey.shade200,
-                  disabledForegroundColor: Colors.grey.shade400,
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
+            if (!isLoggedIn) ...[
+              Text(s.loginToRegister,
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade400)),
+            ] else if (regStatus == _RegStatus.none) ...[
+              // Register button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: isRegLoading ? null : onTapRegister,
+                  icon: isRegLoading
+                      ? const SizedBox(
+                      width: 18, height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                      : const Icon(Icons.group_rounded, size: 18, color: Colors.white),
+                  label: Text(
+                    isRegLoading ? s.registering : s.registerBtn,
+                    style: const TextStyle(fontWeight: FontWeight.w800,
+                        color: Colors.white, fontSize: 15),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    disabledBackgroundColor: AppColors.primary.withOpacity(0.5),
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
                 ),
               ),
-            ),
+            ] else ...[
+              // Status badge
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: regStatus == _RegStatus.approved
+                      ? AppColors.primary.withOpacity(0.08)
+                      : regStatus == _RegStatus.rejected
+                      ? const Color(0xFFEF476F).withOpacity(0.08)
+                      : const Color(0xFFFCD34D).withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: regStatus == _RegStatus.approved
+                        ? AppColors.primary.withOpacity(0.3)
+                        : regStatus == _RegStatus.rejected
+                        ? const Color(0xFFEF476F).withOpacity(0.3)
+                        : const Color(0xFFFCD34D).withOpacity(0.3),
+                  ),
+                ),
+                child: Row(children: [
+                  Container(
+                    width: 36, height: 36,
+                    decoration: BoxDecoration(
+                      color: regStatus == _RegStatus.approved
+                          ? AppColors.primary.withOpacity(0.15)
+                          : regStatus == _RegStatus.rejected
+                          ? const Color(0xFFEF476F).withOpacity(0.15)
+                          : const Color(0xFFFCD34D).withOpacity(0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      regStatus == _RegStatus.approved
+                          ? Icons.check_rounded
+                          : regStatus == _RegStatus.rejected
+                          ? Icons.close_rounded
+                          : Icons.access_time_rounded,
+                      color: regStatus == _RegStatus.approved
+                          ? AppColors.primary
+                          : regStatus == _RegStatus.rejected
+                          ? const Color(0xFFEF476F)
+                          : const Color(0xFFFCD34D),
+                      size: 18,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          regStatus == _RegStatus.approved
+                              ? s.registrationApproved
+                              : regStatus == _RegStatus.rejected
+                              ? s.registrationRejected
+                              : s.registrationPending,
+                          style: TextStyle(
+                            fontSize: 14, fontWeight: FontWeight.w800,
+                            color: regStatus == _RegStatus.approved
+                                ? AppColors.primary
+                                : regStatus == _RegStatus.rejected
+                                ? const Color(0xFFEF476F)
+                                : const Color(0xFFFCD34D),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          regStatus == _RegStatus.approved
+                              ? s.regApprovedMsg
+                              : regStatus == _RegStatus.rejected
+                              ? s.regRejectedMsg
+                              : s.alreadyRegistered,
+                          style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                        ),
+                      ])),
+                ]),
+              ),
+              // Cancel button for pending / rejected
+              if (regStatus == _RegStatus.pending ||
+                  regStatus == _RegStatus.rejected) ...[
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: isRegLoading ? null : onTapCancelReg,
+                    icon: isRegLoading
+                        ? const SizedBox(
+                        width: 14, height: 14,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Color(0xFFEF476F)))
+                        : const Icon(Icons.cancel_outlined,
+                        size: 16, color: Color(0xFFEF476F)),
+                    label: Text(s.cancelReg,
+                        style: const TextStyle(
+                            color: Color(0xFFEF476F),
+                            fontWeight: FontWeight.w700, fontSize: 13)),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      side: BorderSide(
+                          color: const Color(0xFFEF476F).withOpacity(0.4)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+
             const SizedBox(height: 8),
           ]),
         ),
