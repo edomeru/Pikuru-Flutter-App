@@ -1872,7 +1872,11 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
         ],
       ),
       child: Column(children: [
-        const Text('🖼️', style: TextStyle(fontSize: 36)),
+        Image.asset(
+          'assets/pickleball_ball_no_bg_1.png',
+          width: 64,
+          height: 64,
+        ),
         const SizedBox(height: 10),
         Row(mainAxisAlignment: MainAxisAlignment.center, children: [
           Text(

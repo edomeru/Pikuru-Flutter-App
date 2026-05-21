@@ -58,6 +58,7 @@ flutter:
     - assets/pikuru_logo.png
     - assets/pikuru_logo_dog.png
     - assets/icon/pikuru_full_logo.png
+    - assets/pickleball_ball_no_bg_1.png
 
   fonts:
     - family: Rubik
