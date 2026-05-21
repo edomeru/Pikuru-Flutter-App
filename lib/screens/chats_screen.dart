@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -26,6 +27,46 @@ class _ChatItem {
     required this.isGroup,
     required this.raw,
   });
+
+  _ChatItem copyWith({String? name, String? avatarUrl}) => _ChatItem(
+    id: id,
+    name: name ?? this.name,
+    avatarUrl: avatarUrl ?? this.avatarUrl,
+    lastMessage: lastMessage,
+    lastMessageAt: lastMessageAt,
+    hasUnread: hasUnread,
+    isGroup: isGroup,
+    raw: raw,
+  );
+}
+
+// ── Normalise profile_img — Flutter saves raw base64, web saves data URL ──
+String _toImgSrc(String? raw) {
+  if (raw == null || raw.trim().isEmpty) return '';
+  if (raw.startsWith('data:')) return raw;
+  if (raw.startsWith('http')) return raw;
+  return 'data:image/jpeg;base64,$raw';
+}
+
+// ── Decode any avatar string to ImageProvider ──
+ImageProvider? _resolveImage(String av) {
+  if (av.isEmpty) return null;
+  try {
+    if (av.startsWith('http')) {
+      return NetworkImage(av);
+    } else if (av.startsWith('data:')) {
+      final comma = av.indexOf(',');
+      if (comma != -1) {
+        final bytes = base64Decode(av.substring(comma + 1));
+        return MemoryImage(bytes);
+      }
+    } else {
+      // Raw base64 without data: prefix
+      final bytes = base64Decode(av);
+      return MemoryImage(bytes);
+    }
+  } catch (_) {}
+  return null;
 }
 
 class ChatsScreen extends StatefulWidget {
@@ -48,11 +89,16 @@ class _ChatsScreenState extends State<ChatsScreen> {
   StreamSubscription? _groupSub;
   StreamSubscription? _individualSub;
 
+  // ── Real-time profile cache: otherUserId → {name, avatar} ──
+  final Map<String, Map<String, String>> _profileCache = {};
+  final Map<String, StreamSubscription> _profileSubs = {};
+
   @override
   void initState() {
     super.initState();
     _searchController.addListener(
-            () => setState(() => _searchQuery = _searchController.text.toLowerCase()));
+            () => setState(
+                () => _searchQuery = _searchController.text.toLowerCase()));
     _subscribeGroupChats();
     _subscribeIndividualChats();
   }
@@ -61,8 +107,63 @@ class _ChatsScreenState extends State<ChatsScreen> {
   void dispose() {
     _groupSub?.cancel();
     _individualSub?.cancel();
+    for (final sub in _profileSubs.values) {
+      sub.cancel();
+    }
     _searchController.dispose();
     super.dispose();
+  }
+
+  // ── Subscribe to a user's registration doc in real-time ──────────────────
+  void _ensureProfileSubscription(String userId) {
+    if (_profileSubs.containsKey(userId)) return; // already watching
+
+    final sub = FirebaseFirestore.instance
+        .collection('registration')
+        .doc(userId)
+        .snapshots()
+        .listen((snap) {
+      if (!snap.exists) return;
+      final d = snap.data()!;
+
+      final rawImg = (d['profile_img'] ?? '').toString();
+      final nick = (d['nickname'] ?? '').toString().trim();
+      final first = (d['firstName'] ?? '').toString().trim();
+      final last = (d['lastName'] ?? '').toString().trim();
+      final name = nick.isNotEmpty
+          ? nick
+          : (first.isNotEmpty && last.isNotEmpty)
+          ? '$first $last'
+          : first.isNotEmpty
+          ? first
+          : '';
+
+      _profileCache[userId] = {
+        'name': name,
+        'avatar': _toImgSrc(rawImg),
+      };
+
+      // Rebuild individual items with fresh profile data
+      if (mounted) setState(() => _applyProfilesToIndividual());
+    }, onError: (e) {
+      debugPrint('[ChatsScreen] profile sub error for $userId: $e');
+    });
+
+    _profileSubs[userId] = sub;
+  }
+
+  // ── Merge cached profiles into _individualItems ───────────────────────────
+  void _applyProfilesToIndividual() {
+    _individualItems = _individualItems.map((item) {
+      final otherId = item.raw['_other_user_id'] as String? ?? '';
+      final profile = _profileCache[otherId];
+      if (profile == null) return item;
+      return item.copyWith(
+        name: (profile['name'] ?? '').isNotEmpty ? profile['name']! : item.name,
+        avatarUrl:
+        (profile['avatar'] ?? '').isNotEmpty ? profile['avatar']! : item.avatarUrl,
+      );
+    }).toList();
   }
 
   void _subscribeGroupChats() {
@@ -77,7 +178,6 @@ class _ChatsScreenState extends State<ChatsScreen> {
       final List<_ChatItem> items = [];
 
       for (final doc in snap.docs) {
-        // Check if user is a participant
         final participantDoc = await FirebaseFirestore.instance
             .collection('group_chats')
             .doc(doc.id)
@@ -87,6 +187,10 @@ class _ChatsScreenState extends State<ChatsScreen> {
         if (!participantDoc.exists) continue;
 
         final data = doc.data();
+
+        // Skip event channels
+        if ((data['type'] ?? '').toString() == 'event') continue;
+
         final lastMsgAt = (data['last_message_at'] as Timestamp?)?.toDate();
         final lastReadAt =
         (participantDoc.data()?['last_read_at'] as Timestamp?)?.toDate();
@@ -101,7 +205,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
         if (orgId.isNotEmpty) {
           try {
-            // ── STEP 1: Try document ID directly (matches web app's first attempt) ──
+            // Step 1: Try document ID directly
             final orgDoc = await FirebaseFirestore.instance
                 .collection('organizations')
                 .doc(orgId)
@@ -112,7 +216,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
               name = (org['org_name'] ?? 'Group Chat').toString();
               avatarUrl = (org['org_image'] ?? '').toString();
             } else {
-              // ── STEP 2: Fallback — query by org_id field ──
+              // Step 2: Fallback — query by org_id field
               final orgSnap = await FirebaseFirestore.instance
                   .collection('organizations')
                   .where('org_id', isEqualTo: orgId)
@@ -173,7 +277,11 @@ class _ChatsScreenState extends State<ChatsScreen> {
         participants.firstWhere((id) => id != me.uid, orElse: () => '');
         if (otherId.isEmpty) continue;
 
-        final names = Map<String, dynamic>.from(data['participant_names'] ?? {});
+        // ── Start real-time profile subscription for this user ──
+        _ensureProfileSubscription(otherId);
+
+        final names =
+        Map<String, dynamic>.from(data['participant_names'] ?? {});
         final avatars =
         Map<String, dynamic>.from(data['participant_avatars'] ?? {});
         final lastMsgAt = (data['last_message_at'] as Timestamp?)?.toDate();
@@ -187,10 +295,20 @@ class _ChatsScreenState extends State<ChatsScreen> {
             lastMsgAt != null &&
             (myLastRead == null || lastMsgAt.isAfter(myLastRead));
 
+        // Use cached real-time profile if available, otherwise fall back to
+        // stale chat doc data
+        final cached = _profileCache[otherId];
+        final resolvedName = ((cached?['name'] ?? '').isNotEmpty)
+            ? cached!['name']!
+            : (names[otherId] ?? 'Unknown').toString();
+        final resolvedAvatar = ((cached?['avatar'] ?? '').isNotEmpty)
+            ? cached!['avatar']!
+            : _toImgSrc((avatars[otherId] ?? '').toString());
+
         items.add(_ChatItem(
           id: doc.id,
-          name: (names[otherId] ?? 'Unknown').toString(),
-          avatarUrl: (avatars[otherId] ?? '').toString(),
+          name: resolvedName,
+          avatarUrl: resolvedAvatar,
           lastMessage: (data['last_message'] ?? '').toString(),
           lastMessageAt: lastMsgAt,
           hasUnread: hasUnread,
@@ -198,8 +316,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
           raw: {
             ...data,
             '_other_user_id': otherId,
-            '_other_user_name': (names[otherId] ?? 'Unknown').toString(),
-            '_other_user_avatar': (avatars[otherId] ?? '').toString(),
+            '_other_user_name': resolvedName,
+            '_other_user_avatar': resolvedAvatar,
           },
         ));
       }
@@ -266,8 +384,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
         children: [
           GestureDetector(
             onTap: () => Navigator.pop(context),
-            child:
-            const Icon(Icons.arrow_back, color: AppColors.primary, size: 26),
+            child: const Icon(Icons.arrow_back,
+                color: AppColors.primary, size: 26),
           ),
           const SizedBox(width: 14),
           const Text('chats',
@@ -295,8 +413,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
           style: const TextStyle(fontSize: 15, color: Color(0xFF1C1C1E)),
           decoration: InputDecoration(
             hintText: 'Search',
-            hintStyle:
-            TextStyle(color: Colors.black.withOpacity(0.35), fontSize: 15),
+            hintStyle: TextStyle(
+                color: Colors.black.withOpacity(0.35), fontSize: 15),
             suffixIcon: Icon(Icons.search,
                 color: Colors.black.withOpacity(0.35), size: 20),
             border: InputBorder.none,
@@ -323,8 +441,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
                 padding:
                 const EdgeInsets.symmetric(horizontal: 22, vertical: 9),
                 decoration: BoxDecoration(
-                  color:
-                  selected ? AppColors.primary : const Color(0xFFF0F4F0),
+                  color: selected
+                      ? AppColors.primary
+                      : const Color(0xFFF0F4F0),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(label,
@@ -395,6 +514,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
   }
 
   Widget _buildChatTile(_ChatItem item) {
+    final avatarImage = _resolveImage(item.avatarUrl);
+
     return InkWell(
       onTap: () => _openChat(item),
       splashColor: AppColors.primary.withOpacity(0.05),
@@ -403,15 +524,14 @@ class _ChatsScreenState extends State<ChatsScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         child: Row(
           children: [
+            // ── Avatar ──
             Stack(
               children: [
                 CircleAvatar(
                   radius: 28,
                   backgroundColor: AppColors.primary.withOpacity(0.1),
-                  backgroundImage: item.avatarUrl.isNotEmpty
-                      ? NetworkImage(item.avatarUrl)
-                      : null,
-                  child: item.avatarUrl.isEmpty
+                  backgroundImage: avatarImage,
+                  child: avatarImage == null
                       ? Text(
                     item.name.isNotEmpty
                         ? item.name[0].toUpperCase()
@@ -433,14 +553,18 @@ class _ChatsScreenState extends State<ChatsScreen> {
                       decoration: BoxDecoration(
                           color: AppColors.primary,
                           shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 2)),
-                      child:
-                      const Icon(Icons.group, size: 10, color: Colors.white),
+                          border:
+                          Border.all(color: Colors.white, width: 2)),
+                      child: const Icon(Icons.group,
+                          size: 10, color: Colors.white),
                     ),
                   ),
               ],
             ),
+
             const SizedBox(width: 14),
+
+            // ── Name + last message ──
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -474,7 +598,10 @@ class _ChatsScreenState extends State<ChatsScreen> {
                 ],
               ),
             ),
+
             const SizedBox(width: 10),
+
+            // ── Time + unread dot ──
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               mainAxisAlignment: MainAxisAlignment.center,
@@ -494,7 +621,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
                       width: 9,
                       height: 9,
                       decoration: const BoxDecoration(
-                          color: AppColors.primary, shape: BoxShape.circle)),
+                          color: AppColors.primary,
+                          shape: BoxShape.circle)),
                 ],
               ],
             ),

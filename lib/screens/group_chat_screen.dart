@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -11,7 +13,7 @@ import 'package:pikuru/screens/group_detail_screen.dart';
 import 'package:pikuru/screens/event_detail_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// i18n strings — mirrors the web app's T object exactly
+// i18n strings
 // ─────────────────────────────────────────────────────────────────────────────
 class _T {
   final String today;
@@ -52,44 +54,106 @@ class _T {
 }
 
 const _en = _T(
-  today:          'Today',
-  yesterday:      'Yesterday',
-  groupChat:      'Group Chat',
-  members:        'members',
-  noMessages:     'No messages yet',
-  firstHello:     'Be the first to say hello! 👋',
-  unknown:        'Unknown',
-  untitledEvent:  'Untitled Event',
-  viewEventTap:   'Tap to view event',
-  viewEventBtn:   'View Event',
-  unknownGroup:   'Unknown Group',
-  viewGroupTap:   'Tap to view group',
-  viewGroupBtn:   'View Group',
-  messagePh:      'Message...',
-  notifSilenced:  'Notifications silenced',
-  notifEnabled:   'Notifications enabled',
+  today:         'Today',
+  yesterday:     'Yesterday',
+  groupChat:     'Group Chat',
+  members:       'members',
+  noMessages:    'No messages yet',
+  firstHello:    'Be the first to say hello! 👋',
+  unknown:       'Unknown',
+  untitledEvent: 'Untitled Event',
+  viewEventTap:  'Tap to view event',
+  viewEventBtn:  'View Event',
+  unknownGroup:  'Unknown Group',
+  viewGroupTap:  'Tap to view group',
+  viewGroupBtn:  'View Group',
+  messagePh:     'Message...',
+  notifSilenced: 'Notifications silenced',
+  notifEnabled:  'Notifications enabled',
 );
 
 const _ja = _T(
-  today:          '今日',
-  yesterday:      '昨日',
-  groupChat:      'グループチャット',
-  members:        'メンバー',
-  noMessages:     'メッセージはまだありません',
-  firstHello:     '最初に挨拶メッセージを送りましょう！ 👋',
-  unknown:        '不明',
-  untitledEvent:  '無題のイベント',
-  viewEventTap:   'タップしてイベントを表示',
-  viewEventBtn:   'イベントを表示',
-  unknownGroup:   '不明なグループ',
-  viewGroupTap:   'タップしてグループを表示',
-  viewGroupBtn:   'グループを表示',
-  messagePh:      'メッセージ...',
-  notifSilenced:  '通知をミュートにしました',
-  notifEnabled:   '通知を有効にしました',
+  today:         '今日',
+  yesterday:     '昨日',
+  groupChat:     'グループチャット',
+  members:       'メンバー',
+  noMessages:    'メッセージはまだありません',
+  firstHello:    '最初に挨拶メッセージを送りましょう！ 👋',
+  unknown:       '不明',
+  untitledEvent: '無題のイベント',
+  viewEventTap:  'タップしてイベントを表示',
+  viewEventBtn:  'イベントを表示',
+  unknownGroup:  '不明なグループ',
+  viewGroupTap:  'タップしてグループを表示',
+  viewGroupBtn:  'グループを表示',
+  messagePh:     'メッセージ...',
+  notifSilenced: '通知をミュートにしました',
+  notifEnabled:  '通知を有効にしました',
 );
 
 _T _strings(String lang) => lang == kLangJa ? _ja : _en;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Avatar helpers — shared across the whole file
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Normalise profile_img: raw base64 → data URL, http → as-is, empty → ''
+String _toImgSrc(String raw) {
+  if (raw.isEmpty)             return '';
+  if (raw.startsWith('data:')) return raw;
+  if (raw.startsWith('http'))  return raw;
+  return 'data:image/jpeg;base64,$raw';
+}
+
+/// Decode any avatar string → ImageProvider (http, data:base64, raw base64)
+ImageProvider? _resolveImage(String av) {
+  if (av.isEmpty) return null;
+  try {
+    if (av.startsWith('http'))  return NetworkImage(av);
+    if (av.startsWith('data:')) {
+      final comma = av.indexOf(',');
+      if (comma != -1) return MemoryImage(base64Decode(av.substring(comma + 1)));
+    }
+    return MemoryImage(base64Decode(av)); // raw base64
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Small reusable avatar widget that handles all three formats
+class _Avatar extends StatelessWidget {
+  final String avatarSrc; // already normalised via _toImgSrc
+  final String name;
+  final double radius;
+  final double fontSize;
+
+  const _Avatar({
+    required this.avatarSrc,
+    required this.name,
+    required this.radius,
+    required this.fontSize,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final image = _resolveImage(avatarSrc);
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: AppColors.primary.withOpacity(0.12),
+      backgroundImage: image,
+      child: image == null
+          ? Text(
+        name.isNotEmpty ? name[0].toUpperCase() : '?',
+        style: TextStyle(
+          fontSize: fontSize,
+          fontWeight: FontWeight.bold,
+          color: AppColors.primary,
+        ),
+      )
+          : null,
+    );
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GroupChatScreen
@@ -106,19 +170,23 @@ class GroupChatScreen extends ConsumerStatefulWidget {
 class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     with SingleTickerProviderStateMixin {
   final TextEditingController _messageController = TextEditingController();
-  final ScrollController _scrollController = ScrollController();
-  final FocusNode _focusNode = FocusNode();
+  final ScrollController      _scrollController  = ScrollController();
+  final FocusNode             _focusNode         = FocusNode();
   final currentUser = FirebaseAuth.instance.currentUser;
 
   String? _chatId;
-  bool _isLoading = true;
-  bool _isTyping = false;
+  bool _isLoading  = true;
+  bool _isTyping   = false;
   bool _isSilenced = false;
 
   Map<String, dynamic>? _groupData;
 
+  // ── Real-time sender profile cache: senderId → {name, avatar} ──────────
+  final Map<String, Map<String, String>> _senderCache = {};
+  final Map<String, StreamSubscription>  _senderSubs  = {};
+
   AnimationController? _sendBtnController;
-  Animation<double>? _sendBtnAnim;
+  Animation<double>?   _sendBtnAnim;
 
   @override
   void initState() {
@@ -149,6 +217,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
 
   @override
   void dispose() {
+    for (final sub in _senderSubs.values) sub.cancel();
     _messageController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
@@ -156,6 +225,55 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     super.dispose();
   }
 
+  // ── Subscribe to a sender's registration doc in real-time ──────────────
+  void _ensureSenderSubscription(String uid) {
+    if (_senderSubs.containsKey(uid)) return;
+
+    final sub = FirebaseFirestore.instance
+        .collection('registration')
+        .doc(uid)
+        .snapshots()
+        .listen((snap) {
+      if (!snap.exists || !mounted) return;
+      final d      = snap.data()!;
+      final rawImg = (d['profile_img'] ?? '').toString();
+      final nick   = (d['nickname']   ?? '').toString().trim();
+      final first  = (d['firstName']  ?? '').toString().trim();
+      final last   = (d['lastName']   ?? '').toString().trim();
+      final name   = nick.isNotEmpty
+          ? nick
+          : (first.isNotEmpty && last.isNotEmpty)
+          ? '$first $last'
+          : first.isNotEmpty
+          ? first
+          : (_senderCache[uid]?['name'] ?? '');
+
+      setState(() {
+        _senderCache[uid] = {
+          'name':   name,
+          'avatar': _toImgSrc(rawImg),
+        };
+      });
+    }, onError: (e) {
+      debugPrint('[GroupChatScreen] sender sub error for $uid: $e');
+    });
+
+    _senderSubs[uid] = sub;
+  }
+
+  /// Get the live name for a sender, falling back to the message field
+  String _senderName(String uid, String fallback) =>
+      (_senderCache[uid]?['name'] ?? '').isNotEmpty
+          ? _senderCache[uid]!['name']!
+          : fallback;
+
+  /// Get the live avatar for a sender, falling back to the message field
+  String _senderAvatar(String uid, String fallback) =>
+      (_senderCache[uid]?['avatar'] ?? '').isNotEmpty
+          ? _senderCache[uid]!['avatar']!
+          : _toImgSrc(fallback);
+
+  // ── Init ──────────────────────────────────────────────────────────────
   Future<void> _initChat() async {
     final orgId = widget.group['_doc_id'] ??
         widget.group['doc_id'] ??
@@ -173,6 +291,9 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
 
     final user = currentUser;
     if (user != null) {
+      // Subscribe to current user's own profile too (for send avatar)
+      _ensureSenderSubscription(user.uid);
+
       final participantRef = FirebaseFirestore.instance
           .collection('group_chats')
           .doc(chatId)
@@ -182,12 +303,12 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
       final pDoc = await participantRef.get();
       if (!pDoc.exists) {
         await participantRef.set({
-          'user_id': user.uid,
+          'user_id':      user.uid,
           'display_name': user.displayName ?? 'Anonymous',
-          'avatar_url': user.photoURL ?? '',
-          'joined_at': FieldValue.serverTimestamp(),
+          'avatar_url':   user.photoURL ?? '',
+          'joined_at':    FieldValue.serverTimestamp(),
           'last_read_at': FieldValue.serverTimestamp(),
-          'is_silenced': false,
+          'is_silenced':  false,
         });
         if (mounted) setState(() => _isSilenced = false);
       } else {
@@ -196,8 +317,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
           SetOptions(merge: true),
         );
         if (mounted) {
-          setState(
-                  () => _isSilenced = pDoc.data()?['is_silenced'] == true);
+          setState(() => _isSilenced = pDoc.data()?['is_silenced'] == true);
         }
       }
     }
@@ -205,7 +325,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     await ChatService.markAsRead(chatId);
     if (mounted) {
       setState(() {
-        _chatId = chatId;
+        _chatId    = chatId;
         _isLoading = false;
       });
     }
@@ -241,11 +361,9 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     if (mounted) setState(() => _groupData = widget.group);
   }
 
-  // ── Toggle silence ─────────────────────────────────────────────────────
   Future<void> _toggleSilence() async {
     if (_chatId == null || currentUser == null) return;
-
-    final t = _strings(ref.read(appLangProvider));
+    final t        = _strings(ref.read(appLangProvider));
     final newValue = !_isSilenced;
     HapticFeedback.lightImpact();
     setState(() => _isSilenced = newValue);
@@ -261,23 +379,21 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Row(
-              children: [
-                Icon(
-                  newValue
-                      ? Icons.notifications_off_rounded
-                      : Icons.notifications_rounded,
-                  color: Colors.white,
-                  size: 18,
-                ),
-                const SizedBox(width: 10),
-                Text(
-                  newValue ? t.notifSilenced : t.notifEnabled,
-                  style: const TextStyle(
-                      fontSize: 14, fontWeight: FontWeight.w500),
-                ),
-              ],
-            ),
+            content: Row(children: [
+              Icon(
+                newValue
+                    ? Icons.notifications_off_rounded
+                    : Icons.notifications_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                newValue ? t.notifSilenced : t.notifEnabled,
+                style: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w500),
+              ),
+            ]),
             backgroundColor:
             newValue ? const Color(0xFF3A3A3C) : AppColors.primary,
             behavior: SnackBarBehavior.floating,
@@ -321,9 +437,8 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
       context,
       MaterialPageRoute(
         builder: (_) => ChatMembersScreen(
-          chatId: _chatId!,
-          groupName:
-          (_groupData ?? widget.group)['org_name'] ?? 'Group Chat',
+          chatId:    _chatId!,
+          groupName: (_groupData ?? widget.group)['org_name'] ?? 'Group Chat',
         ),
       ),
     );
@@ -333,8 +448,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            GroupDetailScreen(group: _groupData ?? widget.group),
+        builder: (_) => GroupDetailScreen(group: _groupData ?? widget.group),
       ),
     );
   }
@@ -342,12 +456,9 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
   // ── Build ──────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    // Reactive — rebuilds on global language change
-    final lang = ref.watch(appLangProvider);
-    final t = _strings(lang);
-
-    final orgName =
-        (_groupData ?? widget.group)['org_name'] ?? t.groupChat;
+    final lang    = ref.watch(appLangProvider);
+    final t       = _strings(lang);
+    final orgName  = (_groupData ?? widget.group)['org_name']  ?? t.groupChat;
     final orgImage = (_groupData ?? widget.group)['org_image'] ?? '';
 
     return Scaffold(
@@ -395,8 +506,6 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                 icon: const Icon(Icons.arrow_back_ios_new_rounded,
                     size: 18, color: Color(0xFF1C1C1E)),
               ),
-
-              // Avatar + name + member count
               Expanded(
                 child: GestureDetector(
                   onTap: _openGroupDetail,
@@ -430,9 +539,10 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                               child: Image.network(
                                 orgImage,
                                 fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) =>
-                                const Icon(Icons.group_rounded,
-                                    color: Colors.white, size: 22),
+                                errorBuilder: (_, __, ___) => const Icon(
+                                    Icons.group_rounded,
+                                    color: Colors.white,
+                                    size: 22),
                               ),
                             )
                                 : const Icon(Icons.group_rounded,
@@ -445,8 +555,8 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                               decoration: BoxDecoration(
                                 color: const Color(0xFF34C759),
                                 shape: BoxShape.circle,
-                                border: Border.all(
-                                    color: Colors.white, width: 2),
+                                border:
+                                Border.all(color: Colors.white, width: 2),
                               ),
                             ),
                           ),
@@ -470,29 +580,27 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                             const SizedBox(height: 1),
                             if (_chatId != null)
                               StreamBuilder<int>(
-                                stream: ChatService.memberCountStream(
-                                    _chatId!),
+                                stream:
+                                ChatService.memberCountStream(_chatId!),
                                 builder: (context, snapshot) {
                                   final count = snapshot.data ?? 0;
-                                  return Row(
-                                    children: [
-                                      Container(
-                                        width: 6, height: 6,
-                                        decoration: const BoxDecoration(
-                                          color: Color(0xFF34C759),
-                                          shape: BoxShape.circle,
-                                        ),
+                                  return Row(children: [
+                                    Container(
+                                      width: 6, height: 6,
+                                      decoration: const BoxDecoration(
+                                        color: Color(0xFF34C759),
+                                        shape: BoxShape.circle,
                                       ),
-                                      const SizedBox(width: 5),
-                                      Text(
-                                        '$count ${t.members}',
-                                        style: TextStyle(
-                                            fontSize: 12,
-                                            color: AppColors.primary,
-                                            fontWeight: FontWeight.w500),
-                                      ),
-                                    ],
-                                  );
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      '$count ${t.members}',
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          color: AppColors.primary,
+                                          fontWeight: FontWeight.w500),
+                                    ),
+                                  ]);
                                 },
                               ),
                           ],
@@ -502,14 +610,9 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                   ),
                 ),
               ),
-
-              // Silence button
               _SilenceButton(
                   isSilenced: _isSilenced, onTap: _toggleSilence),
-
               const SizedBox(width: 8),
-
-              // Members button
               GestureDetector(
                 onTap: _openMembersScreen,
                 child: Container(
@@ -539,15 +642,20 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
         if (messages.isEmpty) return _buildEmptyState(t);
         _scrollToBottom();
 
+        // ── Subscribe to every unique sender in real-time ──────────────
+        for (final doc in messages) {
+          final msg      = doc.data() as Map<String, dynamic>;
+          final senderId = (msg['sender_id'] ?? '').toString();
+          if (senderId.isNotEmpty) _ensureSenderSubscription(senderId);
+        }
+
         return ListView.builder(
           controller: _scrollController,
           padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
           itemCount: messages.length,
           itemBuilder: (context, index) {
-            final msg =
-            messages[index].data() as Map<String, dynamic>;
-            final isMe = msg['sender_id'] == currentUser?.uid;
-
+            final msg    = messages[index].data() as Map<String, dynamic>;
+            final isMe   = msg['sender_id'] == currentUser?.uid;
             final prevSenderId = index > 0
                 ? (messages[index - 1].data()
             as Map<String, dynamic>)['sender_id']
@@ -556,10 +664,8 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                 ? (messages[index + 1].data()
             as Map<String, dynamic>)['sender_id']
                 : null;
-
             final isFirstInGroup = prevSenderId != msg['sender_id'];
-            final isLastInGroup = nextSenderId != msg['sender_id'];
-
+            final isLastInGroup  = nextSenderId != msg['sender_id'];
             final showDate = index == 0 ||
                 _isDifferentDay(
                   (messages[index - 1].data()
@@ -585,17 +691,13 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     String label = t.today;
     if (timestamp is Timestamp) {
       final date = timestamp.toDate();
-      final now = DateTime.now();
+      final now  = DateTime.now();
       final diff = DateTime(now.year, now.month, now.day)
           .difference(DateTime(date.year, date.month, date.day))
           .inDays;
-      if (diff == 0) {
-        label = t.today;
-      } else if (diff == 1) {
-        label = t.yesterday;
-      } else {
-        label = '${date.day}/${date.month}/${date.year}';
-      }
+      if (diff == 0)      label = t.today;
+      else if (diff == 1) label = t.yesterday;
+      else                label = '${date.day}/${date.month}/${date.year}';
     }
 
     return Padding(
@@ -603,8 +705,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
       child: Row(
         children: [
           Expanded(
-              child:
-              Divider(color: Colors.black.withOpacity(0.08))),
+              child: Divider(color: Colors.black.withOpacity(0.08))),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12),
             child: Container(
@@ -629,8 +730,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
             ),
           ),
           Expanded(
-              child:
-              Divider(color: Colors.black.withOpacity(0.08))),
+              child: Divider(color: Colors.black.withOpacity(0.08))),
         ],
       ),
     );
@@ -645,7 +745,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
       _T t,
       ) {
     final Timestamp? sentAt = msg['sent_at'];
-    final time = sentAt != null ? _formatTime(sentAt.toDate()) : '';
+    final time              = sentAt != null ? _formatTime(sentAt.toDate()) : '';
 
     if ((msg['type'] ?? '') == 'group_share') {
       return _buildGroupShareBubble(
@@ -656,15 +756,20 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
           msg, isMe, isFirstInGroup, isLastInGroup, time, t);
     }
 
-    final text = msg['text'] ?? '';
-    final senderName = msg['sender_name'] ?? '';
-    final avatarUrl = msg['sender_avatar'] ?? '';
+    final text       = msg['text'] ?? '';
+    final senderId   = (msg['sender_id']     ?? '').toString();
+    final msgName    = (msg['sender_name']   ?? '').toString();
+    final msgAvatar  = (msg['sender_avatar'] ?? '').toString();
+
+    // ── Use live registration data, fall back to message fields ──────────
+    final liveName   = _senderName(senderId, msgName);
+    final liveAvatar = _senderAvatar(senderId, msgAvatar);
 
     final bubbleRadius = BorderRadius.only(
-      topLeft: Radius.circular(!isMe && !isFirstInGroup ? 6 : 20),
-      topRight: Radius.circular(isMe && !isFirstInGroup ? 6 : 20),
-      bottomLeft: Radius.circular(!isMe && !isLastInGroup ? 6 : 20),
-      bottomRight: Radius.circular(isMe && !isLastInGroup ? 6 : 20),
+      topLeft:     Radius.circular(!isMe && !isFirstInGroup ? 6 : 20),
+      topRight:    Radius.circular(isMe  && !isFirstInGroup ? 6 : 20),
+      bottomLeft:  Radius.circular(!isMe && !isLastInGroup  ? 6 : 20),
+      bottomRight: Radius.circular(isMe  && !isLastInGroup  ? 6 : 20),
     );
 
     return Padding(
@@ -678,24 +783,11 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
             SizedBox(
               width: 34,
               child: isLastInGroup
-                  ? CircleAvatar(
-                radius: 17,
-                backgroundColor:
-                AppColors.primary.withOpacity(0.12),
-                backgroundImage: avatarUrl.isNotEmpty
-                    ? NetworkImage(avatarUrl)
-                    : null,
-                child: avatarUrl.isEmpty
-                    ? Text(
-                  senderName.isNotEmpty
-                      ? senderName[0].toUpperCase()
-                      : '?',
-                  style: TextStyle(
-                      fontSize: 13,
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.bold),
-                )
-                    : null,
+                  ? _Avatar(
+                avatarSrc: liveAvatar,
+                name:      liveName,
+                radius:    17,
+                fontSize:  13,
               )
                   : null,
             ),
@@ -703,15 +795,14 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
           ],
           Flexible(
             child: Column(
-              crossAxisAlignment: isMe
-                  ? CrossAxisAlignment.end
-                  : CrossAxisAlignment.start,
+              crossAxisAlignment:
+              isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
               children: [
                 if (!isMe && isFirstInGroup)
                   Padding(
                     padding: const EdgeInsets.only(left: 4, bottom: 5),
                     child: Text(
-                      senderName,
+                      liveName,
                       style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
@@ -721,9 +812,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                   ),
                 Container(
                   constraints: BoxConstraints(
-                    maxWidth:
-                    MediaQuery.of(context).size.width * 0.66,
-                  ),
+                      maxWidth: MediaQuery.of(context).size.width * 0.66),
                   decoration: BoxDecoration(
                     gradient: isMe
                         ? LinearGradient(
@@ -754,17 +843,16 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                     text,
                     style: TextStyle(
                         fontSize: 15,
-                        color: isMe
-                            ? Colors.white
-                            : const Color(0xFF1C1C1E),
+                        color:
+                        isMe ? Colors.white : const Color(0xFF1C1C1E),
                         height: 1.45,
                         letterSpacing: -0.1),
                   ),
                 ),
                 if (isLastInGroup)
                   Padding(
-                    padding: const EdgeInsets.only(
-                        top: 5, left: 4, right: 4),
+                    padding:
+                    const EdgeInsets.only(top: 5, left: 4, right: 4),
                     child: Text(
                       time,
                       style: const TextStyle(
@@ -783,7 +871,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     );
   }
 
-  // ── Group share card bubble ────────────────────────────────────────────
+  // ── Group Share Bubble ─────────────────────────────────────────────────
   Widget _buildGroupShareBubble(
       Map<String, dynamic> msg,
       bool isMe,
@@ -792,27 +880,30 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
       String time,
       _T t,
       ) {
-    final groupName =
-    (msg['group_name'] ?? t.unknownGroup).toString();
-    final groupImage = (msg['group_image'] ?? '').toString();
-    final groupType = (msg['group_type'] ?? '').toString();
-    final senderName = (msg['sender_name'] ?? '').toString();
-    final avatarUrl = (msg['sender_avatar'] ?? '').toString();
+    final groupName  = (msg['group_name']    ?? t.unknownGroup).toString();
+    final groupImage = (msg['group_image']   ?? '').toString();
+    final groupType  = (msg['group_type']    ?? '').toString();
+    final senderId   = (msg['sender_id']     ?? '').toString();
+    final msgName    = (msg['sender_name']   ?? '').toString();
+    final msgAvatar  = (msg['sender_avatar'] ?? '').toString();
+
+    final liveName   = _senderName(senderId, msgName);
+    final liveAvatar = _senderAvatar(senderId, msgAvatar);
 
     final groupData =
     Map<String, dynamic>.from(msg['group_data'] as Map? ?? {});
     if (groupData.isEmpty) {
-      groupData['org_name'] = groupName;
+      groupData['org_name']  = groupName;
       groupData['org_image'] = groupImage;
-      groupData['org_type'] = groupType;
-      groupData['org_id'] = (msg['group_id'] ?? '').toString();
+      groupData['org_type']  = groupType;
+      groupData['org_id']    = (msg['group_id'] ?? '').toString();
     }
 
     return Padding(
       padding: EdgeInsets.only(
         bottom: isLastInGroup ? 10 : 2,
-        left: isMe ? 60 : 42,
-        right: isMe ? 4 : 60,
+        left:  isMe ? 60 : 42,
+        right: isMe ? 4  : 60,
       ),
       child: Column(
         crossAxisAlignment:
@@ -824,27 +915,13 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  CircleAvatar(
-                    radius: 10,
-                    backgroundColor:
-                    AppColors.primary.withOpacity(0.12),
-                    backgroundImage: avatarUrl.isNotEmpty
-                        ? NetworkImage(avatarUrl)
-                        : null,
-                    child: avatarUrl.isEmpty
-                        ? Text(
-                      senderName.isNotEmpty
-                          ? senderName[0].toUpperCase()
-                          : '?',
-                      style: TextStyle(
-                          fontSize: 8,
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.bold),
-                    )
-                        : null,
-                  ),
+                  _Avatar(
+                      avatarSrc: liveAvatar,
+                      name:      liveName,
+                      radius:    10,
+                      fontSize:  8),
                   const SizedBox(width: 5),
-                  Text(senderName,
+                  Text(liveName,
                       style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
@@ -857,8 +934,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
-                  builder: (_) =>
-                      GroupDetailScreen(group: groupData)),
+                  builder: (_) => GroupDetailScreen(group: groupData)),
             ),
             child: Container(
               width: MediaQuery.of(context).size.width * 0.66,
@@ -866,8 +942,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                    color: AppColors.primary.withOpacity(0.15),
-                    width: 1),
+                    color: AppColors.primary.withOpacity(0.15), width: 1),
                 boxShadow: [
                   BoxShadow(
                       color: Colors.black.withOpacity(0.07),
@@ -891,60 +966,51 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                         : _groupSharePlaceholder(),
                   ),
                   Padding(
-                    padding:
-                    const EdgeInsets.fromLTRB(12, 10, 12, 4),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment:
-                            CrossAxisAlignment.start,
-                            children: [
-                              if (groupType.isNotEmpty)
-                                Container(
-                                  margin: const EdgeInsets.only(
-                                      bottom: 4),
-                                  padding:
-                                  const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 2),
-                                  decoration: BoxDecoration(
-                                      color: AppColors.primary
-                                          .withOpacity(0.1),
-                                      borderRadius:
-                                      BorderRadius.circular(20)),
-                                  child: Text(groupType,
-                                      style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w600,
-                                          color: AppColors.primary)),
-                                ),
-                              Text(groupName,
-                                  style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w700,
-                                      color: Color(0xFF1A1A1A)),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis),
-                            ],
-                          ),
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+                    child: Row(children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (groupType.isNotEmpty)
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 4),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                    color:
+                                    AppColors.primary.withOpacity(0.1),
+                                    borderRadius:
+                                    BorderRadius.circular(20)),
+                                child: Text(groupType,
+                                    style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.primary)),
+                              ),
+                            Text(groupName,
+                                style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF1A1A1A)),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis),
+                          ],
                         ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.all(7),
-                          decoration: BoxDecoration(
-                              color: AppColors.primary,
-                              borderRadius: BorderRadius.circular(9)),
-                          child: const Icon(
-                              Icons.arrow_forward_rounded,
-                              color: Colors.white,
-                              size: 13),
-                        ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.all(7),
+                        decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            borderRadius: BorderRadius.circular(9)),
+                        child: const Icon(Icons.arrow_forward_rounded,
+                            color: Colors.white, size: 13),
+                      ),
+                    ]),
                   ),
                   Padding(
-                    padding:
-                    const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
                     child: Text(t.viewGroupTap,
                         style: TextStyle(
                             fontSize: 11,
@@ -958,9 +1024,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
           if (isLastInGroup)
             Padding(
               padding: EdgeInsets.only(
-                  top: 5,
-                  left: isMe ? 0 : 4,
-                  right: isMe ? 4 : 0),
+                  top: 5, left: isMe ? 0 : 4, right: isMe ? 4 : 0),
               child: Text(time,
                   style: const TextStyle(
                       fontSize: 10.5,
@@ -978,11 +1042,10 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     color: AppColors.primary.withOpacity(0.08),
     child: Center(
         child: Icon(Icons.group_rounded,
-            size: 40,
-            color: AppColors.primary.withOpacity(0.4))),
+            size: 40, color: AppColors.primary.withOpacity(0.4))),
   );
 
-  // ── Event share card bubble ────────────────────────────────────────────
+  // ── Event Share Bubble ─────────────────────────────────────────────────
   Widget _buildEventShareBubble(
       Map<String, dynamic> msg,
       bool isMe,
@@ -991,28 +1054,31 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
       String time,
       _T t,
       ) {
-    final eventTitle =
-    (msg['event_title'] ?? t.untitledEvent).toString();
-    final eventImage = (msg['event_image'] ?? '').toString();
-    final eventDate = (msg['event_date'] ?? '').toString();
-    final eventType = (msg['event_type'] ?? '').toString();
-    final senderName = (msg['sender_name'] ?? '').toString();
-    final avatarUrl = (msg['sender_avatar'] ?? '').toString();
+    final eventTitle = (msg['event_title']   ?? t.untitledEvent).toString();
+    final eventImage = (msg['event_image']   ?? '').toString();
+    final eventDate  = (msg['event_date']    ?? '').toString();
+    final eventType  = (msg['event_type']    ?? '').toString();
+    final senderId   = (msg['sender_id']     ?? '').toString();
+    final msgName    = (msg['sender_name']   ?? '').toString();
+    final msgAvatar  = (msg['sender_avatar'] ?? '').toString();
+
+    final liveName   = _senderName(senderId, msgName);
+    final liveAvatar = _senderAvatar(senderId, msgAvatar);
 
     final eventData =
     Map<String, dynamic>.from(msg['event_data'] as Map? ?? {});
     if (eventData.isEmpty) {
       eventData['event_title'] = eventTitle;
-      eventData['event_pic'] = eventImage;
-      eventData['event_type'] = eventType;
-      eventData['event_id'] = (msg['event_id'] ?? '').toString();
+      eventData['event_pic']   = eventImage;
+      eventData['event_type']  = eventType;
+      eventData['event_id']    = (msg['event_id'] ?? '').toString();
     }
 
     return Padding(
       padding: EdgeInsets.only(
         bottom: isLastInGroup ? 10 : 2,
-        left: isMe ? 60 : 42,
-        right: isMe ? 4 : 60,
+        left:  isMe ? 60 : 42,
+        right: isMe ? 4  : 60,
       ),
       child: Column(
         crossAxisAlignment:
@@ -1024,26 +1090,13 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  CircleAvatar(
-                    radius: 10,
-                    backgroundColor:
-                    AppColors.primary.withOpacity(0.12),
-                    backgroundImage: avatarUrl.isNotEmpty
-                        ? NetworkImage(avatarUrl)
-                        : null,
-                    child: avatarUrl.isEmpty
-                        ? Text(
-                        senderName.isNotEmpty
-                            ? senderName[0].toUpperCase()
-                            : '?',
-                        style: TextStyle(
-                            fontSize: 8,
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.bold))
-                        : null,
-                  ),
+                  _Avatar(
+                      avatarSrc: liveAvatar,
+                      name:      liveName,
+                      radius:    10,
+                      fontSize:  8),
                   const SizedBox(width: 5),
-                  Text(senderName,
+                  Text(liveName,
                       style: TextStyle(
                           fontSize: 11.5,
                           fontWeight: FontWeight.w600,
@@ -1056,8 +1109,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
-                  builder: (_) =>
-                      EventDetailScreen(event: eventData)),
+                  builder: (_) => EventDetailScreen(event: eventData)),
             ),
             child: Container(
               width: MediaQuery.of(context).size.width * 0.66,
@@ -1065,8 +1117,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                    color: AppColors.primary.withOpacity(0.15),
-                    width: 1),
+                    color: AppColors.primary.withOpacity(0.15), width: 1),
                 boxShadow: [
                   BoxShadow(
                       color: Colors.black.withOpacity(0.07),
@@ -1090,83 +1141,68 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                         : _eventSharePlaceholder(),
                   ),
                   Padding(
-                    padding:
-                    const EdgeInsets.fromLTRB(12, 10, 12, 4),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment:
-                            CrossAxisAlignment.start,
-                            children: [
-                              if (eventType.isNotEmpty)
-                                Container(
-                                  margin: const EdgeInsets.only(
-                                      bottom: 4),
-                                  padding:
-                                  const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 2),
-                                  decoration: BoxDecoration(
-                                      color: AppColors.primary
-                                          .withOpacity(0.1),
-                                      borderRadius:
-                                      BorderRadius.circular(20)),
-                                  child: Text(eventType,
+                    padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+                    child: Row(children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (eventType.isNotEmpty)
+                              Container(
+                                margin: const EdgeInsets.only(bottom: 4),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                    color:
+                                    AppColors.primary.withOpacity(0.1),
+                                    borderRadius:
+                                    BorderRadius.circular(20)),
+                                child: Text(eventType,
+                                    style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.primary)),
+                              ),
+                            Text(eventTitle,
+                                style: const TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF1A1A1A)),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis),
+                            if (eventDate.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 3),
+                                child: Row(children: [
+                                  Icon(Icons.calendar_today_rounded,
+                                      size: 11,
+                                      color:
+                                      AppColors.primary.withOpacity(0.7)),
+                                  const SizedBox(width: 3),
+                                  Text(eventDate,
                                       style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w600,
-                                          color: AppColors.primary)),
-                                ),
-                              Text(eventTitle,
-                                  style: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w700,
-                                      color: Color(0xFF1A1A1A)),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis),
-                              if (eventDate.isNotEmpty)
-                                Padding(
-                                  padding:
-                                  const EdgeInsets.only(top: 3),
-                                  child: Row(
-                                    children: [
-                                      Icon(
-                                          Icons
-                                              .calendar_today_rounded,
-                                          size: 11,
+                                          fontSize: 11,
                                           color: AppColors.primary
-                                              .withOpacity(0.7)),
-                                      const SizedBox(width: 3),
-                                      Text(eventDate,
-                                          style: TextStyle(
-                                              fontSize: 11,
-                                              color: AppColors.primary
-                                                  .withOpacity(0.8),
-                                              fontWeight:
-                                              FontWeight.w500)),
-                                    ],
-                                  ),
-                                ),
-                            ],
-                          ),
+                                              .withOpacity(0.8),
+                                          fontWeight: FontWeight.w500)),
+                                ]),
+                              ),
+                          ],
                         ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.all(7),
-                          decoration: BoxDecoration(
-                              color: AppColors.primary,
-                              borderRadius: BorderRadius.circular(9)),
-                          child: const Icon(
-                              Icons.arrow_forward_rounded,
-                              color: Colors.white,
-                              size: 13),
-                        ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.all(7),
+                        decoration: BoxDecoration(
+                            color: AppColors.primary,
+                            borderRadius: BorderRadius.circular(9)),
+                        child: const Icon(Icons.arrow_forward_rounded,
+                            color: Colors.white, size: 13),
+                      ),
+                    ]),
                   ),
                   Padding(
-                    padding:
-                    const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
                     child: Text(t.viewEventTap,
                         style: TextStyle(
                             fontSize: 11,
@@ -1180,9 +1216,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
           if (isLastInGroup)
             Padding(
               padding: EdgeInsets.only(
-                  top: 5,
-                  left: isMe ? 0 : 4,
-                  right: isMe ? 4 : 0),
+                  top: 5, left: isMe ? 0 : 4, right: isMe ? 4 : 0),
               child: Text(time,
                   style: const TextStyle(
                       fontSize: 10.5,
@@ -1200,8 +1234,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
     color: AppColors.primary.withOpacity(0.08),
     child: Center(
         child: Icon(Icons.event_rounded,
-            size: 40,
-            color: AppColors.primary.withOpacity(0.4))),
+            size: 40, color: AppColors.primary.withOpacity(0.4))),
   );
 
   // ── Input Bar ──────────────────────────────────────────────────────────
@@ -1270,10 +1303,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                     Color.lerp(AppColors.primary,
                         const Color(0xFF1A6B4A), 0.35)!
                   ]
-                      : const [
-                    Color(0xFFD1D1D6),
-                    Color(0xFFD1D1D6)
-                  ],
+                      : const [Color(0xFFD1D1D6), Color(0xFFD1D1D6)],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
@@ -1281,8 +1311,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
                 boxShadow: _isTyping
                     ? [
                   BoxShadow(
-                      color:
-                      AppColors.primary.withOpacity(0.38),
+                      color: AppColors.primary.withOpacity(0.38),
                       blurRadius: 14,
                       offset: const Offset(0, 5))
                 ]
@@ -1343,24 +1372,19 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
   }
 
   String _formatTime(DateTime dt) {
-    final hour = dt.hour > 12
-        ? dt.hour - 12
-        : dt.hour == 0
-        ? 12
-        : dt.hour;
+    final hour   = dt.hour > 12 ? dt.hour - 12 : dt.hour == 0 ? 12 : dt.hour;
     final minute = dt.minute.toString().padLeft(2, '0');
     final period = dt.hour >= 12 ? 'PM' : 'AM';
     return '$hour:$minute $period';
   }
 }
 
-// ── Silence Button Widget ──────────────────────────────────────────────────────
+// ── Silence Button ─────────────────────────────────────────────────────────────
 class _SilenceButton extends StatefulWidget {
   final bool isSilenced;
   final VoidCallback onTap;
 
-  const _SilenceButton(
-      {required this.isSilenced, required this.onTap});
+  const _SilenceButton({required this.isSilenced, required this.onTap});
 
   @override
   State<_SilenceButton> createState() => _SilenceButtonState();
@@ -1369,17 +1393,15 @@ class _SilenceButton extends StatefulWidget {
 class _SilenceButtonState extends State<_SilenceButton>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
-  late Animation<double> _scaleAnim;
+  late Animation<double>   _scaleAnim;
 
   @override
   void initState() {
     super.initState();
     _controller = AnimationController(
-        vsync: this,
-        duration: const Duration(milliseconds: 180));
+        vsync: this, duration: const Duration(milliseconds: 180));
     _scaleAnim = Tween<double>(begin: 1.0, end: 0.82).animate(
-      CurvedAnimation(
-          parent: _controller, curve: Curves.easeInOut),
+      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
     );
   }
 

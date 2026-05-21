@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -7,7 +9,7 @@ import 'package:pikuru/services/chat_service.dart';
 import 'package:pikuru/screens/individual_chat_screen.dart';
 import 'package:pikuru/providers/app_language_provider.dart';
 
-// ── i18n — mirrors web app T object exactly ───────────────────────────────────
+// ── i18n ──────────────────────────────────────────────────────────────────────
 class _T {
   final String members;
   final String people;
@@ -48,6 +50,63 @@ class _T {
   );
 }
 
+// ── Avatar helpers ─────────────────────────────────────────────────────────────
+String _toImgSrc(String raw) {
+  if (raw.isEmpty)             return '';
+  if (raw.startsWith('data:')) return raw;
+  if (raw.startsWith('http'))  return raw;
+  return 'data:image/jpeg;base64,$raw';
+}
+
+ImageProvider? _resolveImage(String av) {
+  if (av.isEmpty) return null;
+  try {
+    if (av.startsWith('http')) return NetworkImage(av);
+    if (av.startsWith('data:')) {
+      final comma = av.indexOf(',');
+      if (comma != -1) return MemoryImage(base64Decode(av.substring(comma + 1)));
+    }
+    return MemoryImage(base64Decode(av));
+  } catch (_) {
+    return null;
+  }
+}
+
+// ── Reusable avatar widget ────────────────────────────────────────────────────
+class _Avatar extends StatelessWidget {
+  final String avatarSrc;
+  final String name;
+  final double radius;
+  final double fontSize;
+
+  const _Avatar({
+    required this.avatarSrc,
+    required this.name,
+    required this.radius,
+    required this.fontSize,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final image = _resolveImage(avatarSrc);
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: AppColors.primary.withOpacity(0.10),
+      backgroundImage: image,
+      child: image == null
+          ? Text(
+        name.isNotEmpty ? name[0].toUpperCase() : '?',
+        style: TextStyle(
+          fontSize: fontSize,
+          fontWeight: FontWeight.bold,
+          color: AppColors.primary,
+        ),
+      )
+          : null,
+    );
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 class ChatMembersScreen extends ConsumerStatefulWidget {
   final String chatId;
@@ -64,12 +123,69 @@ class ChatMembersScreen extends ConsumerStatefulWidget {
 }
 
 class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
-  String _selectedFilter = 'all'; // internal key — not displayed directly
+  String _selectedFilter = 'all';
   final currentUserId = FirebaseAuth.instance.currentUser?.uid ?? '';
+
+  // ── Real-time profile cache: userId → {name, avatar} ─────────────────────
+  final Map<String, Map<String, String>> _profileCache = {};
+  final Map<String, StreamSubscription>  _profileSubs  = {};
+
+  @override
+  void dispose() {
+    for (final sub in _profileSubs.values) sub.cancel();
+    super.dispose();
+  }
+
+  // ── Subscribe to registration/{userId} in real-time ───────────────────────
+  void _ensureProfileSubscription(String userId) {
+    if (_profileSubs.containsKey(userId)) return;
+
+    final sub = FirebaseFirestore.instance
+        .collection('registration')
+        .doc(userId)
+        .snapshots()
+        .listen((snap) {
+      if (!snap.exists || !mounted) return;
+      final d      = snap.data()!;
+      final rawImg = (d['profile_img'] ?? '').toString();
+      final nick   = (d['nickname']   ?? '').toString().trim();
+      final first  = (d['firstName']  ?? '').toString().trim();
+      final last   = (d['lastName']   ?? '').toString().trim();
+      final name   = nick.isNotEmpty
+          ? nick
+          : (first.isNotEmpty && last.isNotEmpty)
+          ? '$first $last'
+          : first.isNotEmpty
+          ? first
+          : (_profileCache[userId]?['name'] ?? '');
+
+      setState(() {
+        _profileCache[userId] = {
+          'name':   name,
+          'avatar': _toImgSrc(rawImg),
+        };
+      });
+    }, onError: (e) {
+      debugPrint('[ChatMembersScreen] profile sub error for $userId: $e');
+    });
+
+    _profileSubs[userId] = sub;
+  }
+
+  /// Live name for a member, falling back to the subcollection field
+  String _liveName(String userId, String fallback) {
+    final cached = (_profileCache[userId]?['name'] ?? '');
+    return cached.isNotEmpty ? cached : fallback;
+  }
+
+  /// Live avatar for a member, falling back to the subcollection field
+  String _liveAvatar(String userId, String fallback) {
+    final cached = (_profileCache[userId]?['avatar'] ?? '');
+    return cached.isNotEmpty ? cached : _toImgSrc(fallback);
+  }
 
   @override
   Widget build(BuildContext context) {
-    // ── Watch global language — rebuilds automatically on lang change ──────────
     final lang = ref.watch(appLangProvider);
     final t    = lang == kLangJa ? _T.ja : _T.en;
 
@@ -94,7 +210,7 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
     );
   }
 
-  // ── Header ──────────────────────────────────────────────────────────────────
+  // ── Header ────────────────────────────────────────────────────────────────
   Widget _buildHeader(_T t) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
@@ -103,8 +219,7 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
           GestureDetector(
             onTap: () => Navigator.pop(context),
             child: Container(
-              width: 36,
-              height: 36,
+              width: 36, height: 36,
               decoration: BoxDecoration(
                 color: const Color(0xFFF2F2F7),
                 borderRadius: BorderRadius.circular(10),
@@ -131,7 +246,6 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
                     ),
                   ),
                   Text(
-                    // JP: "3人"  EN: "3 people"
                     t == _T.ja
                         ? '$count${t.people}'
                         : '$count ${t.people}',
@@ -150,7 +264,7 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
     );
   }
 
-  // ── Filter tabs ──────────────────────────────────────────────────────────────
+  // ── Filter tabs ───────────────────────────────────────────────────────────
   Widget _buildFilterTabs(_T t) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
@@ -197,7 +311,7 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
     );
   }
 
-  // ── Members list ─────────────────────────────────────────────────────────────
+  // ── Members list ──────────────────────────────────────────────────────────
   Widget _buildMembersList(String creatorId, _T t) {
     return StreamBuilder<QuerySnapshot>(
       stream: ChatService.membersStream(widget.chatId),
@@ -221,6 +335,11 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
 
         var docs = snap.data!.docs;
 
+        // ── Start a real-time registration subscription for every member ───
+        for (final doc in docs) {
+          _ensureProfileSubscription(doc.id);
+        }
+
         // Filter by Group Creator tab
         if (_selectedFilter == 'creator') {
           docs = docs.where((d) => d.id == creatorId).toList();
@@ -235,7 +354,7 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
           }
         }
 
-        // Sort: creator always appears first
+        // Creator always first
         docs.sort((a, b) {
           if (a.id == creatorId) return -1;
           if (b.id == creatorId) return 1;
@@ -251,26 +370,29 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
             indent: 64,
           ),
           itemBuilder: (context, index) {
-            final data     = docs[index].data() as Map<String, dynamic>;
-            final userId   = docs[index].id;
-            final isCreator      = userId == creatorId;
-            final isCurrentUser  = userId == currentUserId;
+            final data          = docs[index].data() as Map<String, dynamic>;
+            final userId        = docs[index].id;
+            final isCreator     = userId == creatorId;
+            final isCurrentUser = userId == currentUserId;
 
-            // display_name is stored on the members subcollection by joinChat()
-            // No _jp variant exists for member names — same as web app.
-            final name      = (data['display_name'] ?? 'Unknown').toString();
-            final avatarUrl = (data['avatar_url']   ?? '').toString();
+            // Subcollection fields — used only as fallback
+            final fallbackName   = (data['display_name'] ?? '').toString();
+            final fallbackAvatar = (data['avatar_url']   ?? '').toString();
 
-            // "(You)" / "(あなた)"
+            // Always prefer live registration data
+            final liveName   = _liveName(userId, fallbackName);
+            final liveAvatar = _liveAvatar(userId, fallbackAvatar);
+
             final displayName = isCurrentUser
-                ? '$name (${t.you})'
-                : name;
+                ? '$liveName (${t.you})'
+                : liveName;
 
             return _buildMemberTile(
               userId:      userId,
               name:        displayName,
-              avatarUrl:   avatarUrl,
+              avatarSrc:   liveAvatar,
               isCreator:   isCreator,
+              isCurrentUser: isCurrentUser,
               t:           t,
             );
           },
@@ -279,16 +401,16 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
     );
   }
 
-  // ── Member tile ──────────────────────────────────────────────────────────────
+  // ── Member tile ───────────────────────────────────────────────────────────
   Widget _buildMemberTile({
     required String userId,
     required String name,
-    required String avatarUrl,
+    required String avatarSrc,
     required bool   isCreator,
+    required bool   isCurrentUser,
     required _T     t,
   }) {
-    final isCurrentUser = userId == currentUserId;
-    // Strip the "(You)" / "(あなた)" suffix before passing to IndividualChatScreen
+    // Strip the "(You)" suffix before navigating to chat
     final rawName = name
         .replaceAll(' (${_T.en.you})', '')
         .replaceAll('(${_T.ja.you})', '')
@@ -301,9 +423,9 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
         context,
         MaterialPageRoute(
           builder: (_) => IndividualChatScreen(
-            otherUserId:    userId,
-            otherUserName:  rawName,
-            otherUserAvatar: avatarUrl,
+            otherUserId:     userId,
+            otherUserName:   rawName,
+            otherUserAvatar: avatarSrc,
           ),
         ),
       ),
@@ -311,24 +433,14 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
         padding: const EdgeInsets.symmetric(vertical: 10),
         child: Row(
           children: [
-            // ── Avatar + creator badge ──────────────────────────────────────
+            // ── Avatar + creator badge ──────────────────────────────────
             Stack(
               children: [
-                CircleAvatar(
-                  radius: 24,
-                  backgroundColor: AppColors.primary.withOpacity(0.1),
-                  backgroundImage:
-                  avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
-                  child: avatarUrl.isEmpty
-                      ? Text(
-                    name.isNotEmpty ? name[0].toUpperCase() : '?',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primary,
-                    ),
-                  )
-                      : null,
+                _Avatar(
+                  avatarSrc: avatarSrc,
+                  name:      name,
+                  radius:    24,
+                  fontSize:  16,
                 ),
                 if (isCreator)
                   Positioned(
@@ -348,7 +460,7 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
             ),
             const SizedBox(width: 14),
 
-            // ── Name + role label ───────────────────────────────────────────
+            // ── Name + role label ───────────────────────────────────────
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
