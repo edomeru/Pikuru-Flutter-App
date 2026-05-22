@@ -22,15 +22,9 @@ void notificationTapBackground(NotificationResponse response) {
 }
 
 // ── Helper: true when running on iOS Simulator (not a real device) ────────────
-// kDebugMode is true in debug builds. On a real device, APNS works fine even
-// in debug mode, but the simulator never has a valid APNS token.
 bool get _isIosSimulator => Platform.isIOS && kDebugMode && _checkSimulator();
 
 bool _checkSimulator() {
-  // The simulator sets TARGET_IPHONE_SIMULATOR env var, but that's not always
-  // reliable in Flutter. A safer check: try to read SIMULATOR_DEVICE_NAME.
-  // If unavailable, fall back to always skipping token on iOS debug builds
-  // (real device debug builds still work fine with getToken).
   try {
     return Platform.environment['SIMULATOR_DEVICE_NAME'] != null ||
         Platform.environment['SIMULATOR_UDID'] != null;
@@ -70,18 +64,22 @@ class NotificationService {
 
     await _authSub?.cancel();
 
+    // ✅ FIX: Only save token inside the auth listener — this guarantees
+    // that a valid uid exists when _saveToken() runs. The previous code
+    // also called _saveToken() immediately after this block, which raced
+    // against auth resolution and silently skipped saving when uid was null.
     _authSub = FirebaseAuth.instance.authStateChanges().listen((user) async {
-      if (user != null) {
+      if (user != null && !_isIosSimulator) {
+        debugPrint('[FCM] Auth state resolved for uid=${user.uid}, saving token...');
         await _saveToken();
       }
     });
 
-    // ── Guard: skip token fetch on iOS Simulator ──────────────────────────
-    // The simulator has no APNS support. Calling getToken() throws:
-    // [firebase_messaging/apns-token-not-set] and crashes the app before
-    // runApp() completes, causing a permanent white screen.
+    // ✅ FIX: Removed the duplicate `await _saveToken()` call that was here.
+    // It ran before auth state resolved, causing uid==null and silent skip.
+
     if (!_isIosSimulator) {
-      await _saveToken();
+      // ✅ FIX: Moved onTokenRefresh inside the non-simulator guard
       _fcm.onTokenRefresh.listen(_saveTokenToFirestore);
     } else {
       debugPrint('[FCM] iOS Simulator detected — skipping token fetch');
@@ -162,11 +160,16 @@ class NotificationService {
       final token = await _fcm
           .getToken()
           .timeout(const Duration(seconds: 10), onTimeout: () => null);
+
+      // ✅ DEBUG: Log the token so you can verify it matches Firestore
+      debugPrint('[FCM] Retrieved token for uid=$uid: $token');
+
       if (token != null) {
         await _saveTokenToFirestore(token);
+      } else {
+        debugPrint('[FCM] getToken() returned null — no token saved');
       }
     } catch (e) {
-      // Non-fatal — app continues normally without FCM token
       debugPrint('[FCM] getToken error (non-fatal): $e');
     }
   }
@@ -187,7 +190,7 @@ class NotificationService {
         'platform'       : Platform.isIOS ? 'ios' : 'android',
         'fcm_updated_at' : FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
-      debugPrint('[FCM] Token saved to registration for uid=$uid');
+      debugPrint('[FCM] Token saved to Firestore for uid=$uid');
     } catch (e) {
       debugPrint('[FCM] Save error: $e');
     }
@@ -245,10 +248,6 @@ class NotificationService {
   void _onTap(RemoteMessage message) => _handlePayload(message.data['route']);
 
   // ── Navigate based on route payload ──────────────────────────────────────
-  // Routes from Cloud Functions:
-  //   /chats/individual/{chatId}  e.g. uid1_uid2
-  //   /chats/group/{chatId}
-  //   /events/{eventId}
   void _handlePayload(String? payload) {
     if (payload == null || payload.isEmpty) return;
     debugPrint('[FCM] Handling payload: $payload');
@@ -282,7 +281,6 @@ class NotificationService {
       );
       if (otherUid.isEmpty) return;
 
-      // Look up other user's info from registration
       final doc  = await FirebaseFirestore.instance
           .collection('registration')
           .doc(otherUid)

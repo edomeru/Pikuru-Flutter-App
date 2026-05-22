@@ -6,6 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/main_navigation.dart';
 import 'package:pikuru/providers/app_language_provider.dart';
+import 'package:pikuru/services/notification_service.dart'; // ✅ ADD THIS
 import 'dart:async';
 import 'dart:math';
 import 'package:http/http.dart' as http;
@@ -249,6 +250,12 @@ class _OtpVerificationPageState extends ConsumerState<OtpVerificationPage> {
       });
 
       debugPrint('✅ registration/${user.uid} created successfully');
+
+      // 4. ✅ Save FCM token now that the user has a valid uid.
+      //    This writes fcm_token + fcm_tokens to registration/{uid}
+      //    so the user can receive push notifications immediately.
+      await NotificationService.instance.init();
+      debugPrint('✅ FCM token saved for new user ${user.uid}');
 
       setState(() => _isVerifying = false);
       if (!mounted) return;
