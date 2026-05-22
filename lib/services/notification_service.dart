@@ -9,19 +9,19 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:pikuru/screens/individual_chat_screen.dart';
 import 'package:pikuru/screens/group_chat_screen.dart';
 
-// ── Background message handler (must be top-level) ───────────────────────────
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   debugPrint('[FCM] Background message: ${message.messageId}');
+  if (message.notification == null && message.data['silenced'] == 'true') {
+    await NotificationService.instance._showSilentLocalNotification(message);
+  }
 }
 
-// ── Background notification tap handler (must be top-level) ──────────────────
 @pragma('vm:entry-point')
 void notificationTapBackground(NotificationResponse response) {
   debugPrint('[FCM] Background tap: ${response.payload}');
 }
 
-// ── Helper: true when running on iOS Simulator (not a real device) ────────────
 bool get _isIosSimulator => Platform.isIOS && kDebugMode && _checkSimulator();
 
 bool _checkSimulator() {
@@ -37,90 +37,84 @@ class NotificationService {
   NotificationService._();
   static final NotificationService instance = NotificationService._();
 
-  // ── Global navigator key — pass this to MaterialApp in main.dart ──────────
   static final navigatorKey = GlobalKey<NavigatorState>();
 
   final _fcm = FirebaseMessaging.instance;
-
   static final _plugin = FlutterLocalNotificationsPlugin();
 
-  static const _channelId   = 'pikuru_notifications';
+  static const _channelId = 'pikuru_notifications';
   static const _channelName = 'Pikuru Notifications';
   static const _channelDesc = 'Notifications from Pikuru pickleball app';
+
+  static const _silentChannelId = 'pikuru_silent';
+  static const _silentChannelName = 'Pikuru Silent Notifications';
+  static const _silentChannelDesc = 'Silent notifications for muted chats';
 
   bool _initialized = false;
   StreamSubscription<User?>? _authSub;
 
-  // ── Public init ──────────────────────────────────────────────────────────
   Future<void> init() async {
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
-
     await _requestPermission();
-
     if (!_initialized) {
       await _setupLocalNotifications();
       _initialized = true;
     }
-
     await _authSub?.cancel();
-
-    // ✅ FIX: Only save token inside the auth listener — this guarantees
-    // that a valid uid exists when _saveToken() runs. The previous code
-    // also called _saveToken() immediately after this block, which raced
-    // against auth resolution and silently skipped saving when uid was null.
     _authSub = FirebaseAuth.instance.authStateChanges().listen((user) async {
       if (user != null && !_isIosSimulator) {
-        debugPrint('[FCM] Auth state resolved for uid=${user.uid}, saving token...');
+        debugPrint('[FCM] Auth resolved for uid=${user.uid}, saving token...');
         await _saveToken();
       }
     });
-
-    // ✅ FIX: Removed the duplicate `await _saveToken()` call that was here.
-    // It ran before auth state resolved, causing uid==null and silent skip.
-
     if (!_isIosSimulator) {
-      // ✅ FIX: Moved onTokenRefresh inside the non-simulator guard
       _fcm.onTokenRefresh.listen(_saveTokenToFirestore);
     } else {
-      debugPrint('[FCM] iOS Simulator detected — skipping token fetch');
+      debugPrint('[FCM] iOS Simulator — skipping token fetch');
     }
-
     FirebaseMessaging.onMessage.listen(_onForegroundMessage);
     FirebaseMessaging.onMessageOpenedApp.listen(_onTap);
-
     final initial = await _fcm.getInitialMessage();
     if (initial != null) _onTap(initial);
-
     await _fcm.setForegroundNotificationPresentationOptions(
       alert: true, badge: true, sound: true,
     );
   }
 
-  // ── Permission ───────────────────────────────────────────────────────────
   Future<void> _requestPermission() async {
-    final s = await _fcm.requestPermission(
-      alert: true, badge: true, sound: true,
-    );
+    final s = await _fcm.requestPermission(alert: true, badge: true, sound: true);
     debugPrint('[FCM] Auth status: ${s.authorizationStatus}');
   }
 
-  // ── Android local notifications setup ────────────────────────────────────
   Future<void> _setupLocalNotifications() async {
     if (Platform.isAndroid) {
-      const channel = AndroidNotificationChannel(
-        _channelId,
-        _channelName,
-        description: _channelDesc,
-        importance: Importance.high,
-        playSound: true,
-        enableLights: true,
-        ledColor: Color(0xFF3A7D44),
+      // ── ONE LINE — do not split the generic across lines ─────────────────
+      final androidPlugin = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+
+      await androidPlugin?.createNotificationChannel(
+        const AndroidNotificationChannel(
+          _channelId,
+          _channelName,
+          description: _channelDesc,
+          importance: Importance.high,
+          playSound: true,
+          enableVibration: true,
+          enableLights: true,
+          ledColor: Color(0xFF3A7D44),
+        ),
       );
 
-      await _plugin
-          .resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>()
-          ?.createNotificationChannel(channel);
+      await androidPlugin?.createNotificationChannel(
+        const AndroidNotificationChannel(
+          _silentChannelId,
+          _silentChannelName,
+          description: _silentChannelDesc,
+          importance: Importance.low,
+          playSound: false,
+          enableVibration: false,
+          enableLights: false,
+        ),
+      );
     }
 
     final initSettings = InitializationSettings(
@@ -143,54 +137,31 @@ class NotificationService {
     );
   }
 
-  // ── Token management ──────────────────────────────────────────────────────
   Future<void> _saveToken() async {
-    if (_isIosSimulator) {
-      debugPrint('[FCM] Skipping token save — iOS Simulator');
-      return;
-    }
-
+    if (_isIosSimulator) return;
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) {
-      debugPrint('[FCM] Skipping token save — no user logged in');
-      return;
-    }
-
+    if (uid == null) return;
     try {
       final token = await _fcm
           .getToken()
           .timeout(const Duration(seconds: 10), onTimeout: () => null);
-
-      // ✅ DEBUG: Log the token so you can verify it matches Firestore
-      debugPrint('[FCM] Retrieved token for uid=$uid: $token');
-
-      if (token != null) {
-        await _saveTokenToFirestore(token);
-      } else {
-        debugPrint('[FCM] getToken() returned null — no token saved');
-      }
+      if (token != null) await _saveTokenToFirestore(token);
     } catch (e) {
-      debugPrint('[FCM] getToken error (non-fatal): $e');
+      debugPrint('[FCM] getToken error: $e');
     }
   }
 
   Future<void> _saveTokenToFirestore(String token) async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) {
-      debugPrint('[FCM] Skipping token save — no user logged in');
-      return;
-    }
+    if (uid == null) return;
     try {
-      await FirebaseFirestore.instance
-          .collection('registration')
-          .doc(uid)
-          .set({
-        'fcm_token'      : token,
-        'fcm_tokens'     : FieldValue.arrayUnion([token]),
-        'platform'       : Platform.isIOS ? 'ios' : 'android',
-        'fcm_updated_at' : FieldValue.serverTimestamp(),
+      await FirebaseFirestore.instance.collection('registration').doc(uid).set({
+        'fcm_token': token,
+        'fcm_tokens': FieldValue.arrayUnion([token]),
+        'platform': Platform.isIOS ? 'ios' : 'android',
+        'fcm_updated_at': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
-      debugPrint('[FCM] Token saved to Firestore for uid=$uid');
+      debugPrint('[FCM] Token saved for uid=$uid');
     } catch (e) {
       debugPrint('[FCM] Save error: $e');
     }
@@ -198,56 +169,100 @@ class NotificationService {
 
   Future<void> removeToken() async {
     if (_isIosSimulator) return;
-
-    final uid   = FirebaseAuth.instance.currentUser?.uid;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
     final token = await _fcm.getToken().catchError((_) => null);
     if (uid == null || token == null) return;
     try {
-      await FirebaseFirestore.instance
-          .collection('registration')
-          .doc(uid)
-          .update({
-        'fcm_tokens' : FieldValue.arrayRemove([token]),
-        'fcm_token'  : FieldValue.delete(),
+      await FirebaseFirestore.instance.collection('registration').doc(uid).update({
+        'fcm_tokens': FieldValue.arrayRemove([token]),
+        'fcm_token': FieldValue.delete(),
       });
       await _fcm.deleteToken();
       await _authSub?.cancel();
-      debugPrint('[FCM] Token removed');
     } catch (e) {
       debugPrint('[FCM] Remove error: $e');
     }
   }
 
-  // ── Foreground message → show heads-up on Android ────────────────────────
   void _onForegroundMessage(RemoteMessage message) {
-    final n = message.notification;
-    if (n == null) return;
+    final isSilenced = message.data['silenced'] == 'true';
+
+    if (message.notification == null) {
+      if (isSilenced) {
+        _showSilentLocalNotification(message);
+      }
+      return;
+    }
 
     if (Platform.isIOS) return;
 
+    final n = message.notification!;
     _plugin.show(
       n.hashCode,
       n.title,
       n.body,
-      const NotificationDetails(
+      NotificationDetails(
         android: AndroidNotificationDetails(
-          _channelId,
-          _channelName,
-          channelDescription: _channelDesc,
-          importance:         Importance.high,
-          priority:           Priority.high,
-          color:              Color(0xFF3A7D44),
-          icon:               '@drawable/ic_notification',
+          isSilenced ? _silentChannelId : _channelId,
+          isSilenced ? _silentChannelName : _channelName,
+          channelDescription: isSilenced ? _silentChannelDesc : _channelDesc,
+          importance: isSilenced ? Importance.low : Importance.high,
+          priority: isSilenced ? Priority.low : Priority.high,
+          playSound: !isSilenced,
+          enableVibration: !isSilenced,
+          color: const Color(0xFF3A7D44),
+          icon: '@drawable/ic_notification',
         ),
       ),
       payload: message.data['route'],
     );
   }
 
-  // ── Tap handlers ─────────────────────────────────────────────────────────
+  Future<void> _showSilentLocalNotification(RemoteMessage message) async {
+    final title = message.data['title'] ?? 'New message';
+    final body = message.data['body'] ?? '';
+    final route = message.data['route'] ?? '';
+
+    if (Platform.isAndroid) {
+      await _plugin.show(
+        message.hashCode,
+        title,
+        body,
+        const NotificationDetails(
+          android: AndroidNotificationDetails(
+            _silentChannelId,
+            _silentChannelName,
+            channelDescription: _silentChannelDesc,
+            importance: Importance.low,
+            priority: Priority.low,
+            playSound: false,
+            enableVibration: false,
+            enableLights: false,
+            color: Color(0xFF3A7D44),
+            icon: '@drawable/ic_notification',
+          ),
+        ),
+        payload: route,
+      );
+    } else if (Platform.isIOS) {
+      await _plugin.show(
+        message.hashCode,
+        title,
+        body,
+        const NotificationDetails(
+          iOS: DarwinNotificationDetails(
+            presentAlert: true,
+            presentBadge: true,
+            presentSound: false,
+          ),
+        ),
+        payload: route,
+      );
+    }
+  }
+
   void _onTap(RemoteMessage message) => _handlePayload(message.data['route']);
 
-  // ── Navigate based on route payload ──────────────────────────────────────
   void _handlePayload(String? payload) {
     if (payload == null || payload.isEmpty) return;
     debugPrint('[FCM] Handling payload: $payload');
@@ -258,7 +273,6 @@ class NotificationService {
         debugPrint('[FCM] Navigator context not ready');
         return;
       }
-
       if (payload.startsWith('/chats/individual/')) {
         final chatId = payload.replaceFirst('/chats/individual/', '');
         await _openIndividualChat(context, chatId);
@@ -272,34 +286,26 @@ class NotificationService {
   Future<void> _openIndividualChat(BuildContext context, String chatId) async {
     try {
       final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
-
-      // chatId is formatted as uid1_uid2 — find the other uid
-      final parts    = chatId.split('_');
-      final otherUid = parts.firstWhere(
-            (p) => p != currentUid,
-        orElse: () => '',
-      );
+      final parts = chatId.split('_');
+      final otherUid = parts.firstWhere((p) => p != currentUid, orElse: () => '');
       if (otherUid.isEmpty) return;
 
-      final doc  = await FirebaseFirestore.instance
-          .collection('registration')
-          .doc(otherUid)
-          .get();
-      final data      = doc.data() ?? {};
-      final nickname  = (data['nickname']  ?? '').toString().trim();
+      final doc = await FirebaseFirestore.instance.collection('registration').doc(otherUid).get();
+      final data = doc.data() ?? {};
+      final nickname = (data['nickname'] ?? '').toString().trim();
       final firstName = (data['firstName'] ?? '').toString().trim();
-      final lastName  = (data['lastName']  ?? '').toString().trim();
-      final name      = nickname.isNotEmpty
+      final lastName = (data['lastName'] ?? '').toString().trim();
+      final name = nickname.isNotEmpty
           ? nickname
           : [firstName, lastName].where((s) => s.isNotEmpty).join(' ');
-      final avatar    = (data['profile_img'] ?? '').toString();
+      final avatar = (data['profile_img'] ?? '').toString();
 
       if (!context.mounted) return;
       Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => IndividualChatScreen(
-            otherUserId:     otherUid,
-            otherUserName:   name.isNotEmpty ? name : 'User',
+            otherUserId: otherUid,
+            otherUserName: name.isNotEmpty ? name : 'User',
             otherUserAvatar: avatar,
           ),
         ),
@@ -311,10 +317,7 @@ class NotificationService {
 
   Future<void> _openGroupChat(BuildContext context, String chatId) async {
     try {
-      final doc = await FirebaseFirestore.instance
-          .collection('group_chats')
-          .doc(chatId)
-          .get();
+      final doc = await FirebaseFirestore.instance.collection('group_chats').doc(chatId).get();
       if (!doc.exists) return;
       final data = doc.data() ?? {};
 
