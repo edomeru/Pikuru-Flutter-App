@@ -11,10 +11,11 @@ if (admin.apps.length === 0) {
 const gmailEmail = defineString("GMAIL_EMAIL");
 const gmailPassword = defineString("GMAIL_PASSWORD");
 
+// Line 15 — getFcmToken
 /**
- * Gets the FCM token for a given uid from the registration collection.
- * @param {string} uid - The Firebase Auth user ID.
- * @return {Promise<string | null>} The FCM token or null if not found.
+ * Retrieves the FCM token for a given user ID.
+ * @param {string} uid - The user ID.
+ * @return {Promise<string | null>} The FCM token or null.
  */
 async function getFcmToken(uid: string): Promise<string | null> {
   try {
@@ -32,28 +33,11 @@ async function getFcmToken(uid: string): Promise<string | null> {
   }
 }
 
+// Line 33 — getDisplayName
 /**
- * Removes a stale/invalid FCM token from Firestore.
- * @param {string} uid - The Firebase Auth user ID.
- * @param {string} token - The stale token to remove.
- * @return {Promise<void>}
- */
-async function removeStaleToken(uid: string, token: string): Promise<void> {
-  try {
-    await admin.firestore().collection("registration").doc(uid).update({
-      fcm_token: admin.firestore.FieldValue.delete(),
-      fcm_tokens: admin.firestore.FieldValue.arrayRemove(token),
-    });
-    console.log(`[FCM] Removed stale token for uid=${uid}`);
-  } catch (e) {
-    console.error(`[FCM] Failed to remove stale token for uid=${uid}:`, e);
-  }
-}
-
-/**
- * Gets the display name for a given uid from the registration collection.
- * @param {string} uid - The Firebase Auth user ID.
- * @return {Promise<string>} The display name or "Someone" if not found.
+ * Returns the display name for a given user ID.
+ * @param {string} uid - The user ID.
+ * @return {Promise<string>} The display name.
  */
 async function getDisplayName(uid: string): Promise<string> {
   try {
@@ -71,6 +55,58 @@ async function getDisplayName(uid: string): Promise<string> {
   }
 }
 
+// Line 51 — getGroupName
+/**
+ * Resolves the group name from a group_chats document.
+ * @param {string} chatId - The chat document ID.
+ * @return {Promise<string>} The group name.
+ */
+async function getGroupName(chatId: string): Promise<string> {
+  try {
+    const chatDoc = await admin.firestore().collection("group_chats").doc(chatId).get();
+    const chatData = chatDoc.data() ?? {};
+
+    // Try org_name stored directly on the chat doc first (fastest)
+    const directName = (chatData.org_name ?? "").toString().trim();
+    if (directName) {
+      console.log(`[FCM] Group name from chat doc: "${directName}"`);
+      return directName;
+    }
+
+    // Fall back to looking up the organizations collection via org_id
+    const orgId = (chatData.org_id ?? chatId).toString().trim();
+    if (orgId) {
+      // Step 1: try document ID directly
+      const orgDoc = await admin.firestore().collection("organizations").doc(orgId).get();
+      if (orgDoc.exists) {
+        const name = (orgDoc.data()?.org_name ?? "").toString().trim();
+        if (name) {
+          console.log(`[FCM] Group name from organizations doc: "${name}"`);
+          return name;
+        }
+      }
+
+      // Step 2: query by org_id field
+      const orgSnap = await admin.firestore()
+        .collection("organizations")
+        .where("org_id", "==", orgId)
+        .limit(1)
+        .get();
+      if (!orgSnap.empty) {
+        const name = (orgSnap.docs[0].data()?.org_name ?? "").toString().trim();
+        if (name) {
+          console.log(`[FCM] Group name from organizations query: "${name}"`);
+          return name;
+        }
+      }
+    }
+  } catch (e) {
+    console.error(`[FCM] getGroupName error for chatId=${chatId}:`, e);
+  }
+
+  return "Group Chat";
+}
+
 // ── New message in group chat ─────────────────────────────────────────────────
 export const onGroupMessage = onDocumentCreated(
   "group_chats/{chatId}/messages/{messageId}",
@@ -79,152 +115,100 @@ export const onGroupMessage = onDocumentCreated(
     if (!message) return;
 
     const chatId = event.params.chatId;
-    const senderId = message.sender_id as string;
+    const senderId = message.sender_id;
 
     console.log(`[FCM] Group message in chatId=${chatId} from senderId=${senderId}`);
 
-    // Get the org_id from the group_chats doc
-    const chatDoc = await admin.firestore()
-      .collection("group_chats").doc(chatId).get();
-    const chatData = chatDoc.data();
+    const participantsSnap = await admin.firestore()
+      .collection("group_chats").doc(chatId)
+      .collection("participants").get();
 
-    if (!chatData) {
-      console.warn(`[FCM] group_chats doc not found for chatId=${chatId}`);
-      return;
-    }
+    // ── Resolve the real group name ───────────────────────────────────────
+    const groupName = await getGroupName(chatId);
+    console.log(`[FCM] Resolved group name: "${groupName}"`);
 
-    const orgId = (chatData.org_id ?? "").toString();
+    const normalTokens: string[] = [];
+    const silentTokens: string[] = [];
 
-    // org_name is not stored in group_chats doc — look it up from organizations
-    let groupName = "Group Chat";
-    if (orgId) {
-      try {
-        // Try direct doc lookup first (org_id may be the Firestore doc ID)
-        const orgDoc = await admin.firestore()
-          .collection("organizations").doc(orgId).get();
-        if (orgDoc.exists) {
-          groupName = (orgDoc.data()?.org_name ?? "Group Chat").toString();
-        } else {
-          // Fallback: query by org_id field
-          const orgSnap = await admin.firestore()
-            .collection("organizations")
-            .where("org_id", "==", orgId)
-            .limit(1)
-            .get();
-          if (!orgSnap.empty) {
-            groupName = (orgSnap.docs[0].data().org_name ?? "Group Chat").toString();
-          }
-        }
-      } catch (e) {
-        console.error(`[FCM] Failed to fetch org name for orgId=${orgId}:`, e);
-      }
-    }
+    for (const p of participantsSnap.docs) {
+      if (p.id === senderId) continue;
 
-    console.log(`[FCM] orgId=${orgId}, groupName=${groupName}`);
+      const token = await getFcmToken(p.id);
+      if (!token) continue;
 
-    // KEY FIX: Get recipients from user_groups collection.
-    // user_groups stores every user who has joined the org/group.
-    // participants subcollection only stores users who opened the chat,
-    // which misses simulator users and users who have not opened the chat yet.
-    let recipientUids: string[] = [];
-
-    if (orgId) {
-      const userGroupsSnap = await admin.firestore()
-        .collection("user_groups")
-        .where("group_id", "==", orgId)
-        .where("status", "==", "active")
-        .get();
-
-      recipientUids = userGroupsSnap.docs
-        .map((d) => (d.data().user_id ?? "").toString())
-        .filter((uid) => uid && uid !== senderId);
-
-      console.log(
-        `[FCM] Found ${recipientUids.length} recipients from user_groups for orgId=${orgId}`
-      );
-    }
-
-    // Fallback: also check participants subcollection in case user_groups is empty
-    if (recipientUids.length === 0) {
-      console.warn("[FCM] No recipients in user_groups -- falling back to participants");
-      const participantsSnap = await admin.firestore()
-        .collection("group_chats").doc(chatId)
-        .collection("participants").get();
-
-      recipientUids = participantsSnap.docs
-        .map((d) => d.id)
-        .filter((uid) => uid !== senderId);
-
-      console.log(`[FCM] Fallback: ${recipientUids.length} recipients from participants`);
-    }
-
-    if (recipientUids.length === 0) {
-      console.warn("[FCM] No recipients found anywhere -- skipping notification");
-      return;
-    }
-
-    // Build token map
-    const tokenMap: { uid: string; token: string }[] = [];
-    for (const uid of recipientUids) {
-      const token = await getFcmToken(uid);
-      if (token) {
-        tokenMap.push({uid, token});
+      const isSilenced = p.data()?.is_silenced === true;
+      if (isSilenced) {
+        console.log(`[FCM] uid=${p.id} silenced — queuing silent notification`);
+        silentTokens.push(token);
       } else {
-        console.warn(`[FCM] No token for uid=${uid} -- skipping`);
+        normalTokens.push(token);
       }
     }
 
-    if (tokenMap.length === 0) {
-      console.warn("[FCM] No FCM tokens found for any recipient");
-      return;
+    // ── Normal notifications (sound + vibration) ──────────────────────────
+    if (normalTokens.length > 0) {
+      console.log(`[FCM] Sending normal notification to ${normalTokens.length} device(s)`);
+      await admin.messaging().sendEachForMulticast({
+        tokens: normalTokens,
+        notification: {
+          title: groupName,
+          body: message.text || "New message",
+        },
+        data: {
+          route: `/chats/group/${chatId}`,
+          chat_id: chatId,
+          type: "group_message",
+          silenced: "false",
+        },
+        android: {
+          notification: {
+            channelId: "pikuru_notifications",
+            color: "#3A7D44",
+          },
+          priority: "high",
+        },
+        apns: {
+          payload: {aps: {sound: "default", badge: 1}},
+        },
+      });
     }
 
-    const senderName = await getDisplayName(senderId);
-
-    console.log(`[FCM] Sending group notification to ${tokenMap.length} devices`);
-
-    const tokens = tokenMap.map((t) => t.token);
-    const response = await admin.messaging().sendEachForMulticast({
-      tokens,
-      notification: {
-        title: groupName,
-        body: `${senderName}: ${message.text || "New message"}`,
-      },
-      data: {
-        route: `/chats/group/${chatId}`,
-        chat_id: chatId,
-        type: "group_message",
-      },
-      android: {
-        notification: {channelId: "pikuru_notifications", color: "#3A7D44"},
-        priority: "high",
-      },
-      apns: {
-        payload: {aps: {sound: "default", badge: 1}},
-      },
-    });
-
-    // Clean up stale tokens
-    for (let idx = 0; idx < response.responses.length; idx++) {
-      const res = response.responses[idx];
-      if (!res.success) {
-        const code = res.error?.code ?? "";
-        console.error(`[FCM] Group send failed for uid=${tokenMap[idx].uid}: ${code}`);
-        if (
-          code === "messaging/registration-token-not-registered" ||
-          code === "messaging/invalid-registration-token"
-        ) {
-          await removeStaleToken(tokenMap[idx].uid, tokenMap[idx].token);
-        }
-      }
+    // ── Silent notifications (no sound, no vibration) ─────────────────────
+    if (silentTokens.length > 0) {
+      console.log(`[FCM] Sending silent notification to ${silentTokens.length} device(s)`);
+      await admin.messaging().sendEachForMulticast({
+        tokens: silentTokens,
+        data: {
+          route: `/chats/group/${chatId}`,
+          chat_id: chatId,
+          type: "group_message",
+          silenced: "true",
+          title: groupName,
+          body: message.text || "New message",
+        },
+        android: {
+          priority: "high",
+        },
+        apns: {
+          payload: {
+            aps: {
+              "content-available": 1,
+            },
+          },
+          headers: {
+            "apns-priority": "5",
+          },
+        },
+      });
     }
 
-    console.log(
-      `[FCM] Group notification done. Success=${response.successCount} Fail=${response.failureCount}`
-    );
+    if (normalTokens.length === 0 && silentTokens.length === 0) {
+      console.warn("[FCM] No tokens found for any participant");
+    } else {
+      console.log("[FCM] Group notifications dispatched successfully");
+    }
   }
 );
-
 
 // ── New individual chat message ───────────────────────────────────────────────
 export const onIndividualMessage = onDocumentCreated(
@@ -234,17 +218,16 @@ export const onIndividualMessage = onDocumentCreated(
     if (!message) return;
 
     const chatId = event.params.chatId;
-    const senderId = message.sender_id as string;
+    const senderId = message.sender_id;
 
     console.log(`[FCM] Individual message in chatId=${chatId} from senderId=${senderId}`);
 
     if (!senderId) {
-      console.warn("[FCM] No sender_id on message -- skipping");
+      console.warn("[FCM] No sender_id on message — skipping");
       return;
     }
 
-    const chatDoc = await admin.firestore()
-      .collection("individual_chats").doc(chatId).get();
+    const chatDoc = await admin.firestore().collection("individual_chats").doc(chatId).get();
     const chatData = chatDoc.data();
 
     if (!chatData) {
@@ -253,26 +236,21 @@ export const onIndividualMessage = onDocumentCreated(
     }
 
     const participants = (chatData.participants ?? []) as string[];
-    console.log(`[FCM] participants: ${JSON.stringify(participants)}`);
-
     const recipientId = participants.find((id: string) => id !== senderId);
 
     if (!recipientId) {
-      console.warn("[FCM] Could not determine recipientId");
+      console.warn("[FCM] Could not determine recipientId:", participants);
       return;
     }
 
-    console.log(`[FCM] Recipient uid=${recipientId}`);
-
     const token = await getFcmToken(recipientId);
     if (!token) {
-      console.warn(`[FCM] No FCM token for recipientId=${recipientId} -- skipping`);
+      console.warn(`[FCM] No FCM token for recipientId=${recipientId}`);
       return;
     }
 
     const senderName = await getDisplayName(senderId);
-
-    console.log(`[FCM] Sending notification from "${senderName}" to uid=${recipientId}`);
+    console.log(`[FCM] Sending individual notification from "${senderName}" to uid=${recipientId}`);
 
     try {
       await admin.messaging().send({
@@ -286,6 +264,7 @@ export const onIndividualMessage = onDocumentCreated(
           chat_id: chatId,
           type: "individual_message",
           sender_id: senderId,
+          silenced: "false",
         },
         android: {
           notification: {channelId: "pikuru_notifications", color: "#3A7D44"},
@@ -295,22 +274,14 @@ export const onIndividualMessage = onDocumentCreated(
           payload: {aps: {sound: "default", badge: 1}},
         },
       });
-      console.log(`[FCM] Notification sent successfully to uid=${recipientId}`);
-    } catch (e: unknown) {
-      const err = e as { code?: string; message?: string };
-      console.error(`[FCM] Failed to send to uid=${recipientId}: code=${err.code} msg=${err.message}`);
-      if (
-        err.code === "messaging/registration-token-not-registered" ||
-        err.code === "messaging/invalid-registration-token"
-      ) {
-        await removeStaleToken(recipientId, token);
-      }
+      console.log(`[FCM] Individual notification sent to uid=${recipientId}`);
+    } catch (e) {
+      console.error(`[FCM] Failed to send notification to uid=${recipientId}:`, e);
     }
   }
 );
 
-
-// ── New event notification (for all users) ────────────────────────────────────
+// ── New event notification ────────────────────────────────────────────────────
 export const onNewEvent = onDocumentCreated(
   "events/{eventId}",
   async (event) => {
@@ -355,13 +326,11 @@ export const onNewEvent = onDocumentCreated(
   }
 );
 
-
 // ── Send OTP ──────────────────────────────────────────────────────────────────
 export const sendOtp = onCall(async (request) => {
   const data = request.data;
   const email = data.email as string;
   const otp = data.otp as string;
-
   const nickname = (data.nickname ?? "").toString().trim();
   const firstName = (data.firstName ?? "").toString().trim();
   const greeting = nickname || firstName || "there";
@@ -409,7 +378,6 @@ export const sendOtp = onCall(async (request) => {
   }
 });
 
-
 // ── Update User Email ─────────────────────────────────────────────────────────
 export const updateUserEmail = onCall(async (request) => {
   if (!request.auth) {
@@ -434,7 +402,7 @@ export const updateUserEmail = onCall(async (request) => {
     return {success: true};
   } catch (error: unknown) {
     console.error("Error updating email:", error);
-    const err = error as { code?: string; message?: string };
+    const err = error as {code?: string; message?: string};
     if (err.code === "auth/email-already-exists") {
       throw new HttpsError("already-exists", "This email is already used by another account.");
     }
