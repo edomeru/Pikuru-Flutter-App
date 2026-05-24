@@ -8,8 +8,7 @@ import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/providers/providers.dart';
 import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:pikuru/utils/date_formatter.dart';
-import 'package:pikuru/modal/join_group_modal.dart';
-import 'package:pikuru/modal/mark_interested_modal.dart';
+import 'package:pikuru/modal/group_detail_modal.dart';
 import 'package:pikuru/modal/share_group_modal.dart';
 
 // ── Data helpers ──────────────────────────────────────────────────────────────
@@ -24,8 +23,7 @@ bool _isTruthy(dynamic v) {
 
 // ── Lang-aware resolvers ──────────────────────────────────────────────────────
 
-String _field(
-    Map<String, dynamic> g, String enKey, String jpKey, String lang) {
+String _field(Map<String, dynamic> g, String enKey, String jpKey, String lang) {
   if (lang == 'ja') {
     final jp = (g[jpKey] ?? '').toString().trim();
     if (jp.isNotEmpty && jp != 'null') return jp;
@@ -33,14 +31,13 @@ String _field(
   return (g[enKey] ?? '').toString().trim();
 }
 
-/// Translate org_type badge — mirrors web app group type labels
 String _resolveOrgType(String rawType, String lang) {
   if (lang != 'ja') return rawType;
   switch (rawType) {
-    case 'Local Group':   return 'ローカルグループ';
-    case 'Professional':  return 'プロフェッショナル';
-    case 'Gym/Club':      return 'ジム・クラブ';
-    default:              return rawType;
+    case 'Local Group':  return 'ローカルグループ';
+    case 'Professional': return 'プロフェッショナル';
+    case 'Gym/Club':     return 'ジム・クラブ';
+    default:             return rawType;
   }
 }
 
@@ -49,9 +46,9 @@ String _resolveSkillLevel(Map<String, dynamic> g, String lang) {
   if (existing.isNotEmpty && existing != 'null') {
     return lang == 'ja'
         ? existing
-        .replaceAll('Beginner',     '初級')
+        .replaceAll('Beginner', '初級')
         .replaceAll('Intermediate', '中級')
-        .replaceAll('Advanced',     '上級')
+        .replaceAll('Advanced', '上級')
         : existing;
   }
   final b  = lang == 'ja' ? '初級' : 'Beginner';
@@ -73,10 +70,10 @@ String _resolveAgeGroups(Map<String, dynamic> g, String lang) {
   if (existing.isNotEmpty && existing != 'null') {
     return lang == 'ja'
         ? existing
-        .replaceAll('Juniors',  'ジュニア')
+        .replaceAll('Juniors', 'ジュニア')
         .replaceAll('Students', '学生')
-        .replaceAll('Adults',   '大人')
-        .replaceAll('Seniors',  'シニア')
+        .replaceAll('Adults', '大人')
+        .replaceAll('Seniors', 'シニア')
         : existing;
   }
   String j(String en, String ja) => lang == 'ja' ? ja : en;
@@ -85,9 +82,7 @@ String _resolveAgeGroups(Map<String, dynamic> g, String lang) {
   if (_isTruthy(g['org_age_students'])) ages.add(j('Students', '学生'));
   if (_isTruthy(g['org_age_adult']))    ages.add(j('Adults',   '大人'));
   if (_isTruthy(g['org_age_seniors']))  ages.add(j('Seniors',  'シニア'));
-  return ages.isEmpty
-      ? (lang == 'ja' ? '全年齢' : 'All ages')
-      : ages.join(' | ');
+  return ages.isEmpty ? (lang == 'ja' ? '全年齢' : 'All ages') : ages.join(' | ');
 }
 
 String _resolveSchedule(Map<String, dynamic> g, String lang) {
@@ -120,12 +115,9 @@ String _resolveSchedule(Map<String, dynamic> g, String lang) {
       .map((e) => e.value)
       .toList();
   final times = <String>[
-    if (_isTruthy(g['org_meetup_time_mornings']))
-      j('Mornings',   '午前'),
-    if (_isTruthy(g['org_meetup_time_afternoons']))
-      j('Afternoons', '午後'),
-    if (_isTruthy(g['org_meetup_time_evenings']))
-      j('Evenings',   '夜間'),
+    if (_isTruthy(g['org_meetup_time_mornings']))   j('Mornings',   '午前'),
+    if (_isTruthy(g['org_meetup_time_afternoons'])) j('Afternoons', '午後'),
+    if (_isTruthy(g['org_meetup_time_evenings']))   j('Evenings',   '夜間'),
   ];
   if (days.isEmpty && times.isEmpty)
     return lang == 'ja' ? '柔軟なスケジュール' : 'Flexible schedule';
@@ -162,7 +154,7 @@ String _resolveDescription(Map<String, dynamic> g, String lang) {
           'Come out, rally with neighbours, and enjoy the game!';
     default:
       return 'Join $name and connect with the pickleball community. '
-          'Whether you\'re a beginner or a seasoned player, everyone is welcome.';
+          "Whether you're a beginner or a seasoned player, everyone is welcome.";
   }
 }
 
@@ -170,21 +162,17 @@ String _resolveLocationLabel(
     Map<String, dynamic> g, String lang, String providerLocation) {
   final pre = (g['_resolved_location'] ?? '').toString().trim();
   if (pre.isNotEmpty) return pre;
-
   if (lang == 'ja') {
     final city =
     (g['org_city_jp'] ?? g['org_city'] ?? '').toString().trim();
-    final pref = (g['org_prefecture_jp'] ?? g['org_prefecture'] ?? '')
-        .toString()
-        .trim();
+    final pref =
+    (g['org_prefecture_jp'] ?? g['org_prefecture'] ?? '').toString().trim();
     final country = (g['org_country'] ?? '').toString().trim();
     if (city.isNotEmpty && pref.isNotEmpty) return '$city, $pref';
-    if (city.isNotEmpty)
-      return country.isNotEmpty ? '$city, $country' : city;
+    if (city.isNotEmpty) return country.isNotEmpty ? '$city, $country' : city;
     if (pref.isNotEmpty) return pref;
     return providerLocation.isNotEmpty ? providerLocation : country;
   }
-
   return providerLocation.isNotEmpty
       ? providerLocation
       : (g['org_country'] ?? '').toString().trim();
@@ -197,13 +185,15 @@ class GroupDetailScreen extends ConsumerStatefulWidget {
   const GroupDetailScreen({super.key, required this.group});
 
   @override
-  ConsumerState<GroupDetailScreen> createState() =>
-      _GroupDetailScreenState();
+  ConsumerState<GroupDetailScreen> createState() => _GroupDetailScreenState();
 }
 
 class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
     with SingleTickerProviderStateMixin {
-  bool? _isJoined;
+
+  // null = loading, 'none' | 'interested' | 'active'
+  String? _membershipStatus;
+
   late AnimationController _animController;
   late Animation<double>   _fadeAnim;
   late Animation<Offset>   _slideAnim;
@@ -211,33 +201,29 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
   @override
   void initState() {
     super.initState();
-    _checkJoinStatus();
+    _loadMembershipStatus();
     _animController = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 550));
     _fadeAnim =
         CurvedAnimation(parent: _animController, curve: Curves.easeOut);
     _slideAnim =
-        Tween<Offset>(begin: const Offset(0, 0.05), end: Offset.zero)
-            .animate(CurvedAnimation(
-            parent: _animController, curve: Curves.easeOut));
+        Tween<Offset>(begin: const Offset(0, 0.05), end: Offset.zero).animate(
+            CurvedAnimation(parent: _animController, curve: Curves.easeOut));
     _animController.forward();
   }
 
   @override
-  void dispose() {
-    _animController.dispose();
-    super.dispose();
-  }
+  void dispose() { _animController.dispose(); super.dispose(); }
 
-  Future<void> _checkJoinStatus() async {
+  Future<void> _loadMembershipStatus() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      setState(() => _isJoined = false);
+      if (mounted) setState(() => _membershipStatus = 'none');
       return;
     }
-    final joined =
-    await JoinGroupModal.isAlreadyJoined(user.uid, widget.group);
-    if (mounted) setState(() => _isJoined = joined);
+    final status =
+    await GroupDetailModals.getMembershipStatus(user.uid, widget.group);
+    if (mounted) setState(() => _membershipStatus = status ?? 'none');
   }
 
   Future<void> _launchUrl(String url) async {
@@ -245,9 +231,7 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
     final raw = url.startsWith('http') ? url : 'https://$url';
     final uri = Uri.tryParse(raw);
     if (uri == null) return;
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
+    if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   String get _orgId =>
@@ -257,35 +241,50 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
           '')
           .toString();
 
-  // Convenience: pick EN or JP string
-  String _tr(String lang, String en, String ja) =>
-      lang == 'ja' ? ja : en;
+  String _tr(String lang, String en, String ja) => lang == 'ja' ? ja : en;
+
+  // ── JOIN handler ──────────────────────────────────────────────────────────
+  // Only callable when NOT already active (button is disabled when active).
+  Future<void> _handleJoin(String lang) async {
+    if (_membershipStatus == 'active') return;
+    final result = await GroupDetailModals.showJoin(
+        context, widget.group, lang: lang);
+    if (result != null && mounted) setState(() => _membershipStatus = result);
+  }
+
+  // ── INTERESTED handler ────────────────────────────────────────────────────
+  // Works as a TOGGLE:
+  //   active     → confirm → writes 'interested' → Join turns green again
+  //   none       → confirm → writes 'interested'
+  //   interested → toast only (already marked)
+  Future<void> _handleInterested(String lang) async {
+    final result = await GroupDetailModals.showInterested(
+      context,
+      widget.group,
+      lang: lang,
+      currentStatus: _membershipStatus ?? 'none',
+    );
+    if (result != null && mounted) setState(() => _membershipStatus = result);
+  }
 
   @override
   Widget build(BuildContext context) {
-    // ── Watch global language — rebuilds on any lang change across the app ──
     final lang = ref.watch(appLangProvider);
     final g    = widget.group;
 
     final orgLocId      = (g['org_loc_id'] ?? '').toString();
     final locationAsync = ref.watch(locationResolverProvider(orgLocId));
     final providerLoc   = locationAsync.when(
-      data:    (l) => l,
-      loading: () => '',
-      error:   (_, __) => '',
-    );
+        data: (l) => l, loading: () => '', error: (_, __) => '');
 
-    // ── All display strings resolved with current lang ────────────────────
-    final locationLabel = _resolveLocationLabel(g, lang, providerLoc)
-        .let((l) => l.isNotEmpty
+    final locationLabel = _resolveLocationLabel(g, lang, providerLoc).let((l) =>
+    l.isNotEmpty
         ? l
-        : (g['org_country'] ??
-        _tr(lang, 'Unknown location', '不明な場所'))
+        : (g['org_country'] ?? _tr(lang, 'Unknown location', '不明な場所'))
         .toString());
 
     final displayName   = _field(g, 'org_name', 'org_name_jp', lang)
-        .let((v) =>
-    v.isNotEmpty ? v : _tr(lang, 'Unnamed Group', '名称不明'));
+        .let((v) => v.isNotEmpty ? v : _tr(lang, 'Unnamed Group', '名称不明'));
     final description   = _resolveDescription(g, lang);
     final skillLabel    = _resolveSkillLevel(g, lang);
     final ageLabel      = _resolveAgeGroups(g, lang);
@@ -295,15 +294,24 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
     final prefecture = _field(g, 'org_prefecture', 'org_prefecture_jp', lang);
     final social     = (g['org_social'] ?? '').toString().trim();
 
-    final imageUrl = (g['org_image'] ?? g['org_pic'] ?? '').toString();
-    final website  = (g['org_website'] ?? '').toString().trim();
+    final imageUrl     = (g['org_image'] ?? g['org_pic'] ?? '').toString();
+    final website      = (g['org_website'] ?? '').toString().trim();
     final websiteLabel = website
         .replaceFirst(RegExp(r'^https?://'), '')
         .replaceFirst(RegExp(r'/$'), '');
 
-    // org_type badge — translated
-    final rawType         = (g['org_type'] ?? '').toString();
-    final translatedType  = _resolveOrgType(rawType, lang);
+    final rawType        = (g['org_type'] ?? '').toString();
+    final translatedType = _resolveOrgType(rawType, lang);
+
+    // ── Button state derivations ──────────────────────────────────────────
+    final isActive     = _membershipStatus == 'active';
+    final isInterested = _membershipStatus == 'interested';
+    final isLoading    = _membershipStatus == null;
+
+    // Join:       green & tappable when NOT active; gray when active
+    // Interested: green & tappable when NOT interested (including when active!);
+    //             gray when already interested
+    // This makes the two buttons act as a radio/switch, matching the web app.
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
@@ -311,7 +319,7 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
         physics: const BouncingScrollPhysics(),
         slivers: [
 
-          // ── Hero App Bar ──────────────────────────────────────────────────
+          // ── Hero App Bar ──────────────────────────────────────────────
           SliverAppBar(
             expandedHeight: 320,
             pinned: true,
@@ -327,22 +335,18 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
               ),
             ),
             actions: [
-              // ── EN / JP toggle — also writes to appLangProvider ─────────
               Padding(
-                padding: const EdgeInsets.symmetric(
-                    vertical: 10, horizontal: 4),
+                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
                 child: _LangPill(
                   lang: lang,
-                  onChanged: (l) =>
-                      ref.read(appLangProvider.notifier).setLang(l),
+                  onChanged: (l) => ref.read(appLangProvider.notifier).setLang(l),
                 ),
               ),
               Padding(
                 padding: const EdgeInsets.all(8),
                 child: _GlassButton(
                   icon: Icons.ios_share_rounded,
-                  onTap: () =>
-                      ShareGroupModal.show(context, group: g),
+                  onTap: () => ShareGroupModal.show(context, group: g),
                 ),
               ),
             ],
@@ -351,105 +355,89 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
                 StretchMode.zoomBackground,
                 StretchMode.blurBackground,
               ],
-              background: Stack(
-                fit: StackFit.expand,
-                children: [
-                  imageUrl.isNotEmpty
-                      ? Image.network(
-                    imageUrl,
-                    fit: BoxFit.cover,
-                    loadingBuilder: (ctx, child, progress) {
-                      if (progress == null) return child;
-                      return Container(
-                        color:
-                        AppColors.primary.withOpacity(0.15),
+              background: Stack(fit: StackFit.expand, children: [
+                imageUrl.isNotEmpty
+                    ? Image.network(
+                  imageUrl,
+                  fit: BoxFit.cover,
+                  loadingBuilder: (ctx, child, progress) {
+                    if (progress == null) return child;
+                    return Container(
+                        color: AppColors.primary.withOpacity(0.15),
                         child: const Center(
-                          child: CircularProgressIndicator(
-                              color: Colors.white54,
-                              strokeWidth: 2),
-                        ),
-                      );
-                    },
-                    errorBuilder: (_, __, ___) => Container(
+                            child: CircularProgressIndicator(
+                                color: Colors.white54, strokeWidth: 2)));
+                  },
+                  errorBuilder: (_, __, ___) => Container(
                       color: AppColors.primary.withOpacity(0.2),
                       child: const Icon(Icons.group,
-                          size: 80, color: Colors.white38),
-                    ),
-                  )
-                      : Container(
+                          size: 80, color: Colors.white38)),
+                )
+                    : Container(
                     color: AppColors.primary.withOpacity(0.2),
                     child: const Icon(Icons.group,
-                        size: 80, color: Colors.white38),
-                  ),
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.transparent,
-                          Colors.black.withOpacity(0.58),
-                        ],
-                        stops: const [0.4, 1.0],
-                      ),
+                        size: 80, color: Colors.white38)),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        Colors.black.withOpacity(0.58),
+                      ],
+                      stops: const [0.4, 1.0],
                     ),
                   ),
-                  // Type badge (translated) + org name
-                  Positioned(
-                    left: 20, right: 20, bottom: 20,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (rawType.isNotEmpty)
-                          Container(
-                            margin:
-                            const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color:
-                              Colors.white.withOpacity(0.18),
-                              borderRadius:
-                              BorderRadius.circular(20),
-                              border: Border.all(
-                                  color: Colors.white
-                                      .withOpacity(0.3)),
-                            ),
-                            child: Text(
-                              translatedType, // ← translated badge
+                ),
+                Positioned(
+                  left: 20, right: 20, bottom: 20,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (rawType.isNotEmpty)
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.18),
+                            borderRadius: BorderRadius.circular(20),
+                            border:
+                            Border.all(color: Colors.white.withOpacity(0.3)),
+                          ),
+                          child: Text(translatedType,
                               style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 11,
                                   fontWeight: FontWeight.w600,
-                                  letterSpacing: 0.4),
-                            ),
-                          ),
-                        Text(
-                          displayName,
-                          style: const TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                            letterSpacing: -0.5,
-                            height: 1.15,
-                            shadows: [
-                              Shadow(
-                                  color: Colors.black38,
-                                  blurRadius: 10,
-                                  offset: Offset(0, 2))
-                            ],
-                          ),
+                                  letterSpacing: 0.4)),
                         ),
-                      ],
-                    ),
+                      Text(
+                        displayName,
+                        style: const TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white,
+                          letterSpacing: -0.5,
+                          height: 1.15,
+                          shadows: [
+                            Shadow(
+                                color: Colors.black38,
+                                blurRadius: 10,
+                                offset: Offset(0, 2))
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ]),
             ),
           ),
 
-          // ── Body ─────────────────────────────────────────────────────────
+          // ── Body ────────────────────────────────────────────────────
           SliverToBoxAdapter(
             child: FadeTransition(
               opacity: _fadeAnim,
@@ -462,284 +450,277 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
 
                     // Description
                     Padding(
-                      padding:
-                      const EdgeInsets.symmetric(horizontal: 20),
-                      child: Text(
-                        description,
-                        style: const TextStyle(
-                            fontSize: 15,
-                            color: Colors.black87,
-                            height: 1.6),
-                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Text(description,
+                          style: const TextStyle(
+                              fontSize: 15, color: Colors.black87, height: 1.6)),
                     ),
 
                     const SizedBox(height: 24),
 
-                    // ── Info Grid ─────────────────────────────────────────
+                    // ── Info Grid ──────────────────────────────────────
                     Padding(
-                      padding:
-                      const EdgeInsets.symmetric(horizontal: 20),
-                      child: Column(
-                        children: [
-                          Row(children: [
-                            Expanded(child: _buildInfoItem(
-                                Icons.location_on, locationLabel)),
-                            const SizedBox(width: 16),
-                            Expanded(child: _buildInfoItem(
-                                Icons.people, ageLabel)),
-                          ]),
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Column(children: [
+                        Row(children: [
+                          Expanded(child: _buildInfoItem(Icons.location_on, locationLabel)),
+                          const SizedBox(width: 16),
+                          Expanded(child: _buildInfoItem(Icons.people, ageLabel)),
+                        ]),
+                        const SizedBox(height: 16),
+                        Row(children: [
+                          Expanded(child: _buildInfoItem(Icons.calendar_month, scheduleLabel)),
+                          const SizedBox(width: 16),
+                          Expanded(child: _buildInfoItem(Icons.sports, skillLabel)),
+                        ]),
+                        if (websiteLabel.isNotEmpty) ...[
                           const SizedBox(height: 16),
-                          Row(children: [
-                            Expanded(child: _buildInfoItem(
-                                Icons.calendar_month, scheduleLabel)),
-                            const SizedBox(width: 16),
-                            Expanded(child: _buildInfoItem(
-                                Icons.sports, skillLabel)),
-                          ]),
-
-                          // Website
-                          if (websiteLabel.isNotEmpty) ...[
-                            const SizedBox(height: 16),
-                            GestureDetector(
-                              onTap: () => _launchUrl(website),
-                              child: Row(
-                                crossAxisAlignment:
-                                CrossAxisAlignment.center,
-                                children: [
-                                  Icon(Icons.language_rounded,
+                          GestureDetector(
+                            onTap: () => _launchUrl(website),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Icon(Icons.language_rounded,
+                                    color: AppColors.primary, size: 22),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    websiteLabel,
+                                    style: TextStyle(
+                                      fontSize: 14,
                                       color: AppColors.primary,
-                                      size: 22),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      websiteLabel,
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        color: AppColors.primary,
-                                        fontWeight: FontWeight.w500,
-                                        decoration:
-                                        TextDecoration.underline,
-                                        decorationColor: AppColors
-                                            .primary
-                                            .withOpacity(0.5),
-                                        height: 1.4,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
+                                      fontWeight: FontWeight.w500,
+                                      decoration: TextDecoration.underline,
+                                      decorationColor:
+                                      AppColors.primary.withOpacity(0.5),
+                                      height: 1.4,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                Icon(Icons.open_in_new_rounded,
+                                    size: 14,
+                                    color: AppColors.primary.withOpacity(0.6)),
+                              ],
+                            ),
+                          ),
+                        ],
+                        if (prefecture.isNotEmpty ||
+                            city.isNotEmpty ||
+                            social.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (prefecture.isNotEmpty || city.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: _buildInfoItem(
+                                      Icons.map_outlined,
+                                      [city, prefecture]
+                                          .where((s) => s.isNotEmpty)
+                                          .join(', '),
                                     ),
                                   ),
-                                  Icon(Icons.open_in_new_rounded,
-                                      size: 14,
-                                      color: AppColors.primary
-                                          .withOpacity(0.6)),
-                                ],
-                              ),
-                            ),
-                          ],
-
-                          // Prefecture / city / social
-                          if (prefecture.isNotEmpty ||
-                              city.isNotEmpty ||
-                              social.isNotEmpty)
-                            Padding(
-                              padding:
-                              const EdgeInsets.only(top: 16),
-                              child: Column(
-                                crossAxisAlignment:
-                                CrossAxisAlignment.start,
-                                children: [
-                                  if (prefecture.isNotEmpty ||
-                                      city.isNotEmpty)
-                                    Padding(
-                                      padding: const EdgeInsets.only(
-                                          bottom: 12),
-                                      child: _buildInfoItem(
-                                        Icons.map_outlined,
-                                        [city, prefecture]
-                                            .where((s) => s.isNotEmpty)
-                                            .join(', '),
-                                      ),
-                                    ),
-                                  if (social.isNotEmpty)
-                                    GestureDetector(
-                                      onTap: () => _launchUrl(social),
-                                      child: Row(
-                                        crossAxisAlignment:
-                                        CrossAxisAlignment.center,
-                                        children: [
-                                          Icon(Icons.link_rounded,
+                                if (social.isNotEmpty)
+                                  GestureDetector(
+                                    onTap: () => _launchUrl(social),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                      CrossAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.link_rounded,
+                                            color: AppColors.primary, size: 22),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            social
+                                                .replaceFirst(
+                                                RegExp(r'^https?://'), '')
+                                                .replaceFirst(
+                                                RegExp(r'/$'), ''),
+                                            style: TextStyle(
+                                              fontSize: 14,
                                               color: AppColors.primary,
-                                              size: 22),
-                                          const SizedBox(width: 8),
-                                          Expanded(
-                                            child: Text(
-                                              social
-                                                  .replaceFirst(
-                                                  RegExp(
-                                                      r'^https?://'),
-                                                  '')
-                                                  .replaceFirst(
-                                                  RegExp(r'/$'), ''),
-                                              style: TextStyle(
-                                                fontSize: 14,
-                                                color: AppColors.primary,
-                                                fontWeight:
-                                                FontWeight.w500,
-                                                decoration: TextDecoration
-                                                    .underline,
-                                                decorationColor: AppColors
-                                                    .primary
-                                                    .withOpacity(0.5),
-                                                height: 1.4,
-                                              ),
-                                              maxLines: 1,
-                                              overflow:
-                                              TextOverflow.ellipsis,
+                                              fontWeight: FontWeight.w500,
+                                              decoration:
+                                              TextDecoration.underline,
+                                              decorationColor: AppColors.primary
+                                                  .withOpacity(0.5),
+                                              height: 1.4,
                                             ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
                                           ),
-                                          Icon(
-                                              Icons.open_in_new_rounded,
-                                              size: 14,
-                                              color: AppColors.primary
-                                                  .withOpacity(0.6)),
-                                        ],
-                                      ),
+                                        ),
+                                        Icon(Icons.open_in_new_rounded,
+                                            size: 14,
+                                            color: AppColors.primary
+                                                .withOpacity(0.6)),
+                                      ],
                                     ),
-                                ],
-                              ),
+                                  ),
+                              ],
                             ),
-                        ],
-                      ),
+                          ),
+                      ]),
                     ),
 
                     const SizedBox(height: 32),
 
-                    // ── Join & Interested Buttons ─────────────────────────
+                    // ── Join & Interested Buttons ──────────────────────
+                    // Behaviour matches web app exactly:
+                    //   • Join      → disabled (gray) only when isActive
+                    //   • Interested → disabled (gray) only when isInterested
+                    //   • Clicking Interested while active TOGGLES back to
+                    //     interested (re-enables Join)
+                    //   • The "already joined" banner shows only when active
                     Padding(
-                      padding:
-                      const EdgeInsets.symmetric(horizontal: 20),
-                      child: Column(
-                        children: [
-                          Row(children: [
-                            Expanded(
-                              child: ElevatedButton(
-                                onPressed: _isJoined == true
-                                    ? null
-                                    : () async {
-                                  await JoinGroupModal.show(
-                                    context,
-                                    widget.group,
-                                    lang: lang, // ← pass current lang
-                                  );
-                                  _checkJoinStatus();
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: _isJoined == true
-                                      ? Colors.grey.shade300
-                                      : AppColors.primary,
-                                  padding: const EdgeInsets.symmetric(
-                                      vertical: 16),
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                      BorderRadius.circular(12)),
-                                  elevation: 0,
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Column(children: [
+                        Row(children: [
+
+                          // ── JOIN ──────────────────────────────────────
+                          Expanded(
+                            child: isLoading
+                                ? Container(
+                              height: 52,
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade200,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Center(
+                                child: SizedBox(
+                                  width: 20, height: 20,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: AppColors.primary),
                                 ),
+                              ),
+                            )
+                                : GestureDetector(
+                              onTap: isActive
+                                  ? null
+                                  : () => _handleJoin(lang),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                height: 52,
+                                decoration: BoxDecoration(
+                                  color: isActive
+                                      ? Colors.grey.shade200
+                                      : AppColors.primary,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                alignment: Alignment.center,
                                 child: Text(
-                                  _isJoined == true
-                                      ? _tr(lang, 'Joined ✓',
-                                      '参加済み ✓')
+                                  isActive
+                                      ? _tr(lang, 'Joined ✓', '参加済み ✓')
                                       : _tr(lang, 'Join', '参加'),
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
-                                    color: _isJoined == true
+                                    color: isActive
                                         ? Colors.grey.shade600
                                         : Colors.white,
                                   ),
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: OutlinedButton(
-                                onPressed: () =>
-                                    MarkInterestedModal.show(
-                                      context,
-                                      widget.group,
-                                      lang: lang, // ← pass current lang
-                                    ),
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(
-                                      vertical: 16),
-                                  side: const BorderSide(
-                                      color: AppColors.primary,
-                                      width: 2),
-                                  shape: RoundedRectangleBorder(
-                                      borderRadius:
-                                      BorderRadius.circular(12)),
-                                ),
-                                child: Text(
-                                  _tr(lang, 'Interested', '興味あり'),
-                                  style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                      color: AppColors.primary),
-                                ),
-                              ),
-                            ),
-                          ]),
+                          ),
 
-                          if (_isJoined == true) ...[
-                            const SizedBox(height: 12),
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 12),
+                          const SizedBox(width: 16),
+
+                          // ── INTERESTED ────────────────────────────────
+                          // Disabled ONLY when already interested.
+                          // When active (joined), tapping this DOWNGRADES
+                          // to interested and re-enables the Join button.
+                          Expanded(
+                            child: isLoading
+                                ? Container(
+                              height: 52,
                               decoration: BoxDecoration(
-                                color: AppColors.primary,
-                                borderRadius:
-                                BorderRadius.circular(12),
+                                border: Border.all(
+                                    color: Colors.grey.shade300, width: 2),
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                              child: Row(children: [
-                                const Icon(
-                                    Icons.check_circle_rounded,
-                                    color: Colors.white,
-                                    size: 20),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Text(
-                                    _tr(
-                                      lang,
-                                      'You have already joined this group',
-                                      'このグループにはすでに参加しています',
-                                    ),
-                                    style: const TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 14,
-                                        fontWeight:
-                                        FontWeight.w600),
+                            )
+                                : GestureDetector(
+                              onTap: isInterested
+                                  ? null
+                                  : () => _handleInterested(lang),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                height: 52,
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: isInterested
+                                        ? Colors.grey.shade300
+                                        : AppColors.primary,
+                                    width: 2,
+                                  ),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                alignment: Alignment.center,
+                                child: Text(
+                                  isInterested
+                                      ? _tr(lang, 'Interested ✓', '興味あり ✓')
+                                      : _tr(lang, 'Interested', '興味あり'),
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: isInterested
+                                        ? Colors.grey.shade400
+                                        : AppColors.primary,
                                   ),
                                 ),
-                              ]),
+                              ),
                             ),
-                          ],
+                          ),
+                        ]),
+
+                        // Joined banner — only when active
+                        if (isActive) ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: AppColors.primary,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(children: [
+                              const Icon(Icons.check_circle_rounded,
+                                  color: Colors.white, size: 20),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  _tr(lang, 'You have already joined this group',
+                                      'このグループにはすでに参加しています'),
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                            ]),
+                          ),
                         ],
-                      ),
+                      ]),
                     ),
 
                     const SizedBox(height: 32),
 
-                    // ── Upcoming Events ───────────────────────────────────
+                    // ── Upcoming Events ────────────────────────────────
                     Padding(
-                      padding:
-                      const EdgeInsets.symmetric(horizontal: 20),
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
                       child: Row(
-                        mainAxisAlignment:
-                        MainAxisAlignment.spaceBetween,
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            _tr(lang, 'Upcoming Events',
-                                '今後のイベント'),
+                            _tr(lang, 'Upcoming Events', '今後のイベント'),
                             style: const TextStyle(
                                 fontSize: 22,
                                 fontWeight: FontWeight.bold,
@@ -749,10 +730,8 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 12, vertical: 6),
                             decoration: BoxDecoration(
-                              color: AppColors.primary
-                                  .withOpacity(0.08),
-                              borderRadius:
-                              BorderRadius.circular(20),
+                              color: AppColors.primary.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(20),
                             ),
                             child: Text(
                               _tr(lang, 'View all', 'すべて見る'),
@@ -788,9 +767,7 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
         Expanded(
           child: Text(text,
               style: const TextStyle(
-                  fontSize: 14,
-                  color: Colors.black87,
-                  height: 1.4)),
+                  fontSize: 14, color: Colors.black87, height: 1.4)),
         ),
       ],
     );
@@ -813,18 +790,15 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
       builder: (context, snapshot) {
         if (snapshot.hasError) {
           return Padding(
-            padding:
-            const EdgeInsets.symmetric(horizontal: 20),
+            padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Container(
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
                   color: Colors.grey.shade50,
                   borderRadius: BorderRadius.circular(12)),
               child: Center(
-                child: Text(
-                    'Error loading events.\n${snapshot.error}',
-                    style: const TextStyle(
-                        fontSize: 13, color: Colors.black54),
+                child: Text('Error loading events.\n${snapshot.error}',
+                    style: const TextStyle(fontSize: 13, color: Colors.black54),
                     textAlign: TextAlign.center),
               ),
             ),
@@ -832,17 +806,15 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
         }
         if (!snapshot.hasData) {
           return const SizedBox(
-              height: 100,
-              child:
-              Center(child: CircularProgressIndicator()));
+              height: 100, child: Center(child: CircularProgressIndicator()));
         }
         final events = snapshot.data!.docs;
         if (events.isEmpty) return _buildEmptyEvents(lang);
         return Column(
           children: events
               .take(3)
-              .map((doc) => _buildEventItem(
-              doc.data() as Map<String, dynamic>, lang))
+              .map((doc) =>
+              _buildEventItem(doc.data() as Map<String, dynamic>, lang))
               .toList(),
         );
       },
@@ -855,45 +827,26 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
       child: Container(
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-            color: Colors.grey.shade50,
-            borderRadius: BorderRadius.circular(12)),
+            color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12)),
         child: Center(
           child: Text(
             _tr(lang, 'No upcoming events yet',
                 'まだ予定されているイベントはありません'),
-            style: const TextStyle(
-                fontSize: 14, color: Colors.black54),
+            style: const TextStyle(fontSize: 14, color: Colors.black54),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildEventItem(
-      Map<String, dynamic> event, String lang) {
-    final Timestamp? dateTs =
-        event['event_date'] ?? event['event_start_date'];
-    final Timestamp? timeTs =
-        event['event_start_time'] ?? event['event_date'];
+  Widget _buildEventItem(Map<String, dynamic> event, String lang) {
+    final Timestamp? dateTs = event['event_date'] ?? event['event_start_date'];
+    final Timestamp? timeTs = event['event_start_time'] ?? event['event_date'];
     if (dateTs == null) return const SizedBox.shrink();
     final date       = dateTs.toDate();
     final time       = timeTs?.toDate() ?? date;
-    final eventLocId =
-    (event['event_loc_id'] ?? '').toString();
+    final eventLocId = (event['event_loc_id'] ?? '').toString();
 
-    final eventWithGroup = {
-      ...event,
-      'group_id': widget.group['_doc_id'] ??
-          widget.group['org_id'] ??
-          widget.group['group_id'] ??
-          '',
-      'group_image':
-      widget.group['group_image'] ?? widget.group['org_image'] ?? '',
-      'group_name':
-      widget.group['group_name'] ?? widget.group['org_name'] ?? '',
-    };
-
-    // Event title — use _jp field when lang == 'ja'
     final eventTitle = lang == 'ja'
         ? ((event['event_title_jp'] ??
         event['event_name_jp'] ??
@@ -905,150 +858,114 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
         .toString());
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20)
-          .copyWith(bottom: 12),
-      child: GestureDetector(
-        onTap: () =>
-            MarkInterestedModal.show(context, eventWithGroup,
-                lang: lang),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 14,
-                  offset: const Offset(0, 4))
-            ],
-          ),
-          child: Row(
-            children: [
-              // Date badge
-              Container(
-                width: 62,
-                margin: const EdgeInsets.all(12),
-                padding:
-                const EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Column(
-                  children: [
-                    Text(
-                      DateFormatter.month(date.month)
-                          .substring(0, 3)
-                          .toUpperCase(),
-                      style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.primary,
-                          letterSpacing: 0.5),
-                    ),
-                    const SizedBox(height: 2),
-                    Text('${date.day}',
-                        style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.primary,
-                            height: 1.1)),
-                    const SizedBox(height: 2),
-                    Text('${date.year}',
-                        style: const TextStyle(
-                            fontSize: 10,
-                            color: Colors.black38,
-                            fontWeight: FontWeight.w500)),
-                  ],
-                ),
-              ),
-              // Event details
-              Expanded(
-                child: Padding(
-                  padding:
-                  const EdgeInsets.symmetric(vertical: 12),
-                  child: Column(
-                    crossAxisAlignment:
-                    CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        eventTitle,
-                        style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF1A1D23)),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 5),
-                      Row(children: [
-                        const Icon(
-                            Icons.access_time_rounded,
-                            size: 12,
-                            color: Colors.black38),
-                        const SizedBox(width: 4),
-                        Text(
-                            '${time.hour}:${time.minute.toString().padLeft(2, '0')}',
-                            style: const TextStyle(
-                                fontSize: 12,
-                                color: Colors.black45)),
-                        const SizedBox(width: 10),
-                        const Icon(
-                            Icons.location_on_rounded,
-                            size: 12,
-                            color: Colors.black38),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Consumer(
-                            builder: (context, ref, _) {
-                              final loc = ref.watch(
-                                  locationResolverProvider(
-                                      eventLocId));
-                              return loc.when(
-                                data: (l) => Text(l,
-                                    style: const TextStyle(
-                                        fontSize: 12,
-                                        color:
-                                        Colors.black45),
-                                    maxLines: 1,
-                                    overflow:
-                                    TextOverflow.ellipsis),
-                                loading: () => const Text(
-                                    '...',
-                                    style: TextStyle(
-                                        fontSize: 12)),
-                                error: (_, __) => Text(
-                                    _tr(lang, 'Unknown',
-                                        '不明'),
-                                    style: const TextStyle(
-                                        fontSize: 12)),
-                              );
-                            },
-                          ),
-                        ),
-                      ]),
-                    ],
-                  ),
-                ),
-              ),
-              // Arrow
-              Padding(
-                padding: const EdgeInsets.only(right: 14),
-                child: Container(
-                  padding: const EdgeInsets.all(7),
-                  decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      borderRadius:
-                      BorderRadius.circular(9)),
-                  child: const Icon(
-                      Icons.arrow_forward_rounded,
-                      color: Colors.white,
-                      size: 13),
-                ),
-              ),
-            ],
-          ),
+      padding: const EdgeInsets.symmetric(horizontal: 20).copyWith(bottom: 12),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 14,
+                offset: const Offset(0, 4))
+          ],
         ),
+        child: Row(children: [
+          // Date badge
+          Container(
+            width: 62,
+            margin: const EdgeInsets.all(12),
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Column(children: [
+              Text(
+                DateFormatter.month(date.month).substring(0, 3).toUpperCase(),
+                style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.primary,
+                    letterSpacing: 0.5),
+              ),
+              const SizedBox(height: 2),
+              Text('${date.day}',
+                  style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.primary,
+                      height: 1.1)),
+              const SizedBox(height: 2),
+              Text('${date.year}',
+                  style: const TextStyle(
+                      fontSize: 10,
+                      color: Colors.black38,
+                      fontWeight: FontWeight.w500)),
+            ]),
+          ),
+          // Details
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(eventTitle,
+                      style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF1A1D23)),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                  const SizedBox(height: 5),
+                  Row(children: [
+                    const Icon(Icons.access_time_rounded,
+                        size: 12, color: Colors.black38),
+                    const SizedBox(width: 4),
+                    Text(
+                        '${time.hour}:${time.minute.toString().padLeft(2, '0')}',
+                        style: const TextStyle(
+                            fontSize: 12, color: Colors.black45)),
+                    const SizedBox(width: 10),
+                    const Icon(Icons.location_on_rounded,
+                        size: 12, color: Colors.black38),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Consumer(builder: (context, ref, _) {
+                        final loc = ref
+                            .watch(locationResolverProvider(eventLocId));
+                        return loc.when(
+                          data: (l) => Text(l,
+                              style: const TextStyle(
+                                  fontSize: 12, color: Colors.black45),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis),
+                          loading: () =>
+                          const Text('...', style: TextStyle(fontSize: 12)),
+                          error: (_, __) => Text(_tr(lang, 'Unknown', '不明'),
+                              style: const TextStyle(fontSize: 12)),
+                        );
+                      }),
+                    ),
+                  ]),
+                ],
+              ),
+            ),
+          ),
+          // Arrow
+          Padding(
+            padding: const EdgeInsets.only(right: 14),
+            child: Container(
+              padding: const EdgeInsets.all(7),
+              decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(9)),
+              child: const Icon(Icons.arrow_forward_rounded,
+                  color: Colors.white, size: 13),
+            ),
+          ),
+        ]),
       ),
     );
   }
@@ -1059,7 +976,7 @@ extension _Let<T> on T {
   R let<R>(R Function(T) block) => block(this);
 }
 
-// ── Lang pill widget — now writes to global appLangProvider ──────────────────
+// ── Lang pill widget ──────────────────────────────────────────────────────────
 class _LangPill extends StatelessWidget {
   final String lang;
   final ValueChanged<String> onChanged;
@@ -1071,8 +988,7 @@ class _LangPill extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.black.withOpacity(0.28),
         borderRadius: BorderRadius.circular(20),
-        border:
-        Border.all(color: Colors.white.withOpacity(0.2)),
+        border: Border.all(color: Colors.white.withOpacity(0.2)),
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         _pill('EN', lang == 'en'),
@@ -1086,24 +1002,17 @@ class _LangPill extends StatelessWidget {
       onTap: () => onChanged(label == 'EN' ? 'en' : 'ja'),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(
-            horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: selected
-              ? Colors.white.withOpacity(0.25)
-              : Colors.transparent,
+          color: selected ? Colors.white.withOpacity(0.25) : Colors.transparent,
           borderRadius: BorderRadius.circular(18),
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            color: selected
-                ? Colors.white
-                : Colors.white.withOpacity(0.55),
-          ),
-        ),
+        child: Text(label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: selected ? Colors.white : Colors.white.withOpacity(0.55),
+            )),
       ),
     );
   }
@@ -1119,13 +1028,12 @@ class _GlassButton extends StatelessWidget {
   Widget build(BuildContext context) => GestureDetector(
     onTap: onTap,
     child: Container(
-      width: 40,
-      height: 40,
+      width: 40, height: 40,
       decoration: BoxDecoration(
         color: Colors.black.withOpacity(0.28),
         shape: BoxShape.circle,
-        border: Border.all(
-            color: Colors.white.withOpacity(0.2), width: 1),
+        border:
+        Border.all(color: Colors.white.withOpacity(0.2), width: 1),
       ),
       child: Icon(icon, color: Colors.white, size: 18),
     ),

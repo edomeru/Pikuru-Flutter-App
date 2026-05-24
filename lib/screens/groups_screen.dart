@@ -142,7 +142,7 @@ class GroupsScreen extends ConsumerStatefulWidget {
 class _GroupsScreenState extends ConsumerState<GroupsScreen>
     with AutomaticKeepAliveClientMixin {
   final TextEditingController _searchController = TextEditingController();
-  GroupFilter _filter = const GroupFilter(orgCountry: 'Japan');
+  GroupFilter _filter = const GroupFilter(orgCountry: 'Japan', orgPrefecture: 'Tokyo');
 
   @override
   bool get wantKeepAlive => false;

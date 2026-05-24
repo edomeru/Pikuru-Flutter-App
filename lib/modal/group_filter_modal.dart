@@ -128,38 +128,46 @@ class GroupFilter {
       final locId = (g['org_loc_id'] ?? '').toString();
       final Map<String, dynamic> loc = locMap[locId] ?? {};
 
-      String field(String locKey, String orgKey) =>
+      // Helper: get a trimmed lowercase string, checking loc doc first then
+      // the org doc fallback field.
+      String f(String locKey, String orgKey) =>
           (loc[locKey] ?? g[orgKey] ?? '').toString().toLowerCase().trim();
 
-      final country = field('loc_country', 'org_country');
-      final prefEn  = field('loc_prefecture_en', 'org_prefecture');
-      final pref    = field('loc_prefecture', 'org_prefecture');
-      final prefJp  = field('loc_prefecture', 'org_prefecture_jp');
-      final cityEn  = field('loc_city_en', 'org_city');
-      final city    = field('loc_city', 'org_city');
-      final cityJp  = field('loc_city', 'org_city_jp');
+      final country = f('loc_country', 'org_country');
 
+      // Collect all prefecture variants for this group
+      final prefVariants = <String>{
+        f('loc_prefecture_en', 'org_prefecture'),
+        f('loc_prefecture',    'org_prefecture'),
+        f('loc_prefecture',    'org_prefecture_jp'),
+      }..removeWhere((s) => s.isEmpty);
+
+      // Collect all city variants for this group
+      final cityVariants = <String>{
+        f('loc_city_en', 'org_city'),
+        f('loc_city',    'org_city'),
+        f('loc_city',    'org_city_jp'),
+      }..removeWhere((s) => s.isEmpty);
+
+      // ── Country check (loose — "japan" == "japan") ──────────────────────
       if (orgCountry != null) {
-        final target = orgCountry!.toLowerCase();
-        if (!country.contains(target) && !target.contains(country)) return false;
+        final target = orgCountry!.toLowerCase().trim();
+        if (country != target) return false;
       }
 
+      // ── Prefecture check — EXACT match only ────────────────────────────
+      // The filter stores the EN key (e.g. "Tokyo"). We compare it against
+      // every variant of the group's prefecture (EN + JP). This prevents
+      // "Tokyo" accidentally matching "Tokushima" via .contains().
       if (orgPrefecture != null) {
-        final target = orgPrefecture!.toLowerCase();
-        final matched =
-            prefEn.contains(target) || target.contains(prefEn) ||
-                pref.contains(target)   || target.contains(pref)   ||
-                prefJp.contains(target) || target.contains(prefJp);
-        if (!matched) return false;
+        final target = orgPrefecture!.toLowerCase().trim();
+        if (!prefVariants.contains(target)) return false;
       }
 
+      // ── City check — EXACT match only ──────────────────────────────────
       if (orgCity != null) {
-        final target = orgCity!.toLowerCase();
-        final matched =
-            cityEn.contains(target) || target.contains(cityEn) ||
-                city.contains(target)   || target.contains(city)   ||
-                cityJp.contains(target) || target.contains(cityJp);
-        if (!matched) return false;
+        final target = orgCity!.toLowerCase().trim();
+        if (!cityVariants.contains(target)) return false;
       }
     }
 
@@ -214,7 +222,6 @@ const Object _sentinel = Object();
 
 // ─────────────────────────────────────────────────────────────────────────────
 // _FilterStrings — localised labels for the modal
-// Mirrors the web app's T object filter keys exactly.
 // ─────────────────────────────────────────────────────────────────────────────
 class _FilterStrings {
   final String title;
@@ -246,7 +253,7 @@ class _FilterStrings {
   final String ageAdults;
   final String ageSeniors;
 
-  // Day pills — short labels matching web app T.days[]
+  // Day pills
   final String daySun;
   final String dayMon;
   final String dayTue;
@@ -354,14 +361,11 @@ class _FilterStrings {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GroupFilterModal  —  bottom-sheet widget
-// Returns a GroupFilter via Navigator.pop when the user taps Apply.
-// Now accepts a [lang] parameter so all labels switch between EN and JP.
 // ─────────────────────────────────────────────────────────────────────────────
 class GroupFilterModal extends StatefulWidget {
   final GroupFilter currentFilter;
   final List<Map<String, dynamic>> allGroups;
   final Map<String, Map<String, dynamic>> locMap;
-  /// 'en' or 'ja' — passed from GroupsScreen so the modal stays in sync.
   final String lang;
 
   const GroupFilterModal({
@@ -379,17 +383,16 @@ class GroupFilterModal extends StatefulWidget {
 class _GroupFilterModalState extends State<GroupFilterModal> {
   late GroupFilter _draft;
 
-  // Prefecture list — always stored in English (loc_prefecture_en) for
-  // consistent filtering, but displayed as Japanese when lang == 'ja'.
+  // Prefecture list keyed by English name (canonical key used for filtering)
   late final List<String> _prefecturesEn;
 
-  // Maps EN prefecture → list of EN cities (for filtering consistency)
+  // EN prefecture → list of EN cities
   late final Map<String, List<String>> _prefCityMapEn;
 
-  // Maps EN prefecture → JP prefecture label (loc_prefecture)
+  // EN prefecture → JP display label
   late final Map<String, String> _prefEnToJp;
 
-  // Maps EN city → JP city label (loc_city)
+  // EN city → JP display label
   late final Map<String, String> _cityEnToJp;
 
   @override
@@ -402,20 +405,21 @@ class _GroupFilterModalState extends State<GroupFilterModal> {
   /// Builds prefecture/city lookup tables from allGroups + locMap.
   /// Always keyed on English values so filter logic is language-agnostic.
   void _buildLocationData() {
-    final prefecturesEn  = <String>{};
-    final prefCityMapEn  = <String, Set<String>>{};
-    final prefEnToJp     = <String, String>{};
-    final cityEnToJp     = <String, String>{};
+    final prefecturesEn = <String>{};
+    final prefCityMapEn = <String, Set<String>>{};
+    final prefEnToJp    = <String, String>{};
+    final cityEnToJp    = <String, String>{};
 
     for (final g in widget.allGroups) {
-      final locId  = (g['org_loc_id'] ?? '').toString();
-      final loc    = widget.locMap[locId] ?? {};
+      final locId = (g['org_loc_id'] ?? '').toString();
+      final loc   = widget.locMap[locId] ?? {};
 
       final country = (loc['loc_country'] ?? g['org_country'] ?? '')
           .toString().trim().toLowerCase();
       if (country != 'japan') continue;
 
-      // EN prefecture (used as the canonical key)
+      // EN prefecture — canonical key. Prefer loc_prefecture_en, fall back
+      // to loc_prefecture (which may be Japanese), then org_prefecture.
       final prefEn = (loc['loc_prefecture_en'] ??
           loc['loc_prefecture'] ??
           g['org_prefecture'] ??
@@ -424,20 +428,19 @@ class _GroupFilterModalState extends State<GroupFilterModal> {
           .trim();
       if (prefEn.isEmpty) continue;
 
-      // JP prefecture label
-      final prefJp = (loc['loc_prefecture'] ?? g['org_prefecture_jp'] ?? prefEn)
+      // JP display label
+      final prefJp =
+      (loc['loc_prefecture'] ?? g['org_prefecture_jp'] ?? prefEn)
           .toString()
           .trim();
 
-      // EN city
-      final cityEn = (loc['loc_city_en'] ?? g['org_city'] ?? '')
-          .toString()
-          .trim();
+      // EN city — canonical key
+      final cityEn =
+      (loc['loc_city_en'] ?? g['org_city'] ?? '').toString().trim();
 
-      // JP city label
-      final cityJp = (loc['loc_city'] ?? g['org_city_jp'] ?? cityEn)
-          .toString()
-          .trim();
+      // JP city display label
+      final cityJp =
+      (loc['loc_city'] ?? g['org_city_jp'] ?? cityEn).toString().trim();
 
       prefecturesEn.add(prefEn);
       prefEnToJp.putIfAbsent(prefEn, () => prefJp);
@@ -449,26 +452,23 @@ class _GroupFilterModalState extends State<GroupFilterModal> {
       }
     }
 
-    _prefecturesEn = prefecturesEn.toList()..sort();
-    _prefCityMapEn = prefCityMapEn.map((k, v) => MapEntry(k, v.toList()..sort()));
-    _prefEnToJp    = prefEnToJp;
-    _cityEnToJp    = cityEnToJp;
+    _prefecturesEn =
+    prefecturesEn.toList()..sort();
+    _prefCityMapEn =
+        prefCityMapEn.map((k, v) => MapEntry(k, v.toList()..sort()));
+    _prefEnToJp = prefEnToJp;
+    _cityEnToJp = cityEnToJp;
   }
 
-  /// Returns the display label for a prefecture EN key.
-  String _prefDisplay(String prefEn) {
-    if (widget.lang == 'ja') return _prefEnToJp[prefEn] ?? prefEn;
-    return prefEn;
-  }
+  String _prefDisplay(String prefEn) =>
+      widget.lang == 'ja' ? (_prefEnToJp[prefEn] ?? prefEn) : prefEn;
 
-  /// Returns the display label for a city EN key.
-  String _cityDisplay(String cityEn) {
-    if (widget.lang == 'ja') return _cityEnToJp[cityEn] ?? cityEn;
-    return cityEn;
-  }
+  String _cityDisplay(String cityEn) =>
+      widget.lang == 'ja' ? (_cityEnToJp[cityEn] ?? cityEn) : cityEn;
 
   void _apply() => Navigator.of(context).pop(_draft);
-  void _clear() => setState(() => _draft = const GroupFilter(orgCountry: 'Japan'));
+  void _clear() =>
+      setState(() => _draft = const GroupFilter(orgCountry: 'Japan'));
 
   // ── Palette ────────────────────────────────────────────────────────────────
   static const Color _bg       = Colors.white;
@@ -505,7 +505,8 @@ class _GroupFilterModalState extends State<GroupFilterModal> {
                   margin: const EdgeInsets.only(top: 12, bottom: 4),
                   width: 36, height: 4,
                   decoration: BoxDecoration(
-                      color: _border, borderRadius: BorderRadius.circular(2)),
+                      color: _border,
+                      borderRadius: BorderRadius.circular(2)),
                 ),
               ),
 
@@ -515,9 +516,9 @@ class _GroupFilterModalState extends State<GroupFilterModal> {
                 child: Row(children: [
                   Text(s.title,
                       style: const TextStyle(
-                          fontSize:     20,
-                          fontWeight:   FontWeight.w800,
-                          color:        _textDark,
+                          fontSize:      20,
+                          fontWeight:    FontWeight.w800,
+                          color:         _textDark,
                           letterSpacing: -0.4)),
                   const Spacer(),
                   if (!_draft.isDefault)
@@ -555,30 +556,27 @@ class _GroupFilterModalState extends State<GroupFilterModal> {
                     // ── LOCATION ──────────────────────────────────────────
                     _sectionLabel(s.secLocation),
 
-                    // Prefecture dropdown
-                    // Value stored as EN key; displayed in current lang
                     _dropdown(
-                      label:    s.labelPrefecture,
-                      value:    _draft.orgPrefecture ?? '',
-                      options:  _prefecturesEn,
-                      allLabel: s.allPrefectures,
+                      label:     s.labelPrefecture,
+                      value:     _draft.orgPrefecture ?? '',
+                      options:   _prefecturesEn,
+                      allLabel:  s.allPrefectures,
                       displayFn: _prefDisplay,
-                      onChange: (v) => setState(() => _draft = _draft.copyWith(
+                      onChange:  (v) => setState(() => _draft = _draft.copyWith(
                           orgPrefecture: v.isEmpty ? null : v,
                           orgCity: null)),
                     ),
                     const SizedBox(height: 12),
 
-                    // City dropdown
                     _dropdown(
-                      label:    s.labelCity,
-                      value:    _draft.orgCity ?? '',
-                      options:  currentCitiesEn,
-                      allLabel: _draft.orgPrefecture == null
+                      label:     s.labelCity,
+                      value:     _draft.orgCity ?? '',
+                      options:   currentCitiesEn,
+                      allLabel:  _draft.orgPrefecture == null
                           ? s.selectPrefFirst
                           : s.allCities,
                       displayFn: _cityDisplay,
-                      onChange: (v) => setState(() => _draft =
+                      onChange:  (v) => setState(() => _draft =
                           _draft.copyWith(orgCity: v.isEmpty ? null : v)),
                     ),
 
@@ -587,12 +585,15 @@ class _GroupFilterModalState extends State<GroupFilterModal> {
                     // ── SKILL LEVELS ──────────────────────────────────────
                     _sectionLabel(s.secSkill),
                     Wrap(spacing: 8, runSpacing: 8, children: [
-                      _pill(s.skillBeginner,     _draft.orgSkillBeginner,
-                              () => setState(() => _draft = _draft.copyWith(orgSkillBeginner:     !_draft.orgSkillBeginner))),
-                      _pill(s.skillIntermediate,  _draft.orgSkillIntermediate,
-                              () => setState(() => _draft = _draft.copyWith(orgSkillIntermediate: !_draft.orgSkillIntermediate))),
-                      _pill(s.skillAdvanced,      _draft.orgSkillAdvance,
-                              () => setState(() => _draft = _draft.copyWith(orgSkillAdvance:      !_draft.orgSkillAdvance))),
+                      _pill(s.skillBeginner,    _draft.orgSkillBeginner,
+                              () => setState(() => _draft = _draft.copyWith(
+                              orgSkillBeginner: !_draft.orgSkillBeginner))),
+                      _pill(s.skillIntermediate, _draft.orgSkillIntermediate,
+                              () => setState(() => _draft = _draft.copyWith(
+                              orgSkillIntermediate: !_draft.orgSkillIntermediate))),
+                      _pill(s.skillAdvanced,    _draft.orgSkillAdvance,
+                              () => setState(() => _draft = _draft.copyWith(
+                              orgSkillAdvance: !_draft.orgSkillAdvance))),
                     ]),
 
                     _divider(),
@@ -601,13 +602,17 @@ class _GroupFilterModalState extends State<GroupFilterModal> {
                     _sectionLabel(s.secAge),
                     Wrap(spacing: 8, runSpacing: 8, children: [
                       _pill(s.ageJuniors,  _draft.orgAgeJuniors,
-                              () => setState(() => _draft = _draft.copyWith(orgAgeJuniors:  !_draft.orgAgeJuniors))),
+                              () => setState(() => _draft = _draft.copyWith(
+                              orgAgeJuniors: !_draft.orgAgeJuniors))),
                       _pill(s.ageStudents, _draft.orgAgeStudents,
-                              () => setState(() => _draft = _draft.copyWith(orgAgeStudents: !_draft.orgAgeStudents))),
+                              () => setState(() => _draft = _draft.copyWith(
+                              orgAgeStudents: !_draft.orgAgeStudents))),
                       _pill(s.ageAdults,   _draft.orgAgeAdult,
-                              () => setState(() => _draft = _draft.copyWith(orgAgeAdult:    !_draft.orgAgeAdult))),
+                              () => setState(() => _draft = _draft.copyWith(
+                              orgAgeAdult: !_draft.orgAgeAdult))),
                       _pill(s.ageSeniors,  _draft.orgAgeSeniors,
-                              () => setState(() => _draft = _draft.copyWith(orgAgeSeniors:  !_draft.orgAgeSeniors))),
+                              () => setState(() => _draft = _draft.copyWith(
+                              orgAgeSeniors: !_draft.orgAgeSeniors))),
                     ]),
 
                     _divider(),
@@ -616,19 +621,26 @@ class _GroupFilterModalState extends State<GroupFilterModal> {
                     _sectionLabel(s.secDays),
                     Wrap(spacing: 8, runSpacing: 8, children: [
                       _pill(s.daySun, _draft.orgMeetupSun,
-                              () => setState(() => _draft = _draft.copyWith(orgMeetupSun:   !_draft.orgMeetupSun))),
+                              () => setState(() => _draft = _draft.copyWith(
+                              orgMeetupSun: !_draft.orgMeetupSun))),
                       _pill(s.dayMon, _draft.orgMeetupMon,
-                              () => setState(() => _draft = _draft.copyWith(orgMeetupMon:   !_draft.orgMeetupMon))),
+                              () => setState(() => _draft = _draft.copyWith(
+                              orgMeetupMon: !_draft.orgMeetupMon))),
                       _pill(s.dayTue, _draft.orgMeetupTues,
-                              () => setState(() => _draft = _draft.copyWith(orgMeetupTues:  !_draft.orgMeetupTues))),
+                              () => setState(() => _draft = _draft.copyWith(
+                              orgMeetupTues: !_draft.orgMeetupTues))),
                       _pill(s.dayWed, _draft.orgMeetupWeds,
-                              () => setState(() => _draft = _draft.copyWith(orgMeetupWeds:  !_draft.orgMeetupWeds))),
+                              () => setState(() => _draft = _draft.copyWith(
+                              orgMeetupWeds: !_draft.orgMeetupWeds))),
                       _pill(s.dayThu, _draft.orgMeetupThurs,
-                              () => setState(() => _draft = _draft.copyWith(orgMeetupThurs: !_draft.orgMeetupThurs))),
+                              () => setState(() => _draft = _draft.copyWith(
+                              orgMeetupThurs: !_draft.orgMeetupThurs))),
                       _pill(s.dayFri, _draft.orgMeetupFri,
-                              () => setState(() => _draft = _draft.copyWith(orgMeetupFri:   !_draft.orgMeetupFri))),
+                              () => setState(() => _draft = _draft.copyWith(
+                              orgMeetupFri: !_draft.orgMeetupFri))),
                       _pill(s.daySat, _draft.orgMeetupSat,
-                              () => setState(() => _draft = _draft.copyWith(orgMeetupSat:   !_draft.orgMeetupSat))),
+                              () => setState(() => _draft = _draft.copyWith(
+                              orgMeetupSat: !_draft.orgMeetupSat))),
                     ]),
 
                     _divider(),
@@ -637,11 +649,14 @@ class _GroupFilterModalState extends State<GroupFilterModal> {
                     _sectionLabel(s.secTimes),
                     Wrap(spacing: 8, runSpacing: 8, children: [
                       _pill(s.timeMornings,   _draft.orgMeetupTimeMornings,
-                              () => setState(() => _draft = _draft.copyWith(orgMeetupTimeMornings:   !_draft.orgMeetupTimeMornings))),
+                              () => setState(() => _draft = _draft.copyWith(
+                              orgMeetupTimeMornings: !_draft.orgMeetupTimeMornings))),
                       _pill(s.timeAfternoons, _draft.orgMeetupTimeAfternoons,
-                              () => setState(() => _draft = _draft.copyWith(orgMeetupTimeAfternoons: !_draft.orgMeetupTimeAfternoons))),
+                              () => setState(() => _draft = _draft.copyWith(
+                              orgMeetupTimeAfternoons: !_draft.orgMeetupTimeAfternoons))),
                       _pill(s.timeEvenings,   _draft.orgMeetupTimeEvenings,
-                              () => setState(() => _draft = _draft.copyWith(orgMeetupTimeEvenings:   !_draft.orgMeetupTimeEvenings))),
+                              () => setState(() => _draft = _draft.copyWith(
+                              orgMeetupTimeEvenings: !_draft.orgMeetupTimeEvenings))),
                     ]),
 
                     const SizedBox(height: 24),
@@ -690,7 +705,8 @@ class _GroupFilterModalState extends State<GroupFilterModal> {
         width: 3, height: 14,
         margin: const EdgeInsets.only(right: 8),
         decoration: BoxDecoration(
-            color: AppColors.primary, borderRadius: BorderRadius.circular(2)),
+            color: AppColors.primary,
+            borderRadius: BorderRadius.circular(2)),
       ),
       Text(text,
           style: const TextStyle(
@@ -716,7 +732,9 @@ class _GroupFilterModalState extends State<GroupFilterModal> {
           color: selected ? AppColors.primary.withOpacity(0.08) : _cardBg,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: selected ? AppColors.primary.withOpacity(0.5) : _border,
+            color: selected
+                ? AppColors.primary.withOpacity(0.5)
+                : _border,
             width: 1.5,
           ),
         ),
@@ -727,8 +745,9 @@ class _GroupFilterModalState extends State<GroupFilterModal> {
             decoration: BoxDecoration(
               color:        selected ? AppColors.primary : Colors.transparent,
               borderRadius: BorderRadius.circular(4),
-              border:       Border.all(
-                  color: selected ? AppColors.primary : _border, width: 1.5),
+              border: Border.all(
+                  color: selected ? AppColors.primary : _border,
+                  width: 1.5),
             ),
             child: selected
                 ? const Icon(Icons.check, size: 10, color: Colors.white)
@@ -745,21 +764,21 @@ class _GroupFilterModalState extends State<GroupFilterModal> {
     );
   }
 
-  /// Dropdown that stores English keys internally but displays via [displayFn].
   Widget _dropdown({
     required String label,
-    required String value,          // always an EN key or ''
-    required List<String> options,  // always EN keys
+    required String value,
+    required List<String> options,
     required String allLabel,
     required String Function(String) displayFn,
     required ValueChanged<String> onChange,
   }) {
-    final hasVal    = value.isNotEmpty;
-    final isDisabled = options.isEmpty && label != _FilterStrings.en.labelPrefecture
-        && label != _FilterStrings.ja.labelPrefecture;
+    final hasVal     = value.isNotEmpty;
+    final isDisabled = options.isEmpty &&
+        label != _FilterStrings.en.labelPrefecture &&
+        label != _FilterStrings.ja.labelPrefecture;
 
-    // Ensure value is in the current options list; reset if not
-    final safeValue = (value.isNotEmpty && options.contains(value)) ? value : '';
+    final safeValue =
+    (value.isNotEmpty && options.contains(value)) ? value : '';
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(label,
@@ -776,27 +795,30 @@ class _GroupFilterModalState extends State<GroupFilterModal> {
               : _cardBg,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-              color: hasVal ? AppColors.primary.withOpacity(0.4) : _border),
+              color: hasVal
+                  ? AppColors.primary.withOpacity(0.4)
+                  : _border),
         ),
         child: DropdownButtonHideUnderline(
           child: DropdownButton<String>(
-            value: safeValue.isEmpty ? '' : safeValue,
-            isExpanded:    true,
+            value:        safeValue.isEmpty ? '' : safeValue,
+            isExpanded:   true,
             dropdownColor: Colors.white,
-            onChanged:     isDisabled ? null : (v) => onChange(v ?? ''),
-            icon: Icon(Icons.keyboard_arrow_down_rounded,
-                color: isDisabled
-                    ? _textSub.withOpacity(0.4)
-                    : hasVal
-                    ? AppColors.primary
-                    : _textSub,
-                size: 20),
+            onChanged:    isDisabled ? null : (v) => onChange(v ?? ''),
+            icon: Icon(
+              Icons.keyboard_arrow_down_rounded,
+              color: isDisabled
+                  ? _textSub.withOpacity(0.4)
+                  : hasVal
+                  ? AppColors.primary
+                  : _textSub,
+              size: 20,
+            ),
             style: TextStyle(
                 color:      hasVal ? AppColors.primary : _textDark,
                 fontSize:   14,
                 fontWeight: FontWeight.w500),
             items: [
-              // "All" option
               DropdownMenuItem(
                 value: '',
                 child: Text(allLabel,
@@ -805,14 +827,17 @@ class _GroupFilterModalState extends State<GroupFilterModal> {
                             ? _textSub.withOpacity(0.4)
                             : _textSub)),
               ),
-              // One item per EN key, displayed in current lang
               ...options.map((enKey) => DropdownMenuItem(
                 value: enKey,
                 child: Text(
                   displayFn(enKey),
                   style: TextStyle(
-                      color:      enKey == safeValue ? AppColors.primary : _textDark,
-                      fontWeight: enKey == safeValue ? FontWeight.w700 : FontWeight.w500),
+                      color: enKey == safeValue
+                          ? AppColors.primary
+                          : _textDark,
+                      fontWeight: enKey == safeValue
+                          ? FontWeight.w700
+                          : FontWeight.w500),
                 ),
               )),
             ],
