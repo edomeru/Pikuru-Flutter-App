@@ -33,7 +33,7 @@ String _fmt(dynamic ts, String lang, {bool long = false}) {
       const wd = ['月', '火', '水', '木', '金', '土', '日'];
       return '${d.year}年${d.month}月${d.day}日（${wd[d.weekday - 1]}）';
     }
-    return '${d.year}/${d.month.toString().padLeft(2, '0')}/${d.day.toString().padLeft(2, '0')}';
+    return '${d.year}年${d.month}月${d.day}日';
   }
   if (long) {
     const wdEn = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -138,8 +138,6 @@ class _OrganizerEventDetailScreenState
         base.where('status', isEqualTo: 'rejected').count().get(),
       ]);
 
-      // Docs without a status field are not 'pending' in Firestore terms,
-      // so derive pending = total - approved - rejected to catch them all.
       final total    = results[0].count ?? 0;
       final approved = results[1].count ?? 0;
       final rejected = results[2].count ?? 0;
@@ -161,7 +159,7 @@ class _OrganizerEventDetailScreenState
     }
   }
 
-  // ── 2. Load first page (15 docs) — mirrors web openRegistrations ──────────
+  // ── 2. Load first page (15 docs) ──────────────────────────────────────────
   Future<void> _loadFirstPage() async {
     setState(() {
       _loadingFirst = true;
@@ -191,7 +189,7 @@ class _OrganizerEventDetailScreenState
     }
   }
 
-  // ── 3. Load next page — mirrors web loadMoreRegistrations ─────────────────
+  // ── 3. Load next page ─────────────────────────────────────────────────────
   Future<void> _loadMorePage() async {
     if (_loadingPage || !_hasMore || _lastDoc == null) return;
     setState(() => _loadingPage = true);
@@ -218,7 +216,7 @@ class _OrganizerEventDetailScreenState
     }
   }
 
-  // ── 4. Status update — mirrors web updateRegistrationStatus ───────────────
+  // ── 4. Status update ──────────────────────────────────────────────────────
   Future<void> _updateStatus(String regId, String status) async {
     setState(() => _updatingId = regId);
     try {
@@ -229,13 +227,11 @@ class _OrganizerEventDetailScreenState
         'status':     status,
         'updated_at': FieldValue.serverTimestamp(),
       });
-      // Optimistic local update + re-derive counts
       setState(() {
         final idx = _regs.indexWhere((r) => r['_id'] == regId);
         if (idx != -1) {
           final old = (_regs[idx]['status'] ?? 'pending') as String;
           _regs[idx] = {..._regs[idx], 'status': status};
-          // Patch counts without a round-trip
           _counts = _RegCounts(
             total:    _counts.total,
             approved: _counts.approved + (status == 'approved' ? 1 : 0) - (old == 'approved' ? 1 : 0),
@@ -280,14 +276,14 @@ class _OrganizerEventDetailScreenState
   List<String> get _categories {
     final isJa = widget.lang == 'ja';
     return [
-      if (_truthy('event_category_menssingle'))  isJa ? '男子シングルス' : "Men's Singles",
-      if (_truthy('event_category_womenssingle')) isJa ? '女子シングルス' : "Women's Singles",
-      if (_truthy('event_category_mensdoubles'))  isJa ? '男子ダブルス'  : "Men's Doubles",
-      if (_truthy('event_category_womensdoubles')) isJa ? '女子ダブルス' : "Women's Doubles",
-      if (_truthy('event_category_mixeddoubles')) isJa ? '混合ダブルス'  : 'Mixed Doubles',
-      if (_truthy('event_category_seniors'))  isJa ? 'シニア'   : 'Seniors',
-      if (_truthy('event_category_juniors'))  isJa ? 'ジュニア' : 'Juniors',
-      if (_truthy('event_category_collegiate')) isJa ? '大学生'  : 'Collegiate',
+      if (_truthy('event_category_menssingle'))   isJa ? '男子シングルス' : "Men's Singles",
+      if (_truthy('event_category_womenssingle'))  isJa ? '女子シングルス' : "Women's Singles",
+      if (_truthy('event_category_mensdoubles'))   isJa ? '男子ダブルス'  : "Men's Doubles",
+      if (_truthy('event_category_womensdoubles')) isJa ? '女子ダブルス'  : "Women's Doubles",
+      if (_truthy('event_category_mixeddoubles'))  isJa ? '混合ダブルス'  : 'Mixed Doubles',
+      if (_truthy('event_category_seniors'))       isJa ? 'シニア'        : 'Seniors',
+      if (_truthy('event_category_juniors'))       isJa ? 'ジュニア'      : 'Juniors',
+      if (_truthy('event_category_collegiate'))    isJa ? '大学生'        : 'Collegiate',
     ];
   }
 
@@ -322,8 +318,6 @@ class _OrganizerEventDetailScreenState
 
     return Scaffold(
       backgroundColor: _C.bg,
-      // ── Use a DraggableScrollableSheet so the reg panel can be pulled up
-      // to show many registrations without preloading them all ──────────────
       body: Stack(
         children: [
           // ── MAIN SCROLLABLE CONTENT ────────────────────────────────────
@@ -338,7 +332,6 @@ class _OrganizerEventDetailScreenState
               ),
               Expanded(
                 child: SingleChildScrollView(
-                  // Extra bottom padding so content clears the collapsed sheet
                   padding: const EdgeInsets.only(bottom: 200),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -412,32 +405,28 @@ class _OrganizerEventDetailScreenState
 
           // ── DRAGGABLE REGISTRATION SHEET ───────────────────────────────
           DraggableScrollableSheet(
-            initialChildSize: 0.28,  // collapsed — shows header + filter tabs
-            minChildSize:     0.14,  // almost hidden — just the drag handle
-            maxChildSize:     0.88,  // nearly full screen
+            initialChildSize: 0.28,
+            minChildSize:     0.14,
+            maxChildSize:     0.88,
             snap: true,
             snapSizes: const [0.14, 0.28, 0.60, 0.88],
             builder: (context, scrollController) {
               return _RegSheet(
                 scrollController: scrollController,
-                regs:         _regs,
-                filtered:     _filtered,
-                filter:       _regFilter,
-                loading:      _loadingFirst,
-                loadingMore:  _loadingPage,
-                hasMore:      _hasMore,
-                updatingId:   _updatingId,
-                counts:       _counts,
+                regs:          _regs,
+                filtered:      _filtered,
+                filter:        _regFilter,
+                loading:       _loadingFirst,
+                loadingMore:   _loadingPage,
+                hasMore:       _hasMore,
+                updatingId:    _updatingId,
+                counts:        _counts,
                 countsLoading: _loadingCounts,
-                lang:         lang,
-                onFilter:     (f) {
-                  setState(() => _regFilter = f);
-                  // If we haven't loaded much yet, just filter locally.
-                  // For 'all' we always show what's loaded.
-                },
-                onApprove:    (id) => _updateStatus(id, 'approved'),
-                onReject:     (id) => _updateStatus(id, 'rejected'),
-                onLoadMore:   _loadMorePage,
+                lang:          lang,
+                onFilter:      (f) => setState(() => _regFilter = f),
+                onApprove:     (id) => _updateStatus(id, 'approved'),
+                onReject:      (id) => _updateStatus(id, 'rejected'),
+                onLoadMore:    _loadMorePage,
               );
             },
           ),
@@ -484,7 +473,7 @@ class _OrganizerEventDetailScreenState
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// _RegSheet — the draggable bottom sheet with paginated list
+// _RegSheet — draggable bottom sheet with paginated list
 // ─────────────────────────────────────────────────────────────────────────────
 class _RegSheet extends StatelessWidget {
   final ScrollController scrollController;
@@ -542,12 +531,10 @@ class _RegSheet extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Drag handle
                 Center(
                   child: Container(
                     margin: const EdgeInsets.only(top: 10, bottom: 6),
-                    width: 36,
-                    height: 4,
+                    width: 36, height: 4,
                     decoration: BoxDecoration(
                       color: _C.accent.withOpacity(0.25),
                       borderRadius: BorderRadius.circular(2),
@@ -559,21 +546,17 @@ class _RegSheet extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Title row + stat pills
                       Row(children: [
                         Text(
                           _t('Event Registrations', 'イベント登録管理'),
                           style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w900,
-                              color: _C.textPri),
+                              fontSize: 15, fontWeight: FontWeight.w900, color: _C.textPri),
                         ),
                         const Spacer(),
                         if (countsLoading)
                           SizedBox(
                             width: 14, height: 14,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: _C.accent),
+                            child: CircularProgressIndicator(strokeWidth: 2, color: _C.accent),
                           )
                         else ...[
                           if (counts.total > 0)
@@ -582,21 +565,15 @@ class _RegSheet extends StatelessWidget {
                                 Colors.black.withOpacity(0.45)),
                           if (counts.approved > 0) ...[
                             const SizedBox(width: 5),
-                            _StatPill(
-                                '${counts.approved} ${_t('✓', '✓')}',
-                                _C.approved),
+                            _StatPill('${counts.approved} ✓', _C.approved),
                           ],
                           if (counts.rejected > 0) ...[
                             const SizedBox(width: 5),
-                            _StatPill(
-                                '${counts.rejected} ${_t('✗', '✗')}',
-                                _C.rejected),
+                            _StatPill('${counts.rejected} ✗', _C.rejected),
                           ],
                         ],
                       ]),
                       const SizedBox(height: 10),
-
-                      // Filter tabs — same 4 tabs as web
                       SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
                         child: Row(children: [
@@ -671,14 +648,13 @@ class _RegSheet extends StatelessWidget {
                         ),
                       );
                     }
-                    // ── Load-more button at the end ──────────────────────
+                    // ── Load-more / end row ──────────────────────────────
                     return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       child: loadingMore
                           ? const Center(
                           child: SizedBox(
-                              width: 22,
-                              height: 22,
+                              width: 22, height: 22,
                               child: CircularProgressIndicator(
                                   strokeWidth: 2.5, color: _C.accent)))
                           : hasMore
@@ -690,8 +666,7 @@ class _RegSheet extends StatelessWidget {
                           decoration: BoxDecoration(
                             color: _C.accent.withOpacity(0.07),
                             borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                                color: _C.accent.withOpacity(0.25)),
+                            border: Border.all(color: _C.accent.withOpacity(0.25)),
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -705,31 +680,25 @@ class _RegSheet extends StatelessWidget {
                               ),
                               const SizedBox(width: 6),
                               Icon(Icons.expand_more_rounded,
-                                  size: 16,
-                                  color: _C.accent.withOpacity(0.7)),
+                                  size: 16, color: _C.accent.withOpacity(0.7)),
                             ],
                           ),
                         ),
                       )
                           : Center(
                         child: Text(
-                          _t(
-                            'Showing ${regs.length} of ${regs.length}',
-                            '${regs.length}件 表示中',
-                          ),
-                          style: TextStyle(
-                              fontSize: 11,
-                              color: _C.textDim),
+                          _t('Showing ${regs.length} of ${regs.length}',
+                              '${regs.length}件 表示中'),
+                          style: TextStyle(fontSize: 11, color: _C.textDim),
                         ),
                       ),
                     );
                   },
-                  childCount: filtered.length + 1, // +1 for load-more row
+                  childCount: filtered.length + 1,
                 ),
               ),
             ),
 
-          // Bottom padding
           const SliverToBoxAdapter(child: SizedBox(height: 32)),
         ],
       ),
@@ -769,9 +738,7 @@ class _TopBar extends StatelessWidget {
           child: Text(title,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: _C.textPri)),
+                  fontSize: 16, fontWeight: FontWeight.w800, color: _C.textPri)),
         ),
         const SizedBox(width: 8),
         if (isApproved)
@@ -830,10 +797,8 @@ class _HeroImage extends StatelessWidget {
               ),
               child: Text(eventType,
                   style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w900,
-                      color: Color(0xFFF5FAF6),
-                      letterSpacing: 0.5)),
+                      fontSize: 11, fontWeight: FontWeight.w900,
+                      color: Color(0xFFF5FAF6), letterSpacing: 0.5)),
             ),
           ),
       ]),
@@ -913,15 +878,12 @@ class _MetaCard extends StatelessWidget {
           ),
           Text(item.label,
               style: TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.8,
-                  color: _C.accent.withOpacity(0.7))),
+                  fontSize: 9, fontWeight: FontWeight.w800,
+                  letterSpacing: 0.8, color: _C.accent.withOpacity(0.7))),
           Text(item.value,
               style: const TextStyle(
                   fontSize: 13, fontWeight: FontWeight.w900, color: _C.textPri),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis),
+              maxLines: 2, overflow: TextOverflow.ellipsis),
         ],
       ),
     );
@@ -955,8 +917,7 @@ class _EndDateRow extends StatelessWidget {
         const SizedBox(width: 10),
         Text(lang == 'ja' ? '終了日: ' : 'End Date: ',
             style: TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
+                fontSize: 12, fontWeight: FontWeight.w700,
                 color: _C.accent.withOpacity(0.7))),
         Expanded(
           child: Text(date,
@@ -994,10 +955,8 @@ class _Section extends StatelessWidget {
             const SizedBox(width: 6),
             Text(label,
                 style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.8,
-                    color: _C.accent.withOpacity(0.7))),
+                    fontSize: 10, fontWeight: FontWeight.w800,
+                    letterSpacing: 0.8, color: _C.accent.withOpacity(0.7))),
           ]),
           const SizedBox(height: 12),
           child,
@@ -1061,8 +1020,7 @@ class _DetailRowW extends StatelessWidget {
           width: 100,
           child: Text(label,
               style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+                  fontSize: 12, fontWeight: FontWeight.w600,
                   color: _C.accent.withOpacity(0.65))),
         ),
         Expanded(
@@ -1070,8 +1028,7 @@ class _DetailRowW extends StatelessWidget {
               style: const TextStyle(
                   fontSize: 13, fontWeight: FontWeight.w700, color: _C.textPri),
               textAlign: TextAlign.end,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis),
+              maxLines: 2, overflow: TextOverflow.ellipsis),
         ),
       ]),
     );
@@ -1104,12 +1061,18 @@ class _RegRow extends StatelessWidget {
     final email  = (reg['user_email'] ?? '').toString();
     final avatar = (reg['user_avatar'] ?? '').toString();
     final regTs  = reg['registered_at'];
+
+    // ── Date formatted according to language ─────────────────────────────
     String dateStr = '';
     if (regTs is Timestamp) {
       final d = regTs.toDate();
-      const mo = ['Jan','Feb','Mar','Apr','May','Jun',
-        'Jul','Aug','Sep','Oct','Nov','Dec'];
-      dateStr = '${mo[d.month - 1]} ${d.day}';
+      if (_isJa) {
+        dateStr = '${d.month}月${d.day}日';
+      } else {
+        const mo = ['Jan','Feb','Mar','Apr','May','Jun',
+          'Jul','Aug','Sep','Oct','Nov','Dec'];
+        dateStr = '${mo[d.month - 1]} ${d.day}';
+      }
     }
 
     Color statusColor;
@@ -1150,13 +1113,11 @@ class _RegRow extends StatelessWidget {
               Text(name,
                   style: const TextStyle(
                       fontSize: 13, fontWeight: FontWeight.w700, color: _C.textPri),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
               if (email.isNotEmpty)
                 Text(email,
                     style: TextStyle(fontSize: 11, color: _C.textMuted),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
               Row(children: [
                 Container(
                   margin: const EdgeInsets.only(top: 4),
@@ -1167,9 +1128,7 @@ class _RegRow extends StatelessWidget {
                   ),
                   child: Text(statusLabel,
                       style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w900,
-                          color: statusColor)),
+                          fontSize: 9, fontWeight: FontWeight.w900, color: statusColor)),
                 ),
                 if (dateStr.isNotEmpty) ...[
                   const SizedBox(width: 6),
@@ -1223,8 +1182,7 @@ class _Pill extends StatelessWidget {
       border: Border.all(color: color.withOpacity(0.35)),
     ),
     child: Text(label,
-        style: TextStyle(
-            fontSize: 11, fontWeight: FontWeight.w800, color: color)),
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: color)),
   );
 }
 
@@ -1241,8 +1199,7 @@ class _StatPill extends StatelessWidget {
       borderRadius: BorderRadius.circular(20),
     ),
     child: Text(label,
-        style: TextStyle(
-            fontSize: 10, fontWeight: FontWeight.w800, color: color)),
+        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: color)),
   );
 }
 
@@ -1277,8 +1234,7 @@ class _FilterTab extends StatelessWidget {
       child: Text(
         '$label ($count)',
         style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
+            fontSize: 11, fontWeight: FontWeight.w700,
             color: selected
                 ? Colors.black.withOpacity(0.85)
                 : Colors.black.withOpacity(0.4)),
@@ -1304,8 +1260,7 @@ class _ActionBtn extends StatelessWidget {
         border: Border.all(color: color.withOpacity(0.35)),
       ),
       child: Text(label,
-          style: TextStyle(
-              fontSize: 10, fontWeight: FontWeight.w800, color: color)),
+          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: color)),
     ),
   );
 }
