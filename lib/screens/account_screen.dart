@@ -9,63 +9,66 @@ import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:pikuru/screens/resources_screen.dart';
 import 'package:pikuru/screens/edit_profile_screen.dart';
 import 'package:pikuru/screens/settings_screen.dart';
-import 'package:pikuru/services/notification_service.dart'; // ← add this import
+import 'package:pikuru/screens/organizer_dashboard_screen.dart'; // ← new import
+import 'package:pikuru/services/notification_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Localization
 // ─────────────────────────────────────────────────────────────────────────────
 const _L = {
   kLangEn: {
-    'groupsJoined':     'Groups Joined',
-    'noGroups':         'No groups',
-    'join':             'Join',
-    'interestedGroups': 'Interested Groups',
-    'noneYet':          'None yet',
-    'browse':           'Browse',
-    'eventsJoined':     'Events Joined',
-    'noEvents':         'No events',
-    'find':             'Find',
-    'savedEvents':      'Saved Events',
-    'noneSaved':        'None saved',
-    'explore':          'Explore',
-    'sectionAccount':   'Account',
-    'editProfile':      'Edit Profile',
-    'eventsHistory':    'Events History',
-    'resources':        'Resources',
-    'sectionPrefs':     'Preferences',
-    'settings':         'Settings',
-    'sectionSession':   'Session',
-    'signOut':          'Sign Out',
-    'signOutTitle':     'Sign Out?',
-    'signOutBody':      'Are you sure you want to sign out of your account?',
-    'cancel':           'Cancel',
-    'signOutConfirm':   'Sign Out',
+    'groupsJoined':       'Groups Joined',
+    'noGroups':           'No groups',
+    'join':               'Join',
+    'interestedGroups':   'Interested Groups',
+    'noneYet':            'None yet',
+    'browse':             'Browse',
+    'eventsJoined':       'Events Joined',
+    'noEvents':           'No events',
+    'find':               'Find',
+    'savedEvents':        'Saved Events',
+    'noneSaved':          'None saved',
+    'explore':            'Explore',
+    'sectionAccount':     'Account',
+    'editProfile':        'Edit Profile',
+    'eventsHistory':      'Events History',
+    'resources':          'Resources',
+    'organizerDashboard': 'Organizer Dashboard',
+    'sectionPrefs':       'Preferences',
+    'settings':           'Settings',
+    'sectionSession':     'Session',
+    'signOut':            'Sign Out',
+    'signOutTitle':       'Sign Out?',
+    'signOutBody':        'Are you sure you want to sign out of your account?',
+    'cancel':             'Cancel',
+    'signOutConfirm':     'Sign Out',
   },
   kLangJa: {
-    'groupsJoined':     '参加グループ',
-    'noGroups':         'グループなし',
-    'join':             '参加',
-    'interestedGroups': '興味あるグループ',
-    'noneYet':          'まだなし',
-    'browse':           '探す',
-    'eventsJoined':     '参加イベント',
-    'noEvents':         'イベントなし',
-    'find':             '探す',
-    'savedEvents':      '保存済みイベント',
-    'noneSaved':        '保存なし',
-    'explore':          '探索',
-    'sectionAccount':   'アカウント',
-    'editProfile':      'プロフィール編集',
-    'eventsHistory':    'イベント履歴',
-    'resources':        'リソース',
-    'sectionPrefs':     '設定',
-    'settings':         '設定',
-    'sectionSession':   'セッション',
-    'signOut':          'サインアウト',
-    'signOutTitle':     'サインアウトしますか？',
-    'signOutBody':      'アカウントからサインアウトしてもよろしいですか？',
-    'cancel':           'キャンセル',
-    'signOutConfirm':   'サインアウト',
+    'groupsJoined':       '参加グループ',
+    'noGroups':           'グループなし',
+    'join':               '参加',
+    'interestedGroups':   '興味あるグループ',
+    'noneYet':            'まだなし',
+    'browse':             '探す',
+    'eventsJoined':       '参加イベント',
+    'noEvents':           'イベントなし',
+    'find':               '探す',
+    'savedEvents':        '保存済みイベント',
+    'noneSaved':          '保存なし',
+    'explore':            '探索',
+    'sectionAccount':     'アカウント',
+    'editProfile':        'プロフィール編集',
+    'eventsHistory':      'イベント履歴',
+    'resources':          'リソース',
+    'organizerDashboard': '主催者ダッシュボード',
+    'sectionPrefs':       '設定',
+    'settings':           '設定',
+    'sectionSession':     'セッション',
+    'signOut':            'サインアウト',
+    'signOutTitle':       'サインアウトしますか？',
+    'signOutBody':        'アカウントからサインアウトしてもよろしいですか？',
+    'cancel':             'キャンセル',
+    'signOutConfirm':     'サインアウト',
   },
 };
 
@@ -262,8 +265,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen>
                                       border: Border.all(
                                           color: Colors.white, width: 3),
                                       boxShadow: [BoxShadow(
-                                          color:
-                                          Colors.black.withOpacity(0.2),
+                                          color: Colors.black.withOpacity(0.2),
                                           blurRadius: 14,
                                           offset: const Offset(0, 4))],
                                     ),
@@ -284,8 +286,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen>
                                 Text(user?.email ?? '',
                                     style: TextStyle(
                                         fontSize: 13,
-                                        color:
-                                        Colors.white.withOpacity(0.7))),
+                                        color: Colors.white.withOpacity(0.7))),
                               ]),
                             ),
                           ),
@@ -386,11 +387,18 @@ class _AccountScreenState extends ConsumerState<AccountScreen>
                                 _MenuItem(
                                   icon: Icons.library_books_rounded,
                                   label: t('resources'),
-                                  isLast: true,
                                   onTap: () => Navigator.push(context,
                                       MaterialPageRoute(
                                           builder: (_) =>
                                           const ResourcesScreen())),
+                                ),
+                                // ── Organizer Dashboard ───────────
+                                _MenuItem(
+                                  icon: Icons.dashboard_rounded,
+                                  label: t('organizerDashboard'),
+                                  isLast: true,
+                                  onTap: () => Navigator.push(context,
+                                      MaterialPageRoute(builder: (_) => const OrganizerDashboardScreen())),
                                 ),
                               ]),
 
@@ -566,13 +574,11 @@ class _StatBanner extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding:
-        const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
-          border:
-          Border.all(color: AppColors.primary.withOpacity(0.15)),
+          border: Border.all(color: AppColors.primary.withOpacity(0.15)),
           boxShadow: [BoxShadow(
               color: AppColors.primary.withOpacity(0.07),
               blurRadius: 14,
@@ -594,9 +600,7 @@ class _StatBanner extends StatelessWidget {
                   style: TextStyle(
                     fontSize: count == 0 ? 20 : 24,
                     fontWeight: FontWeight.w900,
-                    color: count == 0
-                        ? Colors.black26
-                        : AppColors.primary,
+                    color: count == 0 ? Colors.black26 : AppColors.primary,
                     letterSpacing: -0.5,
                   )),
             ]),
@@ -609,28 +613,22 @@ class _StatBanner extends StatelessWidget {
                     letterSpacing: 0.1)),
             const SizedBox(height: 2),
             Text(count == 0 ? emptyLabel : '',
-                style: const TextStyle(
-                    fontSize: 11, color: Colors.black38)),
+                style: const TextStyle(fontSize: 11, color: Colors.black38)),
             const SizedBox(height: 10),
             Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 10, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
                   color: AppColors.primary.withOpacity(0.08),
                   borderRadius: BorderRadius.circular(20)),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(buttonIcon,
-                      color: AppColors.primary, size: 13),
-                  const SizedBox(width: 4),
-                  Text(buttonLabel,
-                      style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.primary)),
-                ],
-              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(buttonIcon, color: AppColors.primary, size: 13),
+                const SizedBox(width: 4),
+                Text(buttonLabel,
+                    style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.primary)),
+              ]),
             ),
           ],
         ),
@@ -687,16 +685,14 @@ class _MenuCard extends StatelessWidget {
     decoration: BoxDecoration(
       color: Colors.white,
       borderRadius: BorderRadius.circular(16),
-      border:
-      Border.all(color: AppColors.primary.withOpacity(0.12)),
+      border: Border.all(color: AppColors.primary.withOpacity(0.12)),
       boxShadow: [BoxShadow(
           color: AppColors.primary.withOpacity(0.06),
           blurRadius: 14,
           offset: const Offset(0, 4))],
     ),
     child: Column(
-        children:
-        items.map((item) => _MenuTile(item: item)).toList()),
+        children: items.map((item) => _MenuTile(item: item)).toList()),
   );
 }
 
@@ -716,8 +712,7 @@ class _MenuTile extends StatelessWidget {
                 ? const Radius.circular(16)
                 : Radius.zero),
         child: Padding(
-          padding: const EdgeInsets.symmetric(
-              horizontal: 16, vertical: 15),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
           child: Row(children: [
             Container(
                 width: 38,

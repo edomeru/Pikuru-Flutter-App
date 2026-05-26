@@ -409,3 +409,44 @@ export const updateUserEmail = onCall(async (request) => {
     throw new HttpsError("internal", "Failed to update email. Please try again.");
   }
 });
+
+// ── Delete User by Admin ──────────────────────────────────────────────────────
+export const deleteUserByAdmin = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "You must be logged in.");
+  }
+
+  const callerUid = request.auth.uid;
+
+  // Verify caller is an admin
+  try {
+    const callerDoc = await admin.firestore().collection("registration").doc(callerUid).get();
+    const callerData = callerDoc.data();
+    if (!callerData || callerData.is_admin !== true) {
+      throw new HttpsError("permission-denied", "Only administrators can delete users.");
+    }
+  } catch (error) {
+    throw new HttpsError("permission-denied", "Authorization check failed.");
+  }
+
+  const targetUid = request.data.uid as string;
+  if (!targetUid) {
+    throw new HttpsError("invalid-argument", "Target user ID is required.");
+  }
+
+  try {
+    // 1. Delete from Firebase Auth
+    await admin.auth().deleteUser(targetUid);
+    console.log(`[Admin] Deleted Auth user: ${targetUid}`);
+
+    // 2. Delete from Firestore registration collection
+    await admin.firestore().collection("registration").doc(targetUid).delete();
+    console.log(`[Admin] Deleted registration document for: ${targetUid}`);
+
+    return {success: true, message: "User deleted successfully"};
+  } catch (error: unknown) {
+    console.error("Error deleting user:", error);
+    const err = error as {code?: string; message?: string};
+    throw new HttpsError("internal", err.message || "Failed to delete user. Please try again.");
+  }
+});
