@@ -6,7 +6,11 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/screens/group_chat_screen.dart';
 import 'package:pikuru/screens/individual_chat_screen.dart';
+import 'package:pikuru/screens/event_chat_screen.dart';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Data models
+// ─────────────────────────────────────────────────────────────────────────────
 class _ChatItem {
   final String id;
   final String name;
@@ -15,6 +19,8 @@ class _ChatItem {
   final DateTime? lastMessageAt;
   final bool hasUnread;
   final bool isGroup;
+  final bool isEvent;
+  final bool? repliesAllowed;
   final Map<String, dynamic> raw;
 
   const _ChatItem({
@@ -25,6 +31,8 @@ class _ChatItem {
     required this.lastMessageAt,
     required this.hasUnread,
     required this.isGroup,
+    this.isEvent = false,
+    this.repliesAllowed,
     required this.raw,
   });
 
@@ -36,11 +44,15 @@ class _ChatItem {
     lastMessageAt: lastMessageAt,
     hasUnread: hasUnread,
     isGroup: isGroup,
+    isEvent: isEvent,
+    repliesAllowed: repliesAllowed,
     raw: raw,
   );
 }
 
-// ── Normalise profile_img — Flutter saves raw base64, web saves data URL ──
+// ─────────────────────────────────────────────────────────────────────────────
+// Avatar helpers
+// ─────────────────────────────────────────────────────────────────────────────
 String _toImgSrc(String? raw) {
   if (raw == null || raw.trim().isEmpty) return '';
   if (raw.startsWith('data:')) return raw;
@@ -48,27 +60,23 @@ String _toImgSrc(String? raw) {
   return 'data:image/jpeg;base64,$raw';
 }
 
-// ── Decode any avatar string to ImageProvider ──
 ImageProvider? _resolveImage(String av) {
   if (av.isEmpty) return null;
   try {
-    if (av.startsWith('http')) {
-      return NetworkImage(av);
-    } else if (av.startsWith('data:')) {
+    if (av.startsWith('http')) return NetworkImage(av);
+    if (av.startsWith('data:')) {
       final comma = av.indexOf(',');
-      if (comma != -1) {
-        final bytes = base64Decode(av.substring(comma + 1));
-        return MemoryImage(bytes);
-      }
-    } else {
-      // Raw base64 without data: prefix
-      final bytes = base64Decode(av);
-      return MemoryImage(bytes);
+      if (comma != -1) return MemoryImage(base64Decode(av.substring(comma + 1)));
     }
-  } catch (_) {}
-  return null;
+    return MemoryImage(base64Decode(av));
+  } catch (_) {
+    return null;
+  }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ChatsScreen
+// ─────────────────────────────────────────────────────────────────────────────
 class ChatsScreen extends StatefulWidget {
   const ChatsScreen({super.key});
 
@@ -77,47 +85,49 @@ class ChatsScreen extends StatefulWidget {
 }
 
 class _ChatsScreenState extends State<ChatsScreen> {
-  final _searchController = TextEditingController();
+  final _searchCtrl = TextEditingController();
   final _me = FirebaseAuth.instance.currentUser;
+
+  // Filter: 'All' | 'Unread' | 'Groups' | 'Events'
   String _filter = 'All';
   String _searchQuery = '';
 
   List<_ChatItem> _groupItems = [];
   List<_ChatItem> _individualItems = [];
+  List<_ChatItem> _eventItems = [];
   bool _loading = true;
 
   StreamSubscription? _groupSub;
   StreamSubscription? _individualSub;
+  StreamSubscription? _eventSub;
 
-  // ── Real-time profile cache: otherUserId → {name, avatar} ──
+  // Real-time profile cache
   final Map<String, Map<String, String>> _profileCache = {};
   final Map<String, StreamSubscription> _profileSubs = {};
 
   @override
   void initState() {
     super.initState();
-    _searchController.addListener(
-            () => setState(
-                () => _searchQuery = _searchController.text.toLowerCase()));
+    _searchCtrl
+        .addListener(() => setState(() => _searchQuery = _searchCtrl.text.toLowerCase()));
     _subscribeGroupChats();
     _subscribeIndividualChats();
+    _subscribeEventChannels();
   }
 
   @override
   void dispose() {
     _groupSub?.cancel();
     _individualSub?.cancel();
-    for (final sub in _profileSubs.values) {
-      sub.cancel();
-    }
-    _searchController.dispose();
+    _eventSub?.cancel();
+    for (final sub in _profileSubs.values) sub.cancel();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
-  // ── Subscribe to a user's registration doc in real-time ──────────────────
-  void _ensureProfileSubscription(String userId) {
-    if (_profileSubs.containsKey(userId)) return; // already watching
-
+  // ── Profile subscription ───────────────────────────────────────────────
+  void _ensureProfileSub(String userId) {
+    if (_profileSubs.containsKey(userId)) return;
     final sub = FirebaseFirestore.instance
         .collection('registration')
         .doc(userId)
@@ -125,7 +135,6 @@ class _ChatsScreenState extends State<ChatsScreen> {
         .listen((snap) {
       if (!snap.exists) return;
       final d = snap.data()!;
-
       final rawImg = (d['profile_img'] ?? '').toString();
       final nick = (d['nickname'] ?? '').toString().trim();
       final first = (d['firstName'] ?? '').toString().trim();
@@ -137,22 +146,12 @@ class _ChatsScreenState extends State<ChatsScreen> {
           : first.isNotEmpty
           ? first
           : '';
-
-      _profileCache[userId] = {
-        'name': name,
-        'avatar': _toImgSrc(rawImg),
-      };
-
-      // Rebuild individual items with fresh profile data
+      _profileCache[userId] = {'name': name, 'avatar': _toImgSrc(rawImg)};
       if (mounted) setState(() => _applyProfilesToIndividual());
-    }, onError: (e) {
-      debugPrint('[ChatsScreen] profile sub error for $userId: $e');
     });
-
     _profileSubs[userId] = sub;
   }
 
-  // ── Merge cached profiles into _individualItems ───────────────────────────
   void _applyProfilesToIndividual() {
     _individualItems = _individualItems.map((item) {
       final otherId = item.raw['_other_user_id'] as String? ?? '';
@@ -160,12 +159,14 @@ class _ChatsScreenState extends State<ChatsScreen> {
       if (profile == null) return item;
       return item.copyWith(
         name: (profile['name'] ?? '').isNotEmpty ? profile['name']! : item.name,
-        avatarUrl:
-        (profile['avatar'] ?? '').isNotEmpty ? profile['avatar']! : item.avatarUrl,
+        avatarUrl: (profile['avatar'] ?? '').isNotEmpty
+            ? profile['avatar']!
+            : item.avatarUrl,
       );
     }).toList();
   }
 
+  // ── Group chats subscription ──────────────────────────────────────────
   void _subscribeGroupChats() {
     final me = _me;
     if (me == null) return;
@@ -176,8 +177,11 @@ class _ChatsScreenState extends State<ChatsScreen> {
         .snapshots()
         .listen((snap) async {
       final List<_ChatItem> items = [];
-
       for (final doc in snap.docs) {
+        final data = doc.data();
+        // Skip event channels — handled separately
+        if ((data['type'] ?? '').toString() == 'event') continue;
+
         final participantDoc = await FirebaseFirestore.instance
             .collection('group_chats')
             .doc(doc.id)
@@ -185,11 +189,6 @@ class _ChatsScreenState extends State<ChatsScreen> {
             .doc(me.uid)
             .get();
         if (!participantDoc.exists) continue;
-
-        final data = doc.data();
-
-        // Skip event channels
-        if ((data['type'] ?? '').toString() == 'event') continue;
 
         final lastMsgAt = (data['last_message_at'] as Timestamp?)?.toDate();
         final lastReadAt =
@@ -205,28 +204,22 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
         if (orgId.isNotEmpty) {
           try {
-            // Step 1: Try document ID directly
             final orgDoc = await FirebaseFirestore.instance
                 .collection('organizations')
                 .doc(orgId)
                 .get();
-
             if (orgDoc.exists) {
-              final org = orgDoc.data()!;
-              name = (org['org_name'] ?? 'Group Chat').toString();
-              avatarUrl = (org['org_image'] ?? '').toString();
+              name = (orgDoc.data()!['org_name'] ?? 'Group Chat').toString();
+              avatarUrl = (orgDoc.data()!['org_image'] ?? '').toString();
             } else {
-              // Step 2: Fallback — query by org_id field
               final orgSnap = await FirebaseFirestore.instance
                   .collection('organizations')
                   .where('org_id', isEqualTo: orgId)
                   .limit(1)
                   .get();
-
               if (orgSnap.docs.isNotEmpty) {
-                final org = orgSnap.docs.first.data();
-                name = (org['org_name'] ?? 'Group Chat').toString();
-                avatarUrl = (org['org_image'] ?? '').toString();
+                name = (orgSnap.docs.first.data()['org_name'] ?? 'Group Chat').toString();
+                avatarUrl = (orgSnap.docs.first.data()['org_image'] ?? '').toString();
               }
             }
           } catch (_) {}
@@ -240,24 +233,14 @@ class _ChatsScreenState extends State<ChatsScreen> {
           lastMessageAt: lastMsgAt,
           hasUnread: hasUnread,
           isGroup: true,
-          raw: {
-            ...data,
-            '_doc_id': doc.id,
-            'org_name': name,
-            'org_image': avatarUrl,
-          },
+          raw: {...data, '_doc_id': doc.id, 'org_name': name, 'org_image': avatarUrl},
         ));
       }
-
-      if (mounted) {
-        setState(() {
-          _groupItems = items;
-          _loading = false;
-        });
-      }
+      if (mounted) setState(() { _groupItems = items; _loading = false; });
     });
   }
 
+  // ── Individual chats subscription ──────────────────────────────────────
   void _subscribeIndividualChats() {
     final me = _me;
     if (me == null) return;
@@ -269,7 +252,6 @@ class _ChatsScreenState extends State<ChatsScreen> {
         .snapshots()
         .listen((snap) {
       final List<_ChatItem> items = [];
-
       for (final doc in snap.docs) {
         final data = doc.data();
         final participants = List<String>.from(data['participants'] ?? []);
@@ -277,26 +259,19 @@ class _ChatsScreenState extends State<ChatsScreen> {
         participants.firstWhere((id) => id != me.uid, orElse: () => '');
         if (otherId.isEmpty) continue;
 
-        // ── Start real-time profile subscription for this user ──
-        _ensureProfileSubscription(otherId);
+        _ensureProfileSub(otherId);
 
-        final names =
-        Map<String, dynamic>.from(data['participant_names'] ?? {});
-        final avatars =
-        Map<String, dynamic>.from(data['participant_avatars'] ?? {});
+        final names = Map<String, dynamic>.from(data['participant_names'] ?? {});
+        final avatars = Map<String, dynamic>.from(data['participant_avatars'] ?? {});
         final lastMsgAt = (data['last_message_at'] as Timestamp?)?.toDate();
-
         final lastReadMap = data['last_read'] as Map<String, dynamic>?;
-        final myLastRead = lastReadMap != null
-            ? (lastReadMap[me.uid] as Timestamp?)?.toDate()
-            : null;
+        final myLastRead =
+        lastReadMap != null ? (lastReadMap[me.uid] as Timestamp?)?.toDate() : null;
         final hasUnread = (data['last_message_by'] ?? '') != me.uid &&
             (data['last_message'] ?? '').toString().isNotEmpty &&
             lastMsgAt != null &&
             (myLastRead == null || lastMsgAt.isAfter(myLastRead));
 
-        // Use cached real-time profile if available, otherwise fall back to
-        // stale chat doc data
         final cached = _profileCache[otherId];
         final resolvedName = ((cached?['name'] ?? '').isNotEmpty)
             ? cached!['name']!
@@ -321,100 +296,161 @@ class _ChatsScreenState extends State<ChatsScreen> {
           },
         ));
       }
-
-      if (mounted) {
-        setState(() {
-          _individualItems = items;
-          _loading = false;
-        });
-      }
+      if (mounted) setState(() { _individualItems = items; _loading = false; });
     });
   }
 
+  // ── Event channels subscription ────────────────────────────────────────
+  // Mirrors web's dedicated event subscription — no per-doc reads needed.
+  void _subscribeEventChannels() {
+    final me = _me;
+    if (me == null) return;
+
+    _eventSub = FirebaseFirestore.instance
+        .collection('group_chats')
+        .where('type', isEqualTo: 'event')
+        .orderBy('last_message_at', descending: true)
+        .snapshots()
+        .listen((snap) {
+      final List<_ChatItem> items = [];
+      for (final doc in snap.docs) {
+        final data = doc.data();
+
+        // Hide cleared channels (mirrors web messages_cleared check)
+        if (data['messages_cleared'] == true) continue;
+
+        final lastMsgAt = (data['last_message_at'] as Timestamp?)?.toDate();
+        // Zero-cost unread heuristic — same as web
+        final hasUnread = lastMsgAt != null &&
+            (data['last_message_by'] ?? '') != me.uid &&
+            (data['last_message'] ?? '').toString().isNotEmpty;
+
+        final name = (data['name'] ?? '').toString().isNotEmpty
+            ? data['name'].toString()
+            : 'Event Channel';
+        final imgUrl = (data['image'] ?? '').toString();
+
+        items.add(_ChatItem(
+          id: doc.id,
+          name: name,
+          avatarUrl: imgUrl,
+          lastMessage: (data['last_message'] ?? '').toString(),
+          lastMessageAt: lastMsgAt,
+          hasUnread: hasUnread,
+          isGroup: true,
+          isEvent: true,
+          repliesAllowed: data['replies_allowed'] != false,
+          raw: {...data, '_doc_id': doc.id},
+        ));
+      }
+      if (mounted) setState(() { _eventItems = items; _loading = false; });
+    });
+  }
+
+  // ── Merged list (All / Unread / Groups) ───────────────────────────────
   List<_ChatItem> get _mergedItems {
     List<_ChatItem> all = [];
-
-    if (_filter != 'Groups') all.addAll(_individualItems);
-    if (_filter != 'Unread') all.addAll(_groupItems);
+    if (_filter != 'Groups' && _filter != 'Events') all.addAll(_individualItems);
+    if (_filter != 'Unread' && _filter != 'Events') all.addAll(_groupItems);
     if (_filter == 'Unread') all = [..._individualItems, ..._groupItems];
 
     if (_searchQuery.isNotEmpty) {
-      all = all
-          .where((c) => c.name.toLowerCase().contains(_searchQuery))
-          .toList();
+      all = all.where((c) => c.name.toLowerCase().contains(_searchQuery)).toList();
     }
-
-    if (_filter == 'Unread') {
-      all = all.where((c) => c.hasUnread).toList();
-    }
+    if (_filter == 'Unread') all = all.where((c) => c.hasUnread).toList();
 
     all.sort((a, b) {
       final ta = a.lastMessageAt ?? DateTime(2000);
       final tb = b.lastMessageAt ?? DateTime(2000);
       return tb.compareTo(ta);
     });
-
     return all;
   }
 
+  List<_ChatItem> get _filteredEventItems {
+    if (_searchQuery.isEmpty) return _eventItems;
+    return _eventItems
+        .where((e) => e.name.toLowerCase().contains(_searchQuery))
+        .toList();
+  }
+
+  int get _unreadTotal {
+    return [..._individualItems, ..._groupItems, ..._eventItems]
+        .where((c) => c.hasUnread)
+        .length;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Build
+  // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(),
-            const SizedBox(height: 12),
-            _buildSearchBar(),
-            const SizedBox(height: 14),
-            _buildFilterTabs(),
-            const SizedBox(height: 6),
-            Expanded(child: _buildBody()),
-          ],
-        ),
+        child: Column(children: [
+          _buildHeader(),
+          const SizedBox(height: 12),
+          _buildSearchBar(),
+          const SizedBox(height: 12),
+          _buildFilterTabs(),
+          const SizedBox(height: 4),
+          Expanded(child: _buildBody()),
+        ]),
       ),
     );
   }
 
+  // ── Header ────────────────────────────────────────────────────────────
   Widget _buildHeader() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-      child: Row(
-        children: [
-          GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: const Icon(Icons.arrow_back,
-                color: AppColors.primary, size: 26),
+      child: Row(children: [
+        GestureDetector(
+          onTap: () => Navigator.pop(context),
+          child: const Icon(Icons.arrow_back, color: AppColors.primary, size: 26),
+        ),
+        const SizedBox(width: 14),
+        const Text('chats',
+            style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: AppColors.primary,
+                letterSpacing: -0.5)),
+        const Spacer(),
+        // Unread badge
+        if (_unreadTotal > 0)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+            decoration: BoxDecoration(
+                color: const Color(0xFFf44336).withOpacity(0.9),
+                borderRadius: BorderRadius.circular(20)),
+            child: Text('$_unreadTotal',
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800)),
           ),
-          const SizedBox(width: 14),
-          const Text('chats',
-              style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.primary,
-                  letterSpacing: -0.5)),
-        ],
-      ),
+      ]),
     );
   }
 
+  // ── Search ────────────────────────────────────────────────────────────
   Widget _buildSearchBar() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Container(
         height: 46,
         decoration: BoxDecoration(
-          color: const Color(0xFFF0F4F0),
-          borderRadius: BorderRadius.circular(14),
-        ),
+            color: const Color(0xFFF0F4F0),
+            borderRadius: BorderRadius.circular(14)),
         child: TextField(
-          controller: _searchController,
+          controller: _searchCtrl,
           style: const TextStyle(fontSize: 15, color: Color(0xFF1C1C1E)),
           decoration: InputDecoration(
             hintText: 'Search',
-            hintStyle: TextStyle(
-                color: Colors.black.withOpacity(0.35), fontSize: 15),
+            hintStyle:
+            TextStyle(color: Colors.black.withOpacity(0.35), fontSize: 15),
             suffixIcon: Icon(Icons.search,
                 color: Colors.black.withOpacity(0.35), size: 20),
             border: InputBorder.none,
@@ -426,41 +462,82 @@ class _ChatsScreenState extends State<ChatsScreen> {
     );
   }
 
+  // ── Filter Tabs ───────────────────────────────────────────────────────
   Widget _buildFilterTabs() {
+    final tabs = ['All', 'Unread', 'Groups', 'Events'];
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Row(
-        children: ['All', 'Unread', 'Groups'].map((label) {
-          final selected = _filter == label;
-          return Padding(
-            padding: const EdgeInsets.only(right: 10),
-            child: GestureDetector(
-              onTap: () => setState(() => _filter = label),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                padding:
-                const EdgeInsets.symmetric(horizontal: 22, vertical: 9),
-                decoration: BoxDecoration(
-                  color: selected
-                      ? AppColors.primary
-                      : const Color(0xFFF0F4F0),
-                  borderRadius: BorderRadius.circular(20),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: tabs.map((label) {
+            final selected = _filter == label;
+            final isEvent = label == 'Events';
+            final activeColor = isEvent
+                ? const Color(0xFFFF9933)
+                : AppColors.primary;
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: GestureDetector(
+                onTap: () => setState(() => _filter = label),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding:
+                  const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
+                  decoration: BoxDecoration(
+                    color: selected ? activeColor : const Color(0xFFF0F4F0),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (isEvent) ...[
+                        Icon(Icons.campaign_rounded,
+                            size: 13,
+                            color: selected
+                                ? Colors.white
+                                : Colors.black.withOpacity(0.45)),
+                        const SizedBox(width: 4),
+                      ],
+                      Text(label,
+                          style: TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w600,
+                              color: selected
+                                  ? Colors.white
+                                  : Colors.black.withOpacity(0.45))),
+                      if (isEvent && _filteredEventItems.isNotEmpty) ...[
+                        const SizedBox(width: 5),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: selected
+                                ? Colors.white.withOpacity(0.25)
+                                : const Color(0xFFFF9933).withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text('${_filteredEventItems.length}',
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  color: selected
+                                      ? Colors.white
+                                      : const Color(0xFFFF9933))),
+                        ),
+                      ],
+                    ],
+                  ),
                 ),
-                child: Text(label,
-                    style: TextStyle(
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w600,
-                        color: selected
-                            ? Colors.white
-                            : Colors.black.withOpacity(0.45))),
               ),
-            ),
-          );
-        }).toList(),
+            );
+          }).toList(),
+        ),
       ),
     );
   }
 
+  // ── Body ──────────────────────────────────────────────────────────────
   Widget _buildBody() {
     if (_loading) {
       return Center(
@@ -468,185 +545,408 @@ class _ChatsScreenState extends State<ChatsScreen> {
               color: AppColors.primary, strokeWidth: 2.5));
     }
 
-    final items = _mergedItems;
-
-    if (items.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.chat_bubble_outline,
-                size: 52, color: Colors.black.withOpacity(0.12)),
-            const SizedBox(height: 14),
-            Text(
-              _filter == 'Unread'
-                  ? 'No unread messages'
-                  : _filter == 'Groups'
-                  ? 'No group chats yet'
-                  : 'No chats yet',
-              style: TextStyle(
-                  color: Colors.black.withOpacity(0.35),
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500),
-            ),
-          ],
-        ),
+    // Events tab: full list of event channels
+    if (_filter == 'Events') {
+      final evs = _filteredEventItems;
+      if (evs.isEmpty) {
+        return _buildEmpty('No event channels yet');
+      }
+      return ListView.builder(
+        itemCount: evs.length,
+        itemBuilder: (_, i) => Column(children: [
+          _buildEventTile(evs[i]),
+          if (i < evs.length - 1)
+            const Divider(
+                height: 1, indent: 76, endIndent: 20, color: Color(0xFFF0F0F0)),
+        ]),
       );
     }
 
-    return ListView.builder(
-      itemCount: items.length,
-      itemBuilder: (context, index) {
-        final item = items[index];
-        return Column(
-          children: [
-            _buildChatTile(item),
-            if (index < items.length - 1)
-              const Divider(
-                  height: 1,
-                  indent: 76,
-                  endIndent: 20,
-                  color: Color(0xFFF0F0F0)),
-          ],
-        );
-      },
+    // All / Unread / Groups tabs
+    final items = _mergedItems;
+    final evs = _filteredEventItems;
+
+    if (items.isEmpty && (_filter == 'Events' || evs.isEmpty)) {
+      return _buildEmpty(_filter == 'Unread'
+          ? 'No unread messages'
+          : _filter == 'Groups'
+          ? 'No group chats yet'
+          : 'No chats yet');
+    }
+
+    return ListView(children: [
+      // ── Event Channels section (max 2 preview, only in All/Unread) ──
+      if ((_filter == 'All' || _filter == 'Unread') && evs.isNotEmpty) ...[
+        _buildEventSection(evs),
+        if (items.isNotEmpty)
+          Divider(
+              height: 1,
+              indent: 0,
+              endIndent: 0,
+              color: Colors.black.withOpacity(0.04)),
+      ],
+
+      // ── Regular chats ──────────────────────────────────────────────
+      ...List.generate(items.length, (i) {
+        return Column(children: [
+          _buildChatTile(items[i]),
+          if (i < items.length - 1)
+            const Divider(
+                height: 1,
+                indent: 76,
+                endIndent: 20,
+                color: Color(0xFFF0F0F0)),
+        ]);
+      }),
+    ]);
+  }
+
+  // ── Event Channels Section Header ─────────────────────────────────────
+  Widget _buildEventSection(List<_ChatItem> evs) {
+    final hasUnread = evs.any((e) => e.hasUnread);
+    final preview = evs.take(2).toList();
+    final extras = evs.length - 2;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Section header
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+          child: Row(children: [
+            Container(
+              width: 26, height: 26,
+              decoration: BoxDecoration(
+                  color: const Color(0xFFFF9933).withOpacity(0.15),
+                  shape: BoxShape.circle),
+              child: const Icon(Icons.campaign_rounded,
+                  size: 13, color: Color(0xFFFF9933)),
+            ),
+            const SizedBox(width: 8),
+            const Text('EVENT CHANNELS',
+                style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFFFF9933),
+                    letterSpacing: 0.8)),
+            if (hasUnread) ...[
+              const SizedBox(width: 6),
+              Container(
+                width: 7, height: 7,
+                decoration: const BoxDecoration(
+                    color: Color(0xFFf44336), shape: BoxShape.circle),
+              ),
+            ],
+            const Spacer(),
+            if (extras > 0)
+              GestureDetector(
+                onTap: () => setState(() => _filter = 'Events'),
+                child: Text('+$extras more',
+                    style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFFFF9933))),
+              ),
+          ]),
+        ),
+        // Preview tiles (up to 2)
+        ...preview.map(_buildEventTile),
+        // See all button if more than 2
+        if (extras > 0)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 2, 20, 6),
+            child: GestureDetector(
+              onTap: () => setState(() => _filter = 'Events'),
+              child: Container(
+                padding:
+                const EdgeInsets.symmetric(vertical: 9),
+                decoration: BoxDecoration(
+                  border: Border.all(
+                      color: const Color(0xFFFF9933).withOpacity(0.3),
+                      width: 1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.campaign_rounded,
+                        size: 13, color: Color(0xFFFF9933)),
+                    const SizedBox(width: 6),
+                    Text('See all ${evs.length} event channels',
+                        style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFFFF9933))),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        const SizedBox(height: 4),
+      ],
     );
   }
 
+  // ── Event Channel Tile ────────────────────────────────────────────────
+  Widget _buildEventTile(_ChatItem item) {
+    final avatarImage = _resolveImage(item.avatarUrl);
+    return InkWell(
+      onTap: () => _openChat(item),
+      splashColor: const Color(0xFFFF9933).withOpacity(0.05),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
+        child: Row(children: [
+          // Avatar
+          Stack(children: [
+            CircleAvatar(
+              radius: 27,
+              backgroundColor: const Color(0xFFFF9933).withOpacity(0.12),
+              backgroundImage: avatarImage,
+              child: avatarImage == null
+                  ? Text(
+                  item.name.isNotEmpty ? item.name[0].toUpperCase() : '?',
+                  style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFFFF9933)))
+                  : null,
+            ),
+            // Event badge overlay
+            Positioned(
+              right: 0, bottom: 0,
+              child: Container(
+                width: 18, height: 18,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF9933),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 2),
+                ),
+                child: const Icon(Icons.campaign_rounded,
+                    size: 9, color: Colors.white),
+              ),
+            ),
+          ]),
+          const SizedBox(width: 14),
+          // Content
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Expanded(
+                    child: Text(item.name,
+                        style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: item.hasUnread
+                                ? FontWeight.w700
+                                : FontWeight.w600,
+                            color: const Color(0xFF1C1C1E),
+                            letterSpacing: -0.2),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
+                  ),
+                  Text(_formatTime(item.lastMessageAt),
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: item.hasUnread
+                              ? const Color(0xFFFF9933)
+                              : Colors.black.withOpacity(0.35),
+                          fontWeight: item.hasUnread
+                              ? FontWeight.w600
+                              : FontWeight.normal)),
+                ]),
+                const SizedBox(height: 3),
+                Row(children: [
+                  // Announce-only badge
+                  if (item.repliesAllowed == false) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      margin: const EdgeInsets.only(right: 5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFF9933).withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text('ANNOUNCE ONLY',
+                          style: TextStyle(
+                              fontSize: 8,
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFFFF9933),
+                              letterSpacing: 0.4)),
+                    ),
+                  ],
+                  Expanded(
+                    child: Text(
+                      item.lastMessage.isEmpty
+                          ? 'No messages yet'
+                          : item.lastMessage,
+                      style: TextStyle(
+                          fontSize: 13.5,
+                          color: item.hasUnread
+                              ? const Color(0xFF1C1C1E)
+                              : Colors.black.withOpacity(0.38),
+                          fontWeight: item.hasUnread
+                              ? FontWeight.w600
+                              : FontWeight.normal),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (item.hasUnread) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      width: 9, height: 9,
+                      decoration: const BoxDecoration(
+                          color: Color(0xFFFF9933), shape: BoxShape.circle),
+                    ),
+                  ],
+                ]),
+              ],
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  // ── Regular Chat Tile ─────────────────────────────────────────────────
   Widget _buildChatTile(_ChatItem item) {
     final avatarImage = _resolveImage(item.avatarUrl);
-
     return InkWell(
       onTap: () => _openChat(item),
       splashColor: AppColors.primary.withOpacity(0.05),
       highlightColor: AppColors.primary.withOpacity(0.03),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        child: Row(
-          children: [
-            // ── Avatar ──
-            Stack(
-              children: [
-                CircleAvatar(
-                  radius: 28,
-                  backgroundColor: AppColors.primary.withOpacity(0.1),
-                  backgroundImage: avatarImage,
-                  child: avatarImage == null
-                      ? Text(
-                    item.name.isNotEmpty
-                        ? item.name[0].toUpperCase()
-                        : '?',
-                    style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.primary),
-                  )
-                      : null,
+        child: Row(children: [
+          Stack(children: [
+            CircleAvatar(
+              radius: 28,
+              backgroundColor: AppColors.primary.withOpacity(0.1),
+              backgroundImage: avatarImage,
+              child: avatarImage == null
+                  ? Text(
+                  item.name.isNotEmpty ? item.name[0].toUpperCase() : '?',
+                  style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primary))
+                  : null,
+            ),
+            if (item.isGroup)
+              Positioned(
+                right: 0, bottom: 0,
+                child: Container(
+                  width: 18, height: 18,
+                  decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2)),
+                  child: const Icon(Icons.group, size: 10, color: Colors.white),
                 ),
-                if (item.isGroup)
-                  Positioned(
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      width: 18,
-                      height: 18,
-                      decoration: BoxDecoration(
-                          color: AppColors.primary,
-                          shape: BoxShape.circle,
-                          border:
-                          Border.all(color: Colors.white, width: 2)),
-                      child: const Icon(Icons.group,
-                          size: 10, color: Colors.white),
-                    ),
-                  ),
-              ],
-            ),
-
-            const SizedBox(width: 14),
-
-            // ── Name + last message ──
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(item.name,
-                      style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: item.hasUnread
-                              ? FontWeight.w700
-                              : FontWeight.w600,
-                          color: const Color(0xFF1C1C1E),
-                          letterSpacing: -0.2),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
-                  const SizedBox(height: 3),
-                  Text(
-                    item.lastMessage.isEmpty
-                        ? 'No messages yet'
-                        : item.lastMessage,
-                    style: TextStyle(
-                        fontSize: 13.5,
-                        color: item.hasUnread
-                            ? const Color(0xFF1C1C1E)
-                            : Colors.black.withOpacity(0.38),
-                        fontWeight: item.hasUnread
-                            ? FontWeight.w600
-                            : FontWeight.normal),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
               ),
-            ),
-
-            const SizedBox(width: 10),
-
-            // ── Time + unread dot ──
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              mainAxisAlignment: MainAxisAlignment.center,
+          ]),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(_formatTime(item.lastMessageAt),
+                Text(item.name,
                     style: TextStyle(
-                        fontSize: 12,
-                        color: item.hasUnread
-                            ? AppColors.primary
-                            : Colors.black.withOpacity(0.35),
-                        fontWeight: item.hasUnread
-                            ? FontWeight.w600
-                            : FontWeight.normal)),
-                if (item.hasUnread) ...[
-                  const SizedBox(height: 6),
-                  Container(
-                      width: 9,
-                      height: 9,
-                      decoration: const BoxDecoration(
-                          color: AppColors.primary,
-                          shape: BoxShape.circle)),
-                ],
+                        fontSize: 15,
+                        fontWeight:
+                        item.hasUnread ? FontWeight.w700 : FontWeight.w600,
+                        color: const Color(0xFF1C1C1E),
+                        letterSpacing: -0.2),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 3),
+                Text(
+                  item.lastMessage.isEmpty ? 'No messages yet' : item.lastMessage,
+                  style: TextStyle(
+                      fontSize: 13.5,
+                      color: item.hasUnread
+                          ? const Color(0xFF1C1C1E)
+                          : Colors.black.withOpacity(0.38),
+                      fontWeight: item.hasUnread
+                          ? FontWeight.w600
+                          : FontWeight.normal),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ],
             ),
-          ],
-        ),
+          ),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(_formatTime(item.lastMessageAt),
+                  style: TextStyle(
+                      fontSize: 12,
+                      color: item.hasUnread
+                          ? AppColors.primary
+                          : Colors.black.withOpacity(0.35),
+                      fontWeight: item.hasUnread
+                          ? FontWeight.w600
+                          : FontWeight.normal)),
+              if (item.hasUnread) ...[
+                const SizedBox(height: 6),
+                Container(
+                    width: 9, height: 9,
+                    decoration: const BoxDecoration(
+                        color: AppColors.primary, shape: BoxShape.circle)),
+              ],
+            ],
+          ),
+        ]),
       ),
     );
   }
 
+  // ── Navigation ─────────────────────────────────────────────────────────
   void _openChat(_ChatItem item) {
-    if (item.isGroup) {
+    if (item.isEvent) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => EventChatScreen(
+            chatId: item.id,
+            eventData: item.raw,
+          ),
+        ),
+      );
+    } else if (item.isGroup) {
       Navigator.push(context,
           MaterialPageRoute(builder: (_) => GroupChatScreen(group: item.raw)));
     } else {
       Navigator.push(
-          context,
-          MaterialPageRoute(
-              builder: (_) => IndividualChatScreen(
-                otherUserId: item.raw['_other_user_id'] ?? '',
-                otherUserName: item.raw['_other_user_name'] ?? '',
-                otherUserAvatar: item.raw['_other_user_avatar'] ?? '',
-              )));
+        context,
+        MaterialPageRoute(
+          builder: (_) => IndividualChatScreen(
+            otherUserId: item.raw['_other_user_id'] ?? '',
+            otherUserName: item.raw['_other_user_name'] ?? '',
+            otherUserAvatar: item.raw['_other_user_avatar'] ?? '',
+          ),
+        ),
+      );
     }
   }
+
+  // ── Helpers ────────────────────────────────────────────────────────────
+  Widget _buildEmpty(String message) => Center(
+    child: Column(mainAxisSize: MainAxisSize.min, children: [
+      Icon(Icons.chat_bubble_outline,
+          size: 52, color: Colors.black.withOpacity(0.12)),
+      const SizedBox(height: 14),
+      Text(message,
+          style: TextStyle(
+              color: Colors.black.withOpacity(0.35),
+              fontSize: 15,
+              fontWeight: FontWeight.w500)),
+    ]),
+  );
 
   String _formatTime(DateTime? dt) {
     if (dt == null) return '';
@@ -655,14 +955,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
         .difference(DateTime(dt.year, dt.month, dt.day))
         .inDays;
     if (diff == 0) {
-      final h = dt.hour > 12
-          ? dt.hour - 12
-          : dt.hour == 0
-          ? 12
-          : dt.hour;
+      final h = dt.hour > 12 ? dt.hour - 12 : dt.hour == 0 ? 12 : dt.hour;
       final m = dt.minute.toString().padLeft(2, '0');
-      final p = dt.hour >= 12 ? 'pm' : 'am';
-      return '$h:$m $p';
+      return '$h:$m ${dt.hour >= 12 ? 'pm' : 'am'}';
     } else if (diff == 1) {
       return 'Yesterday';
     } else if (diff < 7) {
