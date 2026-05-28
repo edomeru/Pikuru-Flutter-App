@@ -10,6 +10,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:pikuru/providers/app_language_provider.dart'; // ← global lang
+import 'package:pikuru/screens/add_event_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // i18n — mirrors web app T object exactly
@@ -128,8 +129,28 @@ Future<String> _translateText(String text, String targetLang) async {
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen
 // ─────────────────────────────────────────────────────────────────────────────
+// ── AFTER ───────────────────────────────────────────────────────────────────
 class AddEventScreen extends ConsumerStatefulWidget {
-  const AddEventScreen({super.key});
+  /// All fields are optional — existing call sites (e.g. EventsScreen) can
+  /// still use `const AddEventScreen()` with no arguments.
+  const AddEventScreen({
+    super.key,
+    this.initialOrgName,
+    this.initialVenueName,
+    this.initialCity,
+    this.initialPrefecture,
+    this.initialCountry,
+    this.initialContactEmail,
+    this.initialLink,
+  });
+
+  final String? initialOrgName;
+  final String? initialVenueName;
+  final String? initialCity;
+  final String? initialPrefecture;
+  final String? initialCountry;
+  final String? initialContactEmail;
+  final String? initialLink;
 
   @override
   ConsumerState<AddEventScreen> createState() => _AddEventScreenState();
@@ -195,19 +216,40 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
   @override
   void initState() {
     super.initState();
-    _pageController        = PageController();
-    _titleController       = TextEditingController();
-    _linkController        = TextEditingController();
-    _feeController         = TextEditingController();
-    _maxController         = TextEditingController();
-    _contactController     = TextEditingController();
-    _descController        = TextEditingController();
-    _startTimeController   = TextEditingController();
-    _venueNameController   = TextEditingController();
-    _venueAddressController= TextEditingController();
-    _venueMapLinkController= TextEditingController();
-    _orgNameController     = TextEditingController();
-    _mapSearchController   = TextEditingController();
+    _pageController         = PageController();
+    _titleController        = TextEditingController();
+    _linkController         = TextEditingController();
+    _feeController          = TextEditingController();
+    _maxController          = TextEditingController();
+    _contactController      = TextEditingController();
+    _descController         = TextEditingController();
+    _startTimeController    = TextEditingController();
+    _venueNameController    = TextEditingController();
+    _venueAddressController = TextEditingController();
+    _venueMapLinkController = TextEditingController();
+    _orgNameController      = TextEditingController();
+    _mapSearchController    = TextEditingController();
+
+    // ── Pre-fill from group data when launched from OrganizerGroupSettingsScreen
+    // mirrors web app query-param pre-fill: orgName, venueName, city,
+    // prefecture, country, contactEmail, link
+    if (widget.initialOrgName?.isNotEmpty == true)
+      _orgNameController.text = widget.initialOrgName!;
+    if (widget.initialVenueName?.isNotEmpty == true)
+      _venueNameController.text = widget.initialVenueName!;
+    if (widget.initialCity?.isNotEmpty == true) {
+      // Pre-populate the address field with city so the user sees something
+      _venueAddressController.text = [
+        widget.initialVenueName ?? '',
+        widget.initialCity ?? '',
+        widget.initialPrefecture ?? '',
+        widget.initialCountry ?? '',
+      ].where((s) => s.isNotEmpty).join(', ');
+    }
+    if (widget.initialContactEmail?.isNotEmpty == true)
+      _contactController.text = widget.initialContactEmail!;
+    if (widget.initialLink?.isNotEmpty == true)
+      _linkController.text = widget.initialLink!;
   }
 
   @override

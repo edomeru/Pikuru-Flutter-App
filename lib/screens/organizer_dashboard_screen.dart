@@ -7,6 +7,7 @@ import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:pikuru/screens/organizer_event_detail_screen.dart';
 import 'package:pikuru/screens/event_chat_screen.dart';
+import 'package:pikuru/screens/organizer_group_settings_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Design tokens — light mode with green accent
@@ -1279,6 +1280,8 @@ class _GroupCard extends StatelessWidget {
                 offset: const Offset(0, 4))
           ]),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+
+        // ── Cover image with status badges ────────────────────────────────
         ClipRRect(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           child: Stack(children: [
@@ -1289,10 +1292,12 @@ class _GroupCard extends StatelessWidget {
                 fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => _grpPlaceholder())
                 : _grpPlaceholder(),
+            // Approval status badge (top-left)
             Positioned(
                 top: 12,
                 left: 12,
                 child: _Badge(label: sl, icon: si, color: sc, bg: sb)),
+            // Active + Public badges (top-right, approved only)
             if (isApproved)
               Positioned(
                 top: 12,
@@ -1323,6 +1328,8 @@ class _GroupCard extends StatelessWidget {
               ),
           ]),
         ),
+
+        // ── Body ─────────────────────────────────────────────────────────
         Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -1343,8 +1350,28 @@ class _GroupCard extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis),
                 ],
+
+                const SizedBox(height: 14),
+
+                // ── Edit Settings button (always visible, mirrors web) ───
+                _ActionButton(
+                  icon: Icons.edit_rounded,
+                  label: lang == 'ja' ? 'グループ設定を編集' : 'Edit Settings',
+                  color: AppColors.primary,
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => OrganizerGroupSettingsScreen(
+                        groupId: groupId,
+                        initialData: data,
+                      ),
+                    ),
+                  ),
+                ),
+
+                // ── Deactivate / Make Private toggles (approved only) ────
                 if (isApproved) ...[
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 8),
                   Row(children: [
                     Expanded(
                         child: _OutlineBtn(
