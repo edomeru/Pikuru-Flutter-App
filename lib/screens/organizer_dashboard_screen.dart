@@ -81,6 +81,14 @@ const _L = {
     'approve':      'Approve',
     'reject':       'Reject',
     'seeMore':      'See more',
+    'searchEvents': 'Search events…',
+    'searchGroups': 'Search groups…',
+    'searchRegistered': 'Search registered events…',
+    'searchAudit':  'Search audit log…',
+    'noResults':    'No events match your search.',
+    'noGroupResults': 'No groups match your search.',
+    'noRegisteredResults': 'No registered events match your search.',
+    'noAuditResults': 'No audit entries match your search.',
   },
   kLangJa: {
     'title':        'オーガナイザーダッシュボード',
@@ -122,6 +130,14 @@ const _L = {
     'approve':      '承認',
     'reject':       '却下',
     'seeMore':      'すべて見る',
+    'searchEvents': 'イベントを検索…',
+    'searchGroups': 'グループを検索…',
+    'searchRegistered': '登録済みイベントを検索…',
+    'searchAudit':  '監査ログを検索…',
+    'noResults':    '検索結果がありません。',
+    'noGroupResults': '検索結果がありません。',
+    'noRegisteredResults': '検索結果がありません。',
+    'noAuditResults': '検索結果がありません。',
   },
 };
 
@@ -257,7 +273,7 @@ class _OrganizerDashboardScreenState
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// TAB 1 — MY EVENTS
+// TAB 1 — MY EVENTS  (+ search bar)
 // ═════════════════════════════════════════════════════════════════════════════
 class _MyEventsTab extends StatefulWidget {
   final String uid, lang;
@@ -269,6 +285,24 @@ class _MyEventsTab extends StatefulWidget {
 
 class _MyEventsTabState extends State<_MyEventsTab> {
   final Map<String, Map<String, int>> _metrics = {};
+
+  // ── Search ────────────────────────────────────────────────────────────────
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _query = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _searchCtrl.addListener(() {
+      setState(() => _query = _searchCtrl.text.trim().toLowerCase());
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
 
   Future<void> _loadMetrics(List<QueryDocumentSnapshot> docs) async {
     for (final doc in docs) {
@@ -311,6 +345,14 @@ class _MyEventsTabState extends State<_MyEventsTab> {
     }
   }
 
+  /// Returns true if the event matches the current search query.
+  bool _matchesQuery(Map<String, dynamic> data) {
+    if (_query.isEmpty) return true;
+    final titleEn = (data['event_title']    ?? '').toString().toLowerCase();
+    final titleJp = (data['event_title_jp'] ?? '').toString().toLowerCase();
+    return titleEn.contains(_query) || titleJp.contains(_query);
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.uid.isEmpty) return const SizedBox.shrink();
@@ -332,23 +374,86 @@ class _MyEventsTabState extends State<_MyEventsTab> {
           return tB.compareTo(tA);
         });
         Future.microtask(() => _loadMetrics(docs));
-        if (docs.isEmpty) {
-          return _EmptyState(
-              icon: Icons.event_note_rounded,
-              message: _t(widget.lang, 'noEvents'));
-        }
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: docs.length,
-          itemBuilder: (ctx, i) {
-            final data = docs[i].data() as Map<String, dynamic>;
-            return _EventCard(
-              eventId: docs[i].id,
-              data:    data,
-              lang:    widget.lang,
-              metrics: _metrics[docs[i].id],
-            );
-          },
+
+        // ── Apply search filter ──────────────────────────────────────────
+        final filtered = docs.where((d) =>
+            _matchesQuery(d.data() as Map<String, dynamic>)).toList();
+
+        return Column(
+          children: [
+            // ── Search bar ───────────────────────────────────────────────
+            Container(
+              color: _D.white,
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+              child: Container(
+                height: 42,
+                decoration: BoxDecoration(
+                  color: _D.rowBg,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _D.border),
+                ),
+                child: TextField(
+                  controller: _searchCtrl,
+                  style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: _D.textPri),
+                  decoration: InputDecoration(
+                    hintText: _t(widget.lang, 'searchEvents'),
+                    hintStyle: const TextStyle(
+                        fontSize: 14,
+                        color: _D.textDim,
+                        fontWeight: FontWeight.w400),
+                    prefixIcon: const Icon(
+                        Icons.search_rounded,
+                        size: 20,
+                        color: _D.textMuted),
+                    suffixIcon: _query.isNotEmpty
+                        ? GestureDetector(
+                      onTap: () => _searchCtrl.clear(),
+                      child: const Icon(
+                          Icons.close_rounded,
+                          size: 18,
+                          color: _D.textMuted),
+                    )
+                        : null,
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(
+                        vertical: 11),
+                  ),
+                ),
+              ),
+            ),
+
+            // ── List ─────────────────────────────────────────────────────
+            Expanded(
+              child: () {
+                if (docs.isEmpty) {
+                  return _EmptyState(
+                      icon: Icons.event_note_rounded,
+                      message: _t(widget.lang, 'noEvents'));
+                }
+                if (filtered.isEmpty) {
+                  return _EmptyState(
+                      icon: Icons.search_off_rounded,
+                      message: _t(widget.lang, 'noResults'));
+                }
+                return ListView.builder(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: filtered.length,
+                  itemBuilder: (ctx, i) {
+                    final data = filtered[i].data() as Map<String, dynamic>;
+                    return _EventCard(
+                      eventId: filtered[i].id,
+                      data:    data,
+                      lang:    widget.lang,
+                      metrics: _metrics[filtered[i].id],
+                    );
+                  },
+                );
+              }(),
+            ),
+          ],
         );
       },
     );
@@ -1191,7 +1296,7 @@ void _showEditDialog(BuildContext context, String eventId,
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// TAB 2 — MY GROUPS  (cursor-based pagination, 10 per page)
+// TAB 2 — MY GROUPS  (cursor-based pagination, 10 per page + search)
 // ═════════════════════════════════════════════════════════════════════════════
 class _MyGroupsTab extends StatefulWidget {
   final String uid, lang;
@@ -1211,10 +1316,36 @@ class _MyGroupsTabState extends State<_MyGroupsTab> {
   bool _hasMore  = true;
   bool _initDone = false;
 
+  // ── Search ────────────────────────────────────────────────────────────────
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _query = '';
+
   @override
   void initState() {
     super.initState();
     _fetchNextPage();
+    _searchCtrl.addListener(() {
+      setState(() => _query = _searchCtrl.text.trim().toLowerCase());
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Returns true if the group matches the current search query.
+  bool _matchesQuery(Map<String, dynamic> data) {
+    if (_query.isEmpty) return true;
+    final nameEn = (data['org_name']    ?? '').toString().toLowerCase();
+    final nameJp = (data['org_name_jp'] ?? '').toString().toLowerCase();
+    final descEn = (data['org_description']    ?? '').toString().toLowerCase();
+    final descJp = (data['org_description_jp'] ?? '').toString().toLowerCase();
+    return nameEn.contains(_query) ||
+        nameJp.contains(_query) ||
+        descEn.contains(_query) ||
+        descJp.contains(_query);
   }
 
   Future<void> _fetchNextPage() async {
@@ -1260,8 +1391,6 @@ class _MyGroupsTabState extends State<_MyGroupsTab> {
     }
   }
 
-  /// Called by _GroupCard when a toggle write succeeds — patches the
-  /// local cache so the card reflects the new value without re-fetching.
   void _patchGroup(String docId, Map<String, dynamic> patch) {
     final i = _groups.indexWhere((g) => g['_docId'] == docId);
     if (i != -1) setState(() => _groups[i] = {..._groups[i], ...patch});
@@ -1273,70 +1402,140 @@ class _MyGroupsTabState extends State<_MyGroupsTab> {
       return const Center(child: CircularProgressIndicator());
     }
 
+    // ── Apply search filter ────────────────────────────────────────────────
+    final filtered = _groups.where(_matchesQuery).toList();
+
     if (_initDone && _groups.isEmpty) {
-      return _EmptyState(
-        icon:    Icons.group_rounded,
-        message: _t(widget.lang, 'noGroups'),
+      return Column(
+        children: [
+          _buildSearchBar(),
+          Expanded(
+            child: _EmptyState(
+              icon:    Icons.group_rounded,
+              message: _t(widget.lang, 'noGroups'),
+            ),
+          ),
+        ],
       );
     }
 
-    final itemCount = _groups.length + (_hasMore || _loading ? 1 : 0);
+    final showLoadMore = _hasMore || _loading;
+    final itemCount = filtered.length + (showLoadMore && _query.isEmpty ? 1 : 0);
 
-    return ListView.builder(
-      padding:   const EdgeInsets.all(16),
-      itemCount: itemCount,
-      itemBuilder: (_, i) {
-        // ── Footer ──────────────────────────────────────────────────────
-        if (i == _groups.length) {
-          if (_loading) {
-            return const Padding(
-              padding: EdgeInsets.symmetric(vertical: 20),
-              child: Center(child: CircularProgressIndicator()),
-            );
-          }
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: GestureDetector(
-              onTap: _fetchNextPage,
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                decoration: BoxDecoration(
-                  color:        _D.accentLt,
-                  borderRadius: BorderRadius.circular(14),
-                  border:       Border.all(color: _D.accentBdr),
-                ),
-                alignment: Alignment.center,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.expand_more_rounded, size: 18, color: _D.accent),
-                    const SizedBox(width: 6),
-                    Text(
-                      _t(widget.lang, 'loadMore'),
-                      style: TextStyle(
-                        fontSize:   13,
-                        fontWeight: FontWeight.w700,
-                        color:      _D.accent,
+    return Column(
+      children: [
+        // ── Search bar ─────────────────────────────────────────────────────
+        _buildSearchBar(),
+
+        // ── List ───────────────────────────────────────────────────────────
+        Expanded(
+          child: () {
+            if (filtered.isEmpty) {
+              return _EmptyState(
+                icon:    Icons.search_off_rounded,
+                message: _t(widget.lang, 'noGroupResults'),
+              );
+            }
+            return ListView.builder(
+              padding:   const EdgeInsets.all(16),
+              itemCount: itemCount,
+              itemBuilder: (_, i) {
+                // ── Footer ────────────────────────────────────────────────
+                if (i == filtered.length) {
+                  if (_loading) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: GestureDetector(
+                      onTap: _fetchNextPage,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        decoration: BoxDecoration(
+                          color:        _D.accentLt,
+                          borderRadius: BorderRadius.circular(14),
+                          border:       Border.all(color: _D.accentBdr),
+                        ),
+                        alignment: Alignment.center,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.expand_more_rounded, size: 18, color: _D.accent),
+                            const SizedBox(width: 6),
+                            Text(
+                              _t(widget.lang, 'loadMore'),
+                              style: TextStyle(
+                                fontSize:   13,
+                                fontWeight: FontWeight.w700,
+                                color:      _D.accent,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        }
+                  );
+                }
 
-        // ── Group card ──────────────────────────────────────────────────
-        final g = _groups[i];
-        return _GroupCard(
-          groupId:    g['_docId'] as String,
-          data:       g,
-          lang:       widget.lang,
-          onPatched:  (patch) => _patchGroup(g['_docId'] as String, patch),
-        );
-      },
+                final g = filtered[i];
+                return _GroupCard(
+                  groupId:    g['_docId'] as String,
+                  data:       g,
+                  lang:       widget.lang,
+                  onPatched:  (patch) => _patchGroup(g['_docId'] as String, patch),
+                );
+              },
+            );
+          }(),
+        ),
+      ],
     );
   }
+
+  Widget _buildSearchBar() => Container(
+    color: _D.white,
+    padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+    child: Container(
+      height: 42,
+      decoration: BoxDecoration(
+        color: _D.rowBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _D.border),
+      ),
+      child: TextField(
+        controller: _searchCtrl,
+        style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: _D.textPri),
+        decoration: InputDecoration(
+          hintText: _t(widget.lang, 'searchGroups'),
+          hintStyle: const TextStyle(
+              fontSize: 14,
+              color: _D.textDim,
+              fontWeight: FontWeight.w400),
+          prefixIcon: const Icon(
+              Icons.search_rounded,
+              size: 20,
+              color: _D.textMuted),
+          suffixIcon: _query.isNotEmpty
+              ? GestureDetector(
+            onTap: () => _searchCtrl.clear(),
+            child: const Icon(
+                Icons.close_rounded,
+                size: 18,
+                color: _D.textMuted),
+          )
+              : null,
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 11),
+        ),
+      ),
+    ),
+  );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1345,8 +1544,6 @@ class _MyGroupsTabState extends State<_MyGroupsTab> {
 class _GroupCard extends StatelessWidget {
   final String groupId, lang;
   final Map<String, dynamic> data;
-  /// Called with the changed fields after a successful Firestore write
-  /// so the parent can update its local list without a re-fetch.
   final void Function(Map<String, dynamic> patch) onPatched;
 
   const _GroupCard({
@@ -1538,8 +1735,9 @@ class _GroupCard extends StatelessWidget {
         size: 48, color: Colors.grey.shade300),
   );
 }
+
 // ═════════════════════════════════════════════════════════════════════════════
-// TAB 3 — REGISTERED EVENTS  (cursor-based pagination, 10 per page)
+// TAB 3 — REGISTERED EVENTS  (cursor-based pagination, 10 per page + search)
 // ═════════════════════════════════════════════════════════════════════════════
 class _RegisteredTab extends StatefulWidget {
   final String uid, lang;
@@ -1552,31 +1750,45 @@ class _RegisteredTab extends StatefulWidget {
 class _RegisteredTabState extends State<_RegisteredTab> {
   static const int _pageSize = 10;
 
-  // Accumulated pages of resolved {event + reg status} maps
   final List<Map<String, dynamic>> _events = [];
-
-  // Cursor: the last registration doc from the previous page
   DocumentSnapshot? _lastRegDoc;
 
-  bool _loading    = false; // true only while a fetch is in flight
-  bool _hasMore    = true;  // false once Firestore returns < _pageSize docs
-  bool _initDone   = false; // prevents double-fetch on first build
+  bool _loading    = false;
+  bool _hasMore    = true;
+  bool _initDone   = false;
+
+  // ── Search ────────────────────────────────────────────────────────────────
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _query = '';
 
   @override
   void initState() {
     super.initState();
     _fetchNextPage();
+    _searchCtrl.addListener(() {
+      setState(() => _query = _searchCtrl.text.trim().toLowerCase());
+    });
   }
 
-  /// Fetches the next page of registrations then resolves their event docs.
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Returns true if the registered event matches the current search query.
+  bool _matchesQuery(Map<String, dynamic> ev) {
+    if (_query.isEmpty) return true;
+    final titleEn = (ev['event_title']    ?? '').toString().toLowerCase();
+    final titleJp = (ev['event_title_jp'] ?? '').toString().toLowerCase();
+    return titleEn.contains(_query) || titleJp.contains(_query);
+  }
+
   Future<void> _fetchNextPage() async {
     if (_loading || !_hasMore || widget.uid.isEmpty) return;
     setState(() => _loading = true);
 
     try {
-      // ── 1. Build the registrations query ──────────────────────────────
-      // NOTE: No orderBy here — avoids requiring a composite Firestore index.
-      // We sort client-side after each page fetch instead.
       Query<Map<String, dynamic>> query = FirebaseFirestore.instance
           .collection('event_registrations')
           .where('user_id', isEqualTo: widget.uid)
@@ -1588,7 +1800,6 @@ class _RegisteredTabState extends State<_RegisteredTab> {
 
       final regSnap = await query.get();
 
-      // ── 2. Update cursor & hasMore flag ───────────────────────────────
       if (regSnap.docs.length < _pageSize) {
         _hasMore = false;
       }
@@ -1596,7 +1807,6 @@ class _RegisteredTabState extends State<_RegisteredTab> {
         _lastRegDoc = regSnap.docs.last;
       }
 
-      // ── 3. Batch-resolve event documents ──────────────────────────────
       final resolved = await Future.wait(
         regSnap.docs.map((regDoc) async {
           final rd   = regDoc.data();
@@ -1613,7 +1823,7 @@ class _RegisteredTabState extends State<_RegisteredTab> {
               '_id':           evSnap.id,
               '_regStatus':    (rd['status'] ?? 'pending').toString(),
               '_regDocId':     regDoc.id,
-              '_registeredAt': rd['registered_at'], // keep for sorting
+              '_registeredAt': rd['registered_at'],
             };
           } catch (_) {
             return null;
@@ -1621,11 +1831,9 @@ class _RegisteredTabState extends State<_RegisteredTab> {
         }),
       );
 
-      // ── 4. Append + sort the full accumulated list by date ────────────
       if (mounted) {
         setState(() {
           _events.addAll(resolved.whereType<Map<String, dynamic>>());
-          // Sort newest-first across all accumulated pages
           _events.sort((a, b) {
             final ta = a['_registeredAt'];
             final tb = b['_registeredAt'];
@@ -1638,200 +1846,267 @@ class _RegisteredTabState extends State<_RegisteredTab> {
         });
       }
     } catch (e) {
-      debugPrint('_RegisteredTab fetch error: $e'); // add this temporarily
+      debugPrint('_RegisteredTab fetch error: $e');
       if (mounted) setState(() { _loading = false; _initDone = true; });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // First load — show a centered spinner
     if (!_initDone && _loading) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    // Empty state (first page came back with nothing)
+    // ── Apply search filter ────────────────────────────────────────────────
+    final filtered = _events.where(_matchesQuery).toList();
+
     if (_initDone && _events.isEmpty) {
-      return _EmptyState(
-        icon:    Icons.event_available_rounded,
-        message: _t(widget.lang, 'noRegistered'),
+      return Column(
+        children: [
+          _buildSearchBar(),
+          Expanded(
+            child: _EmptyState(
+              icon:    Icons.event_available_rounded,
+              message: _t(widget.lang, 'noRegistered'),
+            ),
+          ),
+        ],
       );
     }
 
-    // Item count:  all event cards  +  optional footer row
-    final itemCount = _events.length + (_hasMore || _loading ? 1 : 0);
+    final showLoadMore = _hasMore || _loading;
+    final itemCount = filtered.length + (showLoadMore && _query.isEmpty ? 1 : 0);
 
-    return ListView.builder(
-      padding:   const EdgeInsets.all(16),
-      itemCount: itemCount,
-      itemBuilder: (_, i) {
-        // ── Footer: load-more button or in-page spinner ──────────────────
-        if (i == _events.length) {
-          if (_loading) {
-            return const Padding(
-              padding: EdgeInsets.symmetric(vertical: 20),
-              child: Center(child: CircularProgressIndicator()),
-            );
-          }
-          // "Load more" button
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: GestureDetector(
-              onTap: _fetchNextPage,
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                decoration: BoxDecoration(
-                  color:        _D.accentLt,
-                  borderRadius: BorderRadius.circular(14),
-                  border:       Border.all(color: _D.accentBdr),
-                ),
-                alignment: Alignment.center,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.expand_more_rounded,
-                        size: 18, color: _D.accent),
-                    const SizedBox(width: 6),
-                    Text(
-                      _t(widget.lang, 'loadMore'),
-                      style: TextStyle(
-                        fontSize:   13,
-                        fontWeight: FontWeight.w700,
-                        color:      _D.accent,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        }
+    return Column(
+      children: [
+        // ── Search bar ─────────────────────────────────────────────────────
+        _buildSearchBar(),
 
-        // ── Event card (unchanged visual) ────────────────────────────────
-        final ev     = _events[i];
-        final status = (ev['_regStatus'] ?? 'pending').toString();
-        final title  = widget.lang == 'ja'
-            ? (ev['event_title_jp'] ?? ev['event_title'] ?? 'Untitled').toString()
-            : (ev['event_title'] ?? 'Untitled').toString();
-        final imgUrl = (ev['event_pic'] ?? '').toString();
-        final date   = _fmtDate(ev['event_date'], compact: true);
-
-        Color sc; String sl; IconData si;
-        if (status == 'approved') {
-          sc = _D.apprvClr; sl = _t(widget.lang, 'regApproved'); si = Icons.check_circle_rounded;
-        } else if (status == 'rejected') {
-          sc = _D.rejClr;   sl = _t(widget.lang, 'regRejected'); si = Icons.cancel_rounded;
-        } else {
-          sc = _D.pendClr;  sl = _t(widget.lang, 'regPending');  si = Icons.schedule_rounded;
-        }
-
-        return Container(
-          margin: const EdgeInsets.only(bottom: 14),
-          decoration: BoxDecoration(
-            color:        _D.white,
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: [
-              BoxShadow(
-                color:      Colors.black.withOpacity(0.05),
-                blurRadius: 14,
-                offset:     const Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(children: [
-                ClipRRect(
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(18),
-                  ),
-                  child: imgUrl.isNotEmpty
-                      ? Image.network(imgUrl,
-                      width: 100, height: 90, fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _thumbPh())
-                      : _thumbPh(),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(title,
-                            style: const TextStyle(
-                                fontSize: 14, fontWeight: FontWeight.w700),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis),
-                        const SizedBox(height: 5),
-                        Row(children: [
-                          Icon(Icons.calendar_today_rounded,
-                              size: 12, color: Colors.grey.shade400),
-                          const SizedBox(width: 4),
-                          Text(date,
-                              style: TextStyle(
-                                  fontSize: 12, color: Colors.grey.shade500)),
-                        ]),
-                        const SizedBox(height: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color:        sc.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(mainAxisSize: MainAxisSize.min, children: [
-                            Icon(si, size: 11, color: sc),
-                            const SizedBox(width: 4),
-                            Text(sl,
-                                style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700,
-                                    color: sc)),
-                          ]),
+        // ── List ───────────────────────────────────────────────────────────
+        Expanded(
+          child: () {
+            if (filtered.isEmpty) {
+              return _EmptyState(
+                icon:    Icons.search_off_rounded,
+                message: _t(widget.lang, 'noRegisteredResults'),
+              );
+            }
+            return ListView.builder(
+              padding:   const EdgeInsets.all(16),
+              itemCount: itemCount,
+              itemBuilder: (_, i) {
+                // ── Footer ────────────────────────────────────────────────
+                if (i == filtered.length) {
+                  if (_loading) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: GestureDetector(
+                      onTap: _fetchNextPage,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        decoration: BoxDecoration(
+                          color:        _D.accentLt,
+                          borderRadius: BorderRadius.circular(14),
+                          border:       Border.all(color: _D.accentBdr),
                         ),
-                      ],
+                        alignment: Alignment.center,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.expand_more_rounded,
+                                size: 18, color: _D.accent),
+                            const SizedBox(width: 6),
+                            Text(
+                              _t(widget.lang, 'loadMore'),
+                              style: TextStyle(
+                                fontSize:   13,
+                                fontWeight: FontWeight.w700,
+                                color:      _D.accent,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-              ]),
+                  );
+                }
 
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => EventDetailScreen(event: ev),
+                // ── Event card ─────────────────────────────────────────────
+                final ev     = filtered[i];
+                final status = (ev['_regStatus'] ?? 'pending').toString();
+                final title  = widget.lang == 'ja'
+                    ? (ev['event_title_jp'] ?? ev['event_title'] ?? 'Untitled').toString()
+                    : (ev['event_title'] ?? 'Untitled').toString();
+                final imgUrl = (ev['event_pic'] ?? '').toString();
+                final date   = _fmtDate(ev['event_date'], compact: true);
+
+                Color sc; String sl; IconData si;
+                if (status == 'approved') {
+                  sc = _D.apprvClr; sl = _t(widget.lang, 'regApproved'); si = Icons.check_circle_rounded;
+                } else if (status == 'rejected') {
+                  sc = _D.rejClr;   sl = _t(widget.lang, 'regRejected'); si = Icons.cancel_rounded;
+                } else {
+                  sc = _D.pendClr;  sl = _t(widget.lang, 'regPending');  si = Icons.schedule_rounded;
+                }
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(
+                    color:        _D.white,
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: [
+                      BoxShadow(
+                        color:      Colors.black.withOpacity(0.05),
+                        blurRadius: 14,
+                        offset:     const Offset(0, 3),
                       ),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _D.accent,
-                      side:            const BorderSide(color: _D.accentBdr),
-                      backgroundColor: _D.accentLt,
-                      padding:         const EdgeInsets.symmetric(vertical: 10),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    icon:  const Icon(Icons.visibility_outlined, size: 16),
-                    label: Text(
-                      _t(widget.lang, 'viewDetails'),
-                      style: const TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w700),
-                    ),
+                    ],
                   ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(children: [
+                        ClipRRect(
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(18),
+                          ),
+                          child: imgUrl.isNotEmpty
+                              ? Image.network(imgUrl,
+                              width: 100, height: 90, fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => _thumbPh())
+                              : _thumbPh(),
+                        ),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(title,
+                                    style: const TextStyle(
+                                        fontSize: 14, fontWeight: FontWeight.w700),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis),
+                                const SizedBox(height: 5),
+                                Row(children: [
+                                  Icon(Icons.calendar_today_rounded,
+                                      size: 12, color: Colors.grey.shade400),
+                                  const SizedBox(width: 4),
+                                  Text(date,
+                                      style: TextStyle(
+                                          fontSize: 12, color: Colors.grey.shade500)),
+                                ]),
+                                const SizedBox(height: 6),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color:        sc.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                    Icon(si, size: 11, color: sc),
+                                    const SizedBox(width: 4),
+                                    Text(sl,
+                                        style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w700,
+                                            color: sc)),
+                                  ]),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                      ]),
+
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () => Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => EventDetailScreen(event: ev),
+                              ),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: _D.accent,
+                              side:            const BorderSide(color: _D.accentBdr),
+                              backgroundColor: _D.accentLt,
+                              padding:         const EdgeInsets.symmetric(vertical: 10),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            icon:  const Icon(Icons.visibility_outlined, size: 16),
+                            label: Text(
+                              _t(widget.lang, 'viewDetails'),
+                              style: const TextStyle(
+                                  fontSize: 13, fontWeight: FontWeight.w700),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          }(),
+        ),
+      ],
     );
   }
+
+  Widget _buildSearchBar() => Container(
+    color: _D.white,
+    padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+    child: Container(
+      height: 42,
+      decoration: BoxDecoration(
+        color: _D.rowBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _D.border),
+      ),
+      child: TextField(
+        controller: _searchCtrl,
+        style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: _D.textPri),
+        decoration: InputDecoration(
+          hintText: _t(widget.lang, 'searchRegistered'),
+          hintStyle: const TextStyle(
+              fontSize: 14,
+              color: _D.textDim,
+              fontWeight: FontWeight.w400),
+          prefixIcon: const Icon(
+              Icons.search_rounded,
+              size: 20,
+              color: _D.textMuted),
+          suffixIcon: _query.isNotEmpty
+              ? GestureDetector(
+            onTap: () => _searchCtrl.clear(),
+            child: const Icon(
+                Icons.close_rounded,
+                size: 18,
+                color: _D.textMuted),
+          )
+              : null,
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 11),
+        ),
+      ),
+    ),
+  );
 
   Widget _thumbPh() => Container(
     width:  100,
@@ -1841,8 +2116,9 @@ class _RegisteredTabState extends State<_RegisteredTab> {
         size: 32, color: Colors.grey.shade300),
   );
 }
+
 // ═════════════════════════════════════════════════════════════════════════════
-// TAB 4 — AUDIT LOG  (cursor-based pagination, 20 per page)
+// TAB 4 — AUDIT LOG  (cursor-based pagination, 20 per page + search)
 // ═════════════════════════════════════════════════════════════════════════════
 class _AuditLogTab extends StatefulWidget {
   final String uid, lang;
@@ -1862,10 +2138,34 @@ class _AuditLogTabState extends State<_AuditLogTab> {
   bool _hasMore  = true;
   bool _initDone = false;
 
+  // ── Search ────────────────────────────────────────────────────────────────
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _query = '';
+
   @override
   void initState() {
     super.initState();
     _fetchNextPage();
+    _searchCtrl.addListener(() {
+      setState(() => _query = _searchCtrl.text.trim().toLowerCase());
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Returns true if the audit log entry matches the current search query.
+  bool _matchesQuery(Map<String, dynamic> log) {
+    if (_query.isEmpty) return true;
+    final targetName = (log['target_name'] ?? '').toString().toLowerCase();
+    final action     = (log['action']      ?? '').toString().toLowerCase();
+    final details    = (log['details']     ?? '').toString().toLowerCase();
+    return targetName.contains(_query) ||
+        action.contains(_query) ||
+        details.contains(_query);
   }
 
   Future<void> _fetchNextPage() async {
@@ -1873,7 +2173,6 @@ class _AuditLogTabState extends State<_AuditLogTab> {
     setState(() => _loading = true);
 
     try {
-      // No orderBy → no composite index required; we sort client-side.
       Query<Map<String, dynamic>> query = FirebaseFirestore.instance
           .collection('audit_logs')
           .where('actor_id', isEqualTo: widget.uid)
@@ -1895,7 +2194,6 @@ class _AuditLogTabState extends State<_AuditLogTab> {
       if (mounted) {
         setState(() {
           _logs.addAll(newLogs);
-          // Sort newest-first across all accumulated pages
           _logs.sort((a, b) {
             final ta = a['timestamp'];
             final tb = b['timestamp'];
@@ -1919,122 +2217,193 @@ class _AuditLogTabState extends State<_AuditLogTab> {
       return const Center(child: CircularProgressIndicator());
     }
 
+    // ── Apply search filter ────────────────────────────────────────────────
+    final filtered = _logs.where(_matchesQuery).toList();
+
     if (_initDone && _logs.isEmpty) {
-      return _EmptyState(
-        icon:    Icons.history_rounded,
-        message: _t(widget.lang, 'noAudit'),
+      return Column(
+        children: [
+          _buildSearchBar(),
+          Expanded(
+            child: _EmptyState(
+              icon:    Icons.history_rounded,
+              message: _t(widget.lang, 'noAudit'),
+            ),
+          ),
+        ],
       );
     }
 
-    final itemCount = _logs.length + (_hasMore || _loading ? 1 : 0);
+    final showLoadMore = _hasMore || _loading;
+    final itemCount = filtered.length + (showLoadMore && _query.isEmpty ? 1 : 0);
 
-    return ListView.builder(
-      padding:   const EdgeInsets.all(16),
-      itemCount: itemCount,
-      itemBuilder: (_, i) {
-        // ── Footer ──────────────────────────────────────────────────────
-        if (i == _logs.length) {
-          if (_loading) {
-            return const Padding(
-              padding: EdgeInsets.symmetric(vertical: 20),
-              child: Center(child: CircularProgressIndicator()),
-            );
-          }
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8),
-            child: GestureDetector(
-              onTap: _fetchNextPage,
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                decoration: BoxDecoration(
-                  color:        _D.accentLt,
-                  borderRadius: BorderRadius.circular(14),
-                  border:       Border.all(color: _D.accentBdr),
-                ),
-                alignment: Alignment.center,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.expand_more_rounded, size: 18, color: _D.accent),
-                    const SizedBox(width: 6),
-                    Text(
-                      _t(widget.lang, 'loadMore'),
-                      style: TextStyle(
-                        fontSize:   13,
-                        fontWeight: FontWeight.w700,
-                        color:      _D.accent,
+    return Column(
+      children: [
+        // ── Search bar ─────────────────────────────────────────────────────
+        _buildSearchBar(),
+
+        // ── List ───────────────────────────────────────────────────────────
+        Expanded(
+          child: () {
+            if (filtered.isEmpty) {
+              return _EmptyState(
+                icon:    Icons.search_off_rounded,
+                message: _t(widget.lang, 'noAuditResults'),
+              );
+            }
+            return ListView.builder(
+              padding:   const EdgeInsets.all(16),
+              itemCount: itemCount,
+              itemBuilder: (_, i) {
+                // ── Footer ────────────────────────────────────────────────
+                if (i == filtered.length) {
+                  if (_loading) {
+                    return const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20),
+                      child: Center(child: CircularProgressIndicator()),
+                    );
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: GestureDetector(
+                      onTap: _fetchNextPage,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        decoration: BoxDecoration(
+                          color:        _D.accentLt,
+                          borderRadius: BorderRadius.circular(14),
+                          border:       Border.all(color: _D.accentBdr),
+                        ),
+                        alignment: Alignment.center,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.expand_more_rounded, size: 18, color: _D.accent),
+                            const SizedBox(width: 6),
+                            Text(
+                              _t(widget.lang, 'loadMore'),
+                              style: TextStyle(
+                                fontSize:   13,
+                                fontWeight: FontWeight.w700,
+                                color:      _D.accent,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        }
+                  );
+                }
 
-        // ── Log row ─────────────────────────────────────────────────────
-        final d    = _logs[i];
-        final meta = _auditMeta((d['action'] ?? '').toString(), widget.lang);
-        final date = _fmtDate(d['timestamp'], compact: true);
+                // ── Log row ───────────────────────────────────────────────
+                final d    = filtered[i];
+                final meta = _auditMeta((d['action'] ?? '').toString(), widget.lang);
+                final date = _fmtDate(d['timestamp'], compact: true);
 
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: _D.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color:      Colors.black.withOpacity(0.04),
-                blurRadius: 10,
-                offset:     const Offset(0, 3),
-              ),
-            ],
-          ),
-          child: Row(children: [
-            Container(
-              width:  38,
-              height: 38,
-              decoration: BoxDecoration(
-                color:        (meta['color'] as Color).withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(meta['icon'] as IconData,
-                  size: 18, color: meta['color'] as Color),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(meta['label'] as String,
-                      style: TextStyle(
-                          fontSize:      11,
-                          fontWeight:    FontWeight.w700,
-                          color:         meta['color'] as Color,
-                          letterSpacing: 0.3)),
-                  Text((d['target_name'] ?? '').toString(),
-                      style: const TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w700),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
-                  if ((d['details'] ?? '').toString().isNotEmpty)
-                    Text((d['details'] ?? '').toString(),
-                        style: TextStyle(
-                            fontSize: 12, color: Colors.grey.shade500),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            Text(date,
-                style: TextStyle(fontSize: 11, color: Colors.grey.shade400)),
-          ]),
-        );
-      },
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: _D.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color:      Colors.black.withOpacity(0.04),
+                        blurRadius: 10,
+                        offset:     const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: Row(children: [
+                    Container(
+                      width:  38,
+                      height: 38,
+                      decoration: BoxDecoration(
+                        color:        (meta['color'] as Color).withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(meta['icon'] as IconData,
+                          size: 18, color: meta['color'] as Color),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(meta['label'] as String,
+                              style: TextStyle(
+                                  fontSize:      11,
+                                  fontWeight:    FontWeight.w700,
+                                  color:         meta['color'] as Color,
+                                  letterSpacing: 0.3)),
+                          Text((d['target_name'] ?? '').toString(),
+                              style: const TextStyle(
+                                  fontSize: 13, fontWeight: FontWeight.w700),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis),
+                          if ((d['details'] ?? '').toString().isNotEmpty)
+                            Text((d['details'] ?? '').toString(),
+                                style: TextStyle(
+                                    fontSize: 12, color: Colors.grey.shade500),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(date,
+                        style: TextStyle(fontSize: 11, color: Colors.grey.shade400)),
+                  ]),
+                );
+              },
+            );
+          }(),
+        ),
+      ],
     );
   }
+
+  Widget _buildSearchBar() => Container(
+    color: _D.white,
+    padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+    child: Container(
+      height: 42,
+      decoration: BoxDecoration(
+        color: _D.rowBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _D.border),
+      ),
+      child: TextField(
+        controller: _searchCtrl,
+        style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            color: _D.textPri),
+        decoration: InputDecoration(
+          hintText: _t(widget.lang, 'searchAudit'),
+          hintStyle: const TextStyle(
+              fontSize: 14,
+              color: _D.textDim,
+              fontWeight: FontWeight.w400),
+          prefixIcon: const Icon(
+              Icons.search_rounded,
+              size: 20,
+              color: _D.textMuted),
+          suffixIcon: _query.isNotEmpty
+              ? GestureDetector(
+            onTap: () => _searchCtrl.clear(),
+            child: const Icon(
+                Icons.close_rounded,
+                size: 18,
+                color: _D.textMuted),
+          )
+              : null,
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 11),
+        ),
+      ),
+    ),
+  );
 
   Map<String, dynamic> _auditMeta(String action, String lang) {
     switch (action) {
@@ -2071,6 +2440,7 @@ class _AuditLogTabState extends State<_AuditLogTab> {
     }
   }
 }
+
 // ═════════════════════════════════════════════════════════════════════════════
 // Shared small widgets
 // ═════════════════════════════════════════════════════════════════════════════
