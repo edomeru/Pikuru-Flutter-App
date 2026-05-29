@@ -8,6 +8,7 @@ import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:pikuru/screens/organizer_event_detail_screen.dart';
 import 'package:pikuru/screens/event_chat_screen.dart';
 import 'package:pikuru/screens/organizer_group_settings_screen.dart';
+import 'package:pikuru/screens/event_detail_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Design tokens — light mode with green accent
@@ -1190,50 +1191,149 @@ void _showEditDialog(BuildContext context, String eventId,
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// TAB 2 — MY GROUPS
+// TAB 2 — MY GROUPS  (cursor-based pagination, 10 per page)
 // ═════════════════════════════════════════════════════════════════════════════
-class _MyGroupsTab extends StatelessWidget {
+class _MyGroupsTab extends StatefulWidget {
   final String uid, lang;
   const _MyGroupsTab({required this.uid, required this.lang});
 
   @override
-  Widget build(BuildContext context) {
-    if (uid.isEmpty) return const SizedBox.shrink();
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
+  State<_MyGroupsTab> createState() => _MyGroupsTabState();
+}
+
+class _MyGroupsTabState extends State<_MyGroupsTab> {
+  static const int _pageSize = 10;
+
+  final List<Map<String, dynamic>> _groups = [];
+  DocumentSnapshot? _lastDoc;
+
+  bool _loading  = false;
+  bool _hasMore  = true;
+  bool _initDone = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchNextPage();
+  }
+
+  Future<void> _fetchNextPage() async {
+    if (_loading || !_hasMore || widget.uid.isEmpty) return;
+    setState(() => _loading = true);
+
+    try {
+      Query<Map<String, dynamic>> query = FirebaseFirestore.instance
           .collection('organizations')
-          .where('submittedBy', isEqualTo: uid)
-          .snapshots(),
-      builder: (_, snap) {
-        if (!snap.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final docs = snap.data!.docs;
-        docs.sort((a, b) {
-          final ta = (a.data() as Map)['org_added'];
-          final tb = (b.data() as Map)['org_added'];
-          final tA = ta is Timestamp ? ta.millisecondsSinceEpoch : 0;
-          final tB = tb is Timestamp ? tb.millisecondsSinceEpoch : 0;
-          return tB.compareTo(tA);
+          .where('submittedBy', isEqualTo: widget.uid)
+          .limit(_pageSize);
+
+      if (_lastDoc != null) {
+        query = query.startAfterDocument(_lastDoc!);
+      }
+
+      final snap = await query.get();
+
+      if (snap.docs.length < _pageSize) _hasMore = false;
+      if (snap.docs.isNotEmpty) _lastDoc = snap.docs.last;
+
+      final newGroups = snap.docs
+          .map((d) => <String, dynamic>{'_docId': d.id, ...d.data()})
+          .toList();
+
+      if (mounted) {
+        setState(() {
+          _groups.addAll(newGroups);
+          _groups.sort((a, b) {
+            final ta = a['org_added'];
+            final tb = b['org_added'];
+            final tA = ta is Timestamp ? ta.millisecondsSinceEpoch : 0;
+            final tB = tb is Timestamp ? tb.millisecondsSinceEpoch : 0;
+            return tB.compareTo(tA);
+          });
+          _loading  = false;
+          _initDone = true;
         });
-        if (docs.isEmpty) {
-          return _EmptyState(
-              icon: Icons.group_rounded,
-              message: _t(lang, 'noGroups'));
+      }
+    } catch (e) {
+      debugPrint('_MyGroupsTab fetch error: $e');
+      if (mounted) setState(() { _loading = false; _initDone = true; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_initDone && _loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_initDone && _groups.isEmpty) {
+      return _EmptyState(
+        icon:    Icons.group_rounded,
+        message: _t(widget.lang, 'noGroups'),
+      );
+    }
+
+    final itemCount = _groups.length + (_hasMore || _loading ? 1 : 0);
+
+    return ListView.builder(
+      padding:   const EdgeInsets.all(16),
+      itemCount: itemCount,
+      itemBuilder: (_, i) {
+        // ── Footer: spinner or load-more button ─────────────────────────
+        if (i == _groups.length) {
+          if (_loading) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: GestureDetector(
+              onTap: _fetchNextPage,
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                decoration: BoxDecoration(
+                  color:        _D.accentLt,
+                  borderRadius: BorderRadius.circular(14),
+                  border:       Border.all(color: _D.accentBdr),
+                ),
+                alignment: Alignment.center,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.expand_more_rounded, size: 18, color: _D.accent),
+                    const SizedBox(width: 6),
+                    Text(
+                      _t(widget.lang, 'loadMore'),
+                      style: TextStyle(
+                        fontSize:   13,
+                        fontWeight: FontWeight.w700,
+                        color:      _D.accent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
         }
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: docs.length,
-          itemBuilder: (_, i) => _GroupCard(
-              groupId: docs[i].id,
-              data: docs[i].data() as Map<String, dynamic>,
-              lang: lang),
+
+        // ── Group card ──────────────────────────────────────────────────
+        final g = _groups[i];
+        return _GroupCard(
+          groupId: g['_docId'] as String,
+          data:    g,
+          lang:    widget.lang,
         );
       },
     );
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Group Card
+// ─────────────────────────────────────────────────────────────────────────────
 class _GroupCard extends StatelessWidget {
   final String groupId, lang;
   final Map<String, dynamic> data;
@@ -1247,12 +1347,12 @@ class _GroupCard extends StatelessWidget {
     final isRejected = data['rejected'] == true;
     final isActive   = data['org_active'] == true;
     final isPublic   = data['org_public'] != false;
-    final name  = lang == 'ja'
+
+    final name = lang == 'ja'
         ? (data['org_name_jp'] ?? data['org_name'] ?? 'Unnamed').toString()
         : (data['org_name'] ?? 'Unnamed').toString();
-    final desc  = lang == 'ja'
-        ? (data['org_description_jp'] ?? data['org_description'] ?? '')
-        .toString()
+    final desc = lang == 'ja'
+        ? (data['org_description_jp'] ?? data['org_description'] ?? '').toString()
         : (data['org_description'] ?? '').toString();
     final imgUrl = (data['org_image'] ?? '').toString();
 
@@ -1271,160 +1371,166 @@ class _GroupCard extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-          color: _D.white,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black.withOpacity(0.06),
-                blurRadius: 16,
-                offset: const Offset(0, 4))
-          ]),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        color: _D.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color:      Colors.black.withOpacity(0.06),
+            blurRadius: 16,
+            offset:     const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
 
-        // ── Cover image with status badges ────────────────────────────────
-        ClipRRect(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          child: Stack(children: [
-            imgUrl.isNotEmpty
-                ? Image.network(imgUrl,
+          // ── Cover image with status badges ───────────────────────────
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            child: Stack(children: [
+              imgUrl.isNotEmpty
+                  ? Image.network(
+                imgUrl,
                 height: 130,
                 width: double.infinity,
                 fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _grpPlaceholder())
-                : _grpPlaceholder(),
-            // Approval status badge (top-left)
-            Positioned(
-                top: 12,
-                left: 12,
-                child: _Badge(label: sl, icon: si, color: sc, bg: sb)),
-            // Active + Public badges (top-right, approved only)
-            if (isApproved)
+                errorBuilder: (_, __, ___) => _grpPlaceholder(),
+              )
+                  : _grpPlaceholder(),
+
+              // Approval status badge — top-left
               Positioned(
-                top: 12,
-                right: 12,
-                child: Column(
+                top:  12,
+                left: 12,
+                child: _Badge(label: sl, icon: si, color: sc, bg: sb),
+              ),
+
+              // Active + Public badges — top-right (approved only)
+              if (isApproved)
+                Positioned(
+                  top:   12,
+                  right: 12,
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       _Badge(
-                          label: isActive
-                              ? _t(lang, 'active')
-                              : _t(lang, 'inactive'),
-                          icon: isActive
-                              ? Icons.check_rounded
-                              : Icons.close_rounded,
-                          color: isActive ? _D.apprvClr : _D.rejClr,
-                          bg: isActive ? _D.apprvBg : _D.rejBg),
+                        label: isActive ? _t(lang, 'active') : _t(lang, 'inactive'),
+                        icon:  isActive ? Icons.check_rounded : Icons.close_rounded,
+                        color: isActive ? _D.apprvClr : _D.rejClr,
+                        bg:    isActive ? _D.apprvBg  : _D.rejBg,
+                      ),
                       const SizedBox(height: 4),
                       _Badge(
-                          label: isPublic
-                              ? _t(lang, 'public')
-                              : _t(lang, 'private'),
-                          icon: isPublic
-                              ? Icons.public_rounded
-                              : Icons.lock_rounded,
-                          color: const Color(0xFF1565C0),
-                          bg: const Color(0xFFE3F2FD)),
-                    ]),
-              ),
-          ]),
-        ),
+                        label: isPublic ? _t(lang, 'public') : _t(lang, 'private'),
+                        icon:  isPublic ? Icons.public_rounded : Icons.lock_rounded,
+                        color: const Color(0xFF1565C0),
+                        bg:    const Color(0xFFE3F2FD),
+                      ),
+                    ],
+                  ),
+                ),
+            ]),
+          ),
 
-        // ── Body ─────────────────────────────────────────────────────────
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
+          // ── Body ─────────────────────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(name,
-                    style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w800),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
+                Text(
+                  name,
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w800),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 if (desc.isNotEmpty) ...[
                   const SizedBox(height: 4),
-                  Text(desc,
-                      style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey.shade600,
-                          height: 1.4),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis),
+                  Text(
+                    desc,
+                    style: TextStyle(
+                        fontSize: 13,
+                        color:    Colors.grey.shade600,
+                        height:   1.4),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ],
 
                 const SizedBox(height: 14),
 
-                // ── Edit Settings button (always visible, mirrors web) ───
+                // Edit Settings button — always visible
                 _ActionButton(
-                  icon: Icons.edit_rounded,
+                  icon:  Icons.edit_rounded,
                   label: lang == 'ja' ? 'グループ設定を編集' : 'Edit Settings',
                   color: AppColors.primary,
                   onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (_) => OrganizerGroupSettingsScreen(
-                        groupId: groupId,
+                        groupId:     groupId,
                         initialData: data,
                       ),
                     ),
                   ),
                 ),
 
-                // ── Deactivate / Make Private toggles (approved only) ────
+                // Deactivate / Make Private toggles — approved only
                 if (isApproved) ...[
                   const SizedBox(height: 8),
                   Row(children: [
                     Expanded(
-                        child: _OutlineBtn(
-                            label: isActive
-                                ? (lang == 'ja'
-                                ? '非アクティブにする'
-                                : 'Deactivate')
-                                : (lang == 'ja'
-                                ? 'アクティブにする'
-                                : 'Activate'),
-                            color: isActive ? _D.rejClr : _D.apprvClr,
-                            onTap: () async {
-                              await FirebaseFirestore.instance
-                                  .collection('organizations')
-                                  .doc(groupId)
-                                  .update({'org_active': !isActive});
-                            })),
+                      child: _OutlineBtn(
+                        label: isActive
+                            ? (lang == 'ja' ? '非アクティブにする' : 'Deactivate')
+                            : (lang == 'ja' ? 'アクティブにする'   : 'Activate'),
+                        color: isActive ? _D.rejClr : _D.apprvClr,
+                        onTap: () async {
+                          await FirebaseFirestore.instance
+                              .collection('organizations')
+                              .doc(groupId)
+                              .update({'org_active': !isActive});
+                        },
+                      ),
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
-                        child: _OutlineBtn(
-                            label: isPublic
-                                ? (lang == 'ja'
-                                ? '非公開にする'
-                                : 'Make Private')
-                                : (lang == 'ja'
-                                ? '公開する'
-                                : 'Make Public'),
-                            color: const Color(0xFF1565C0),
-                            onTap: () async {
-                              await FirebaseFirestore.instance
-                                  .collection('organizations')
-                                  .doc(groupId)
-                                  .update({'org_public': !isPublic});
-                            })),
+                      child: _OutlineBtn(
+                        label: isPublic
+                            ? (lang == 'ja' ? '非公開にする' : 'Make Private')
+                            : (lang == 'ja' ? '公開する'    : 'Make Public'),
+                        color: const Color(0xFF1565C0),
+                        onTap: () async {
+                          await FirebaseFirestore.instance
+                              .collection('organizations')
+                              .doc(groupId)
+                              .update({'org_public': !isPublic});
+                        },
+                      ),
+                    ),
                   ]),
                 ],
-              ]),
-        ),
-      ]),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _grpPlaceholder() => Container(
     height: 130,
-    width: double.infinity,
-    color: Colors.grey.shade100,
-    child: Icon(Icons.group_rounded,
+    width:  double.infinity,
+    color:  Colors.grey.shade100,
+    child:  Icon(Icons.group_rounded,
         size: 48, color: Colors.grey.shade300),
   );
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// TAB 3 — REGISTERED EVENTS
+// TAB 3 — REGISTERED EVENTS  (cursor-based pagination, 10 per page)
 // ═════════════════════════════════════════════════════════════════════════════
 class _RegisteredTab extends StatefulWidget {
   final String uid, lang;
@@ -1435,268 +1541,487 @@ class _RegisteredTab extends StatefulWidget {
 }
 
 class _RegisteredTabState extends State<_RegisteredTab> {
-  List<Map<String, dynamic>> _events = [];
-  bool _loading = true;
+  static const int _pageSize = 10;
+
+  // Accumulated pages of resolved {event + reg status} maps
+  final List<Map<String, dynamic>> _events = [];
+
+  // Cursor: the last registration doc from the previous page
+  DocumentSnapshot? _lastRegDoc;
+
+  bool _loading    = false; // true only while a fetch is in flight
+  bool _hasMore    = true;  // false once Firestore returns < _pageSize docs
+  bool _initDone   = false; // prevents double-fetch on first build
 
   @override
   void initState() {
     super.initState();
-    _load();
+    _fetchNextPage();
   }
 
-  Future<void> _load() async {
-    if (widget.uid.isEmpty) {
-      setState(() => _loading = false);
-      return;
-    }
+  /// Fetches the next page of registrations then resolves their event docs.
+  Future<void> _fetchNextPage() async {
+    if (_loading || !_hasMore || widget.uid.isEmpty) return;
+    setState(() => _loading = true);
+
     try {
-      final regSnap = await FirebaseFirestore.instance
+      // ── 1. Build the registrations query ──────────────────────────────
+      // NOTE: No orderBy here — avoids requiring a composite Firestore index.
+      // We sort client-side after each page fetch instead.
+      Query<Map<String, dynamic>> query = FirebaseFirestore.instance
           .collection('event_registrations')
           .where('user_id', isEqualTo: widget.uid)
-          .limit(50)
-          .get();
-      if (regSnap.docs.isEmpty) {
-        setState(() {
-          _events  = [];
-          _loading = false;
-        });
-        return;
+          .limit(_pageSize);
+
+      if (_lastRegDoc != null) {
+        query = query.startAfterDocument(_lastRegDoc!);
       }
-      final results = await Future.wait(regSnap.docs.map((regDoc) async {
-        final rd   = regDoc.data();
-        final evId = (rd['event_id'] ?? '').toString();
-        if (evId.isEmpty) return null;
-        try {
-          final evSnap = await FirebaseFirestore.instance
-              .collection('events')
-              .doc(evId)
-              .get();
-          if (!evSnap.exists) return null;
-          return {
-            ...evSnap.data()!,
-            '_id':        evSnap.id,
-            '_regStatus': (rd['status'] ?? 'pending').toString(),
-            '_regDocId':  regDoc.id,
-          };
-        } catch (_) {
-          return null;
-        }
-      }));
-      setState(() {
-        _events  = results.whereType<Map<String, dynamic>>().toList();
-        _loading = false;
-      });
-    } catch (_) {
-      setState(() => _loading = false);
+
+      final regSnap = await query.get();
+
+      // ── 2. Update cursor & hasMore flag ───────────────────────────────
+      if (regSnap.docs.length < _pageSize) {
+        _hasMore = false;
+      }
+      if (regSnap.docs.isNotEmpty) {
+        _lastRegDoc = regSnap.docs.last;
+      }
+
+      // ── 3. Batch-resolve event documents ──────────────────────────────
+      final resolved = await Future.wait(
+        regSnap.docs.map((regDoc) async {
+          final rd   = regDoc.data();
+          final evId = (rd['event_id'] ?? '').toString();
+          if (evId.isEmpty) return null;
+          try {
+            final evSnap = await FirebaseFirestore.instance
+                .collection('events')
+                .doc(evId)
+                .get();
+            if (!evSnap.exists) return null;
+            return <String, dynamic>{
+              ...evSnap.data()!,
+              '_id':           evSnap.id,
+              '_regStatus':    (rd['status'] ?? 'pending').toString(),
+              '_regDocId':     regDoc.id,
+              '_registeredAt': rd['registered_at'], // keep for sorting
+            };
+          } catch (_) {
+            return null;
+          }
+        }),
+      );
+
+      // ── 4. Append + sort the full accumulated list by date ────────────
+      if (mounted) {
+        setState(() {
+          _events.addAll(resolved.whereType<Map<String, dynamic>>());
+          // Sort newest-first across all accumulated pages
+          _events.sort((a, b) {
+            final ta = a['_registeredAt'];
+            final tb = b['_registeredAt'];
+            final tA = ta is Timestamp ? ta.millisecondsSinceEpoch : 0;
+            final tB = tb is Timestamp ? tb.millisecondsSinceEpoch : 0;
+            return tB.compareTo(tA);
+          });
+          _loading  = false;
+          _initDone = true;
+        });
+      }
+    } catch (e) {
+      debugPrint('_RegisteredTab fetch error: $e'); // add this temporarily
+      if (mounted) setState(() { _loading = false; _initDone = true; });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const Center(child: CircularProgressIndicator());
-    if (_events.isEmpty) {
-      return _EmptyState(
-          icon: Icons.event_available_rounded,
-          message: _t(widget.lang, 'noRegistered'));
+    // First load — show a centered spinner
+    if (!_initDone && _loading) {
+      return const Center(child: CircularProgressIndicator());
     }
+
+    // Empty state (first page came back with nothing)
+    if (_initDone && _events.isEmpty) {
+      return _EmptyState(
+        icon:    Icons.event_available_rounded,
+        message: _t(widget.lang, 'noRegistered'),
+      );
+    }
+
+    // Item count:  all event cards  +  optional footer row
+    final itemCount = _events.length + (_hasMore || _loading ? 1 : 0);
+
     return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: _events.length,
+      padding:   const EdgeInsets.all(16),
+      itemCount: itemCount,
       itemBuilder: (_, i) {
+        // ── Footer: load-more button or in-page spinner ──────────────────
+        if (i == _events.length) {
+          if (_loading) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+          // "Load more" button
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: GestureDetector(
+              onTap: _fetchNextPage,
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                decoration: BoxDecoration(
+                  color:        _D.accentLt,
+                  borderRadius: BorderRadius.circular(14),
+                  border:       Border.all(color: _D.accentBdr),
+                ),
+                alignment: Alignment.center,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.expand_more_rounded,
+                        size: 18, color: _D.accent),
+                    const SizedBox(width: 6),
+                    Text(
+                      _t(widget.lang, 'loadMore'),
+                      style: TextStyle(
+                        fontSize:   13,
+                        fontWeight: FontWeight.w700,
+                        color:      _D.accent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        // ── Event card (unchanged visual) ────────────────────────────────
         final ev     = _events[i];
         final status = (ev['_regStatus'] ?? 'pending').toString();
         final title  = widget.lang == 'ja'
-            ? (ev['event_title_jp'] ?? ev['event_title'] ?? 'Untitled')
-            .toString()
+            ? (ev['event_title_jp'] ?? ev['event_title'] ?? 'Untitled').toString()
             : (ev['event_title'] ?? 'Untitled').toString();
         final imgUrl = (ev['event_pic'] ?? '').toString();
         final date   = _fmtDate(ev['event_date'], compact: true);
 
         Color sc; String sl; IconData si;
         if (status == 'approved') {
-          sc = _D.apprvClr;
-          sl = _t(widget.lang, 'regApproved');
-          si = Icons.check_circle_rounded;
+          sc = _D.apprvClr; sl = _t(widget.lang, 'regApproved'); si = Icons.check_circle_rounded;
         } else if (status == 'rejected') {
-          sc = _D.rejClr;
-          sl = _t(widget.lang, 'regRejected');
-          si = Icons.cancel_rounded;
+          sc = _D.rejClr;   sl = _t(widget.lang, 'regRejected'); si = Icons.cancel_rounded;
         } else {
-          sc = _D.pendClr;
-          sl = _t(widget.lang, 'regPending');
-          si = Icons.schedule_rounded;
+          sc = _D.pendClr;  sl = _t(widget.lang, 'regPending');  si = Icons.schedule_rounded;
         }
 
         return Container(
           margin: const EdgeInsets.only(bottom: 14),
           decoration: BoxDecoration(
-              color: _D.white,
-              borderRadius: BorderRadius.circular(18),
-              boxShadow: [
-                BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 14,
-                    offset: const Offset(0, 3))
-              ]),
-          child: Row(children: [
-            ClipRRect(
-              borderRadius:
-              const BorderRadius.horizontal(left: Radius.circular(18)),
-              child: imgUrl.isNotEmpty
-                  ? Image.network(imgUrl,
-                  width: 100,
-                  height: 90,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _thumbPh())
-                  : _thumbPh(),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(title,
-                          style: const TextStyle(
-                              fontSize: 14, fontWeight: FontWeight.w700),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis),
-                      const SizedBox(height: 5),
-                      Row(children: [
-                        Icon(Icons.calendar_today_rounded,
-                            size: 12, color: Colors.grey.shade400),
-                        const SizedBox(width: 4),
-                        Text(date,
-                            style: TextStyle(
-                                fontSize: 12, color: Colors.grey.shade500)),
-                      ]),
-                      const SizedBox(height: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                            color: sc.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8)),
-                        child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          Icon(si, size: 11, color: sc),
-                          const SizedBox(width: 4),
-                          Text(sl,
-                              style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                  color: sc)),
-                        ]),
-                      ),
-                    ]),
+            color:        _D.white,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [
+              BoxShadow(
+                color:      Colors.black.withOpacity(0.05),
+                blurRadius: 14,
+                offset:     const Offset(0, 3),
               ),
-            ),
-            const SizedBox(width: 12),
-          ]),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(children: [
+                ClipRRect(
+                  borderRadius: const BorderRadius.only(
+                    topLeft: Radius.circular(18),
+                  ),
+                  child: imgUrl.isNotEmpty
+                      ? Image.network(imgUrl,
+                      width: 100, height: 90, fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _thumbPh())
+                      : _thumbPh(),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title,
+                            style: const TextStyle(
+                                fontSize: 14, fontWeight: FontWeight.w700),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis),
+                        const SizedBox(height: 5),
+                        Row(children: [
+                          Icon(Icons.calendar_today_rounded,
+                              size: 12, color: Colors.grey.shade400),
+                          const SizedBox(width: 4),
+                          Text(date,
+                              style: TextStyle(
+                                  fontSize: 12, color: Colors.grey.shade500)),
+                        ]),
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color:        sc.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            Icon(si, size: 11, color: sc),
+                            const SizedBox(width: 4),
+                            Text(sl,
+                                style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    color: sc)),
+                          ]),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+              ]),
+
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => EventDetailScreen(event: ev),
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _D.accent,
+                      side:            const BorderSide(color: _D.accentBdr),
+                      backgroundColor: _D.accentLt,
+                      padding:         const EdgeInsets.symmetric(vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    icon:  const Icon(Icons.visibility_outlined, size: 16),
+                    label: Text(
+                      _t(widget.lang, 'viewDetails'),
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         );
       },
     );
   }
 
   Widget _thumbPh() => Container(
-      width: 100,
-      height: 90,
-      color: Colors.grey.shade100,
-      child: Icon(Icons.event_rounded, size: 32, color: Colors.grey.shade300));
+    width:  100,
+    height: 90,
+    color:  Colors.grey.shade100,
+    child:  Icon(Icons.event_rounded,
+        size: 32, color: Colors.grey.shade300),
+  );
 }
-
 // ═════════════════════════════════════════════════════════════════════════════
-// TAB 4 — AUDIT LOG
+// TAB 4 — AUDIT LOG  (cursor-based pagination, 20 per page)
 // ═════════════════════════════════════════════════════════════════════════════
-class _AuditLogTab extends StatelessWidget {
+class _AuditLogTab extends StatefulWidget {
   final String uid, lang;
   const _AuditLogTab({required this.uid, required this.lang});
 
   @override
-  Widget build(BuildContext context) {
-    if (uid.isEmpty) return const SizedBox.shrink();
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
+  State<_AuditLogTab> createState() => _AuditLogTabState();
+}
+
+class _AuditLogTabState extends State<_AuditLogTab> {
+  static const int _pageSize = 20;
+
+  final List<Map<String, dynamic>> _logs = [];
+  DocumentSnapshot? _lastDoc;
+
+  bool _loading  = false;
+  bool _hasMore  = true;
+  bool _initDone = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchNextPage();
+  }
+
+  Future<void> _fetchNextPage() async {
+    if (_loading || !_hasMore || widget.uid.isEmpty) return;
+    setState(() => _loading = true);
+
+    try {
+      // No orderBy → no composite index required; we sort client-side.
+      Query<Map<String, dynamic>> query = FirebaseFirestore.instance
           .collection('audit_logs')
-          .where('actor_id', isEqualTo: uid)
-          .limit(100)
-          .snapshots(),
-      builder: (_, snap) {
-        if (!snap.hasData) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final docs = snap.data!.docs;
-        if (docs.isEmpty) {
-          return _EmptyState(
-              icon: Icons.history_rounded,
-              message: _t(lang, 'noAudit'));
-        }
-        docs.sort((a, b) {
-          final ta = (a.data() as Map)['timestamp'];
-          final tb = (b.data() as Map)['timestamp'];
-          final tA = ta is Timestamp ? ta.millisecondsSinceEpoch : 0;
-          final tB = tb is Timestamp ? tb.millisecondsSinceEpoch : 0;
-          return tB.compareTo(tA);
+          .where('actor_id', isEqualTo: widget.uid)
+          .limit(_pageSize);
+
+      if (_lastDoc != null) {
+        query = query.startAfterDocument(_lastDoc!);
+      }
+
+      final snap = await query.get();
+
+      if (snap.docs.length < _pageSize) _hasMore = false;
+      if (snap.docs.isNotEmpty) _lastDoc = snap.docs.last;
+
+      final newLogs = snap.docs
+          .map((d) => <String, dynamic>{'_id': d.id, ...d.data()})
+          .toList();
+
+      if (mounted) {
+        setState(() {
+          _logs.addAll(newLogs);
+          // Sort newest-first across all accumulated pages
+          _logs.sort((a, b) {
+            final ta = a['timestamp'];
+            final tb = b['timestamp'];
+            final tA = ta is Timestamp ? ta.millisecondsSinceEpoch : 0;
+            final tB = tb is Timestamp ? tb.millisecondsSinceEpoch : 0;
+            return tB.compareTo(tA);
+          });
+          _loading  = false;
+          _initDone = true;
         });
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: docs.length,
-          itemBuilder: (_, i) {
-            final d    = docs[i].data() as Map<String, dynamic>;
-            final meta = _auditMeta((d['action'] ?? '').toString(), lang);
-            final date = _fmtDate(d['timestamp'], compact: true);
-            return Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                  color: _D.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                        color: Colors.black.withOpacity(0.04),
-                        blurRadius: 10,
-                        offset: const Offset(0, 3))
-                  ]),
-              child: Row(children: [
-                Container(
-                  width: 38,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: (meta['color'] as Color).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(meta['icon'] as IconData,
-                      size: 18, color: meta['color'] as Color),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                    child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(meta['label'] as String,
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                  color: meta['color'] as Color,
-                                  letterSpacing: 0.3)),
-                          Text((d['target_name'] ?? '').toString(),
-                              style: const TextStyle(
-                                  fontSize: 13, fontWeight: FontWeight.w700),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis),
-                          if ((d['details'] ?? '').toString().isNotEmpty)
-                            Text((d['details'] ?? '').toString(),
-                                style:
-                                TextStyle(fontSize: 12, color: Colors.grey.shade500),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis),
-                        ])),
-                Text(date,
-                    style: TextStyle(
-                        fontSize: 11, color: Colors.grey.shade400)),
-              ]),
+      }
+    } catch (e) {
+      debugPrint('_AuditLogTab fetch error: $e');
+      if (mounted) setState(() { _loading = false; _initDone = true; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_initDone && _loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_initDone && _logs.isEmpty) {
+      return _EmptyState(
+        icon:    Icons.history_rounded,
+        message: _t(widget.lang, 'noAudit'),
+      );
+    }
+
+    final itemCount = _logs.length + (_hasMore || _loading ? 1 : 0);
+
+    return ListView.builder(
+      padding:   const EdgeInsets.all(16),
+      itemCount: itemCount,
+      itemBuilder: (_, i) {
+        // ── Footer ──────────────────────────────────────────────────────
+        if (i == _logs.length) {
+          if (_loading) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 20),
+              child: Center(child: CircularProgressIndicator()),
             );
-          },
+          }
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: GestureDetector(
+              onTap: _fetchNextPage,
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                decoration: BoxDecoration(
+                  color:        _D.accentLt,
+                  borderRadius: BorderRadius.circular(14),
+                  border:       Border.all(color: _D.accentBdr),
+                ),
+                alignment: Alignment.center,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.expand_more_rounded, size: 18, color: _D.accent),
+                    const SizedBox(width: 6),
+                    Text(
+                      _t(widget.lang, 'loadMore'),
+                      style: TextStyle(
+                        fontSize:   13,
+                        fontWeight: FontWeight.w700,
+                        color:      _D.accent,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        // ── Log row ─────────────────────────────────────────────────────
+        final d    = _logs[i];
+        final meta = _auditMeta((d['action'] ?? '').toString(), widget.lang);
+        final date = _fmtDate(d['timestamp'], compact: true);
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: _D.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color:      Colors.black.withOpacity(0.04),
+                blurRadius: 10,
+                offset:     const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Row(children: [
+            Container(
+              width:  38,
+              height: 38,
+              decoration: BoxDecoration(
+                color:        (meta['color'] as Color).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(meta['icon'] as IconData,
+                  size: 18, color: meta['color'] as Color),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(meta['label'] as String,
+                      style: TextStyle(
+                          fontSize:      11,
+                          fontWeight:    FontWeight.w700,
+                          color:         meta['color'] as Color,
+                          letterSpacing: 0.3)),
+                  Text((d['target_name'] ?? '').toString(),
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w700),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis),
+                  if ((d['details'] ?? '').toString().isNotEmpty)
+                    Text((d['details'] ?? '').toString(),
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.grey.shade500),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(date,
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade400)),
+          ]),
         );
       },
     );
@@ -1705,29 +2030,38 @@ class _AuditLogTab extends StatelessWidget {
   Map<String, dynamic> _auditMeta(String action, String lang) {
     switch (action) {
       case 'broadcast':
-        return {'color': AppColors.primary, 'icon': Icons.campaign_rounded, 'label': lang == 'ja' ? '一斉送信' : 'Broadcast'};
+        return {'color': AppColors.primary, 'icon': Icons.campaign_rounded,
+          'label': lang == 'ja' ? '一斉送信' : 'Broadcast'};
       case 'replies_on':
-        return {'color': AppColors.primary, 'icon': Icons.chat_rounded, 'label': lang == 'ja' ? '返信有効化' : 'Replies On'};
+        return {'color': AppColors.primary, 'icon': Icons.chat_rounded,
+          'label': lang == 'ja' ? '返信有効化' : 'Replies On'};
       case 'replies_off':
-        return {'color': _D.pendClr, 'icon': Icons.do_not_disturb_rounded, 'label': lang == 'ja' ? '返信無効化' : 'Replies Off'};
+        return {'color': _D.pendClr, 'icon': Icons.do_not_disturb_rounded,
+          'label': lang == 'ja' ? '返信無効化' : 'Replies Off'};
       case 'channel_created':
-        return {'color': const Color(0xFF1565C0), 'icon': Icons.add_comment_rounded, 'label': lang == 'ja' ? 'チャンネル作成' : 'Channel Created'};
+        return {'color': const Color(0xFF1565C0), 'icon': Icons.add_comment_rounded,
+          'label': lang == 'ja' ? 'チャンネル作成' : 'Channel Created'};
       case 'chat_cleared':
-        return {'color': _D.rejClr, 'icon': Icons.delete_sweep_rounded, 'label': lang == 'ja' ? 'チャット消去' : 'Chat Cleared'};
+        return {'color': _D.rejClr, 'icon': Icons.delete_sweep_rounded,
+          'label': lang == 'ja' ? 'チャット消去' : 'Chat Cleared'};
       case 'event_edited':
-        return {'color': const Color(0xFF7B1FA2), 'icon': Icons.edit_rounded, 'label': lang == 'ja' ? 'イベント編集' : 'Event Edited'};
+        return {'color': const Color(0xFF7B1FA2), 'icon': Icons.edit_rounded,
+          'label': lang == 'ja' ? 'イベント編集' : 'Event Edited'};
       case 'participant_removed':
-        return {'color': _D.rejClr, 'icon': Icons.person_remove_rounded, 'label': lang == 'ja' ? '参加者削除' : 'Participant Removed'};
+        return {'color': _D.rejClr, 'icon': Icons.person_remove_rounded,
+          'label': lang == 'ja' ? '参加者削除' : 'Participant Removed'};
       case 'reg_approved':
-        return {'color': AppColors.primary, 'icon': Icons.how_to_reg_rounded, 'label': lang == 'ja' ? '登録承認' : 'Reg Approved'};
+        return {'color': AppColors.primary, 'icon': Icons.how_to_reg_rounded,
+          'label': lang == 'ja' ? '登録承認' : 'Reg Approved'};
       case 'reg_rejected':
-        return {'color': _D.rejClr, 'icon': Icons.person_off_rounded, 'label': lang == 'ja' ? '登録却下' : 'Reg Rejected'};
+        return {'color': _D.rejClr, 'icon': Icons.person_off_rounded,
+          'label': lang == 'ja' ? '登録却下' : 'Reg Rejected'};
       default:
-        return {'color': Colors.grey.shade600, 'icon': Icons.history_rounded, 'label': action};
+        return {'color': Colors.grey.shade600, 'icon': Icons.history_rounded,
+          'label': action};
     }
   }
 }
-
 // ═════════════════════════════════════════════════════════════════════════════
 // Shared small widgets
 // ═════════════════════════════════════════════════════════════════════════════
