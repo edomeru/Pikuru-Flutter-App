@@ -1,12 +1,15 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/providers/app_language_provider.dart';
-import 'package:pikuru/screens/add_event_screen.dart'; // ← import add event
+import 'package:pikuru/screens/add_event_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Design tokens — light
@@ -586,6 +589,10 @@ class _OrganizerGroupSettingsScreenState
   bool _saving = false;
   bool _dirty  = false;
 
+  // ── Image picker state ────────────────────────────────────────────────────
+  File? _pickedImageFile;
+  bool  _uploadingImage = false;
+
   Map<String, dynamic> _groupData = {};
   StreamSubscription? _groupSub;
 
@@ -791,6 +798,124 @@ class _OrganizerGroupSettingsScreenState
     await FirebaseFirestore.instance.collection('organizations').doc(widget.groupId).update({'org_public': newVal});
   }
 
+  // ── Image picker ──────────────────────────────────────────────────────────
+  Future<void> _pickCoverImage() async {
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        decoration: const BoxDecoration(
+          color: _D.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40, height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            ListTile(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              leading: Container(
+                width: 40, height: 40,
+                decoration: BoxDecoration(
+                  color: _D.accentLt,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.photo_library_rounded, color: _D.accent, size: 20),
+              ),
+              title: const Text('Photo Library',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+              onTap: () => Navigator.pop(context, ImageSource.gallery),
+            ),
+            const SizedBox(height: 4),
+            ListTile(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              leading: Container(
+                width: 40, height: 40,
+                decoration: BoxDecoration(
+                  color: _D.accentLt,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.camera_alt_rounded, color: _D.accent, size: 20),
+              ),
+              title: const Text('Camera',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+              onTap: () => Navigator.pop(context, ImageSource.camera),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (source == null) return;
+
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: source,
+      imageQuality: 85,
+      maxWidth: 1200,
+    );
+    if (picked == null) return;
+
+    setState(() {
+      _pickedImageFile = File(picked.path);
+      _uploadingImage  = true;
+      _dirty           = true;
+    });
+
+    try {
+      final uid = FirebaseAuth.instance.currentUser?.uid ?? 'unknown';
+      final ext = picked.path.split('.').last;
+      final ref = FirebaseStorage.instance
+          .ref('organization_images/${widget.groupId}_${DateTime.now().millisecondsSinceEpoch}.$ext');
+      await ref.putFile(_pickedImageFile!);
+      final downloadUrl = await ref.getDownloadURL();
+
+      await FirebaseFirestore.instance
+          .collection('organizations')
+          .doc(widget.groupId)
+          .update({
+        'org_image':  downloadUrl,
+        'updated_at': FieldValue.serverTimestamp(),
+        'updated_by': uid,
+      });
+
+      if (mounted) {
+        setState(() {
+          _groupData['org_image'] = downloadUrl;
+          _uploadingImage         = false;
+          _dirty                  = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Cover image updated!'),
+          backgroundColor: _D.accent,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.all(16),
+          duration: const Duration(seconds: 2),
+        ));
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() { _uploadingImage = false; _pickedImageFile = null; });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Failed to upload image. Please try again.'),
+          backgroundColor: _D.rejClr,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.all(16),
+        ));
+      }
+    }
+  }
+
   Future<void> _save() async {
     if (_saving) return;
     final lang = ref.read(appLangProvider);
@@ -831,15 +956,12 @@ class _OrganizerGroupSettingsScreenState
     }
   }
 
-  // ── ★ Navigate to AddEventScreen pre-filling group fields ─────────────────
   void _navigateToAddEvent(BuildContext context) {
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => AddEventScreen(
-          // ── Pre-fill from group data — mirrors web app query params ──────
-          // Web: orgName, venueName, city, prefecture, country, contactEmail, link
-          initialOrgName:    (_groupData['org_name']          ?? '').toString(),
+          initialOrgName:    (_groupData['org_name']           ?? '').toString(),
           initialVenueName:  (_groupData['org_venue_loc_name'] ?? '').toString(),
           initialCity:       (_groupData['org_city']           ?? '').toString(),
           initialPrefecture: (_groupData['org_prefecture']     ?? '').toString(),
@@ -918,32 +1040,78 @@ class _OrganizerGroupSettingsScreenState
     );
   }
 
+  // ── Cover image — tappable, shows local preview while uploading ───────────
   Widget _buildCoverImage(String imgUrl, String lang) {
-    return Container(
-      height: 200, width: double.infinity,
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), color: _D.accentLt),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: Stack(children: [
-          if (imgUrl.isNotEmpty)
-            Image.network(imgUrl, width: double.infinity, height: 200, fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _imgPlaceholder())
-          else _imgPlaceholder(),
-          Positioned.fill(child: Container(decoration: BoxDecoration(
-              gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                  colors: [Colors.transparent, Colors.black.withOpacity(0.25)])))),
-          Positioned(bottom: 12, left: 12,
+    return GestureDetector(
+      onTap: _uploadingImage ? null : _pickCoverImage,
+      child: Container(
+        height: 200, width: double.infinity,
+        decoration: BoxDecoration(borderRadius: BorderRadius.circular(20), color: _D.accentLt),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Stack(children: [
+            // Image source: picked local file → network url → placeholder
+            if (_pickedImageFile != null)
+              Image.file(_pickedImageFile!,
+                  width: double.infinity, height: 200, fit: BoxFit.cover)
+            else if (imgUrl.isNotEmpty)
+              Image.network(imgUrl,
+                  width: double.infinity, height: 200, fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _imgPlaceholder())
+            else
+              _imgPlaceholder(),
+
+            // Existing gradient overlay (unchanged)
+            Positioned.fill(child: Container(decoration: BoxDecoration(
+                gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.transparent, Colors.black.withOpacity(0.25)])))),
+
+            // Existing "Cover Image" label bottom-left (unchanged)
+            Positioned(
+              bottom: 12, left: 12,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(color: Colors.black.withOpacity(0.45), borderRadius: BorderRadius.circular(20)),
+                decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.45),
+                    borderRadius: BorderRadius.circular(20)),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
                   const Icon(Icons.image_rounded, size: 12, color: Colors.white),
                   const SizedBox(width: 5),
                   Text(_t(lang, 'coverImage'),
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
+                      style: const TextStyle(
+                          fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
                 ]),
-              )),
-        ]),
+              ),
+            ),
+
+            // NEW: edit/upload button top-right
+            Positioned(
+              top: 12, right: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.50),
+                    borderRadius: BorderRadius.circular(20)),
+                child: _uploadingImage
+                    ? const SizedBox(
+                    width: 14, height: 14,
+                    child: CircularProgressIndicator(
+                        color: Colors.white, strokeWidth: 2))
+                    : const Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.edit_rounded, size: 12, color: Colors.white),
+                  SizedBox(width: 4),
+                  Text('Edit',
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white)),
+                ]),
+              ),
+            ),
+          ]),
+        ),
       ),
     );
   }
@@ -1240,12 +1408,11 @@ class _OrganizerGroupSettingsScreenState
           ]);
         }),
 
-      // ── ★ "Add an event" button — navigates to AddEventScreen with group data pre-filled ──
       Container(
         decoration: const BoxDecoration(border: Border(top: BorderSide(color: _D.border))),
         child: InkWell(
           borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
-          onTap: () => _navigateToAddEvent(context), // ← KEY CHANGE
+          onTap: () => _navigateToAddEvent(context),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 14),
             child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [

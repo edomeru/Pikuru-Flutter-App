@@ -1260,6 +1260,13 @@ class _MyGroupsTabState extends State<_MyGroupsTab> {
     }
   }
 
+  /// Called by _GroupCard when a toggle write succeeds — patches the
+  /// local cache so the card reflects the new value without re-fetching.
+  void _patchGroup(String docId, Map<String, dynamic> patch) {
+    final i = _groups.indexWhere((g) => g['_docId'] == docId);
+    if (i != -1) setState(() => _groups[i] = {..._groups[i], ...patch});
+  }
+
   @override
   Widget build(BuildContext context) {
     if (!_initDone && _loading) {
@@ -1279,7 +1286,7 @@ class _MyGroupsTabState extends State<_MyGroupsTab> {
       padding:   const EdgeInsets.all(16),
       itemCount: itemCount,
       itemBuilder: (_, i) {
-        // ── Footer: spinner or load-more button ─────────────────────────
+        // ── Footer ──────────────────────────────────────────────────────
         if (i == _groups.length) {
           if (_loading) {
             return const Padding(
@@ -1322,9 +1329,10 @@ class _MyGroupsTabState extends State<_MyGroupsTab> {
         // ── Group card ──────────────────────────────────────────────────
         final g = _groups[i];
         return _GroupCard(
-          groupId: g['_docId'] as String,
-          data:    g,
-          lang:    widget.lang,
+          groupId:    g['_docId'] as String,
+          data:       g,
+          lang:       widget.lang,
+          onPatched:  (patch) => _patchGroup(g['_docId'] as String, patch),
         );
       },
     );
@@ -1332,13 +1340,21 @@ class _MyGroupsTabState extends State<_MyGroupsTab> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Group Card
+// Group Card — stateless visually, but toggles patch the parent cache
 // ─────────────────────────────────────────────────────────────────────────────
 class _GroupCard extends StatelessWidget {
   final String groupId, lang;
   final Map<String, dynamic> data;
-  const _GroupCard(
-      {required this.groupId, required this.data, required this.lang});
+  /// Called with the changed fields after a successful Firestore write
+  /// so the parent can update its local list without a re-fetch.
+  final void Function(Map<String, dynamic> patch) onPatched;
+
+  const _GroupCard({
+    required this.groupId,
+    required this.data,
+    required this.lang,
+    required this.onPatched,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1390,23 +1406,17 @@ class _GroupCard extends StatelessWidget {
             borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
             child: Stack(children: [
               imgUrl.isNotEmpty
-                  ? Image.network(
-                imgUrl,
-                height: 130,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _grpPlaceholder(),
-              )
+                  ? Image.network(imgUrl,
+                  height: 130,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _grpPlaceholder())
                   : _grpPlaceholder(),
-
-              // Approval status badge — top-left
               Positioned(
                 top:  12,
                 left: 12,
                 child: _Badge(label: sl, icon: si, color: sc, bg: sb),
               ),
-
-              // Active + Public badges — top-right (approved only)
               if (isApproved)
                 Positioned(
                   top:   12,
@@ -1439,29 +1449,25 @@ class _GroupCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  name,
-                  style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w800),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                Text(name,
+                    style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w800),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
                 if (desc.isNotEmpty) ...[
                   const SizedBox(height: 4),
-                  Text(
-                    desc,
-                    style: TextStyle(
-                        fontSize: 13,
-                        color:    Colors.grey.shade600,
-                        height:   1.4),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  Text(desc,
+                      style: TextStyle(
+                          fontSize: 13,
+                          color:    Colors.grey.shade600,
+                          height:   1.4),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis),
                 ],
 
                 const SizedBox(height: 14),
 
-                // Edit Settings button — always visible
+                // Edit Settings — always visible
                 _ActionButton(
                   icon:  Icons.edit_rounded,
                   label: lang == 'ja' ? 'グループ設定を編集' : 'Edit Settings',
@@ -1477,7 +1483,7 @@ class _GroupCard extends StatelessWidget {
                   ),
                 ),
 
-                // Deactivate / Make Private toggles — approved only
+                // Deactivate / Make Private — approved only
                 if (isApproved) ...[
                   const SizedBox(height: 8),
                   Row(children: [
@@ -1488,10 +1494,12 @@ class _GroupCard extends StatelessWidget {
                             : (lang == 'ja' ? 'アクティブにする'   : 'Activate'),
                         color: isActive ? _D.rejClr : _D.apprvClr,
                         onTap: () async {
+                          final newVal = !isActive;
                           await FirebaseFirestore.instance
                               .collection('organizations')
                               .doc(groupId)
-                              .update({'org_active': !isActive});
+                              .update({'org_active': newVal});
+                          onPatched({'org_active': newVal});
                         },
                       ),
                     ),
@@ -1503,10 +1511,12 @@ class _GroupCard extends StatelessWidget {
                             : (lang == 'ja' ? '公開する'    : 'Make Public'),
                         color: const Color(0xFF1565C0),
                         onTap: () async {
+                          final newVal = !isPublic;
                           await FirebaseFirestore.instance
                               .collection('organizations')
                               .doc(groupId)
-                              .update({'org_public': !isPublic});
+                              .update({'org_public': newVal});
+                          onPatched({'org_public': newVal});
                         },
                       ),
                     ),
@@ -1528,7 +1538,6 @@ class _GroupCard extends StatelessWidget {
         size: 48, color: Colors.grey.shade300),
   );
 }
-
 // ═════════════════════════════════════════════════════════════════════════════
 // TAB 3 — REGISTERED EVENTS  (cursor-based pagination, 10 per page)
 // ═════════════════════════════════════════════════════════════════════════════
