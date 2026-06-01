@@ -19,6 +19,9 @@ class _C {
   static const approved  = Color(0xFF1F7A35);
   static const pending   = Color(0xFFB07D00);
   static const rejected  = Color(0xFFB0193A);
+  static const waitlist  = Color(0xFFB05A00);
+  static const waitlistBg = Color(0xFFFFF3E0);
+  static const capacityFull = Color(0xFFB0193A);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -61,12 +64,13 @@ String _fmtTime(dynamic ts) {
 // Registration counts — fetched via getCountFromServer (no doc reads)
 // ─────────────────────────────────────────────────────────────────────────────
 class _RegCounts {
-  final int total, approved, pending, rejected;
+  final int total, approved, pending, rejected, waitlist;
   const _RegCounts({
     this.total = 0,
     this.approved = 0,
     this.pending = 0,
     this.rejected = 0,
+    this.waitlist = 0,
   });
 }
 
@@ -92,12 +96,12 @@ class OrganizerEventDetailScreen extends StatefulWidget {
 
 class _OrganizerEventDetailScreenState
     extends State<OrganizerEventDetailScreen> {
-  // ── Counts (cheap — getCountFromServer, no document reads) ────────────────
+  // ── Counts ────────────────────────────────────────────────────────────────
   _RegCounts _counts = const _RegCounts();
   bool _loadingCounts = true;
 
   // ── Paginated registration list ───────────────────────────────────────────
-  static const int _pageSize = 15; // mirrors web REG_PAGE_SIZE
+  static const int _pageSize = 15;
   final List<Map<String, dynamic>> _regs = [];
   DocumentSnapshot? _lastDoc;
   bool _hasMore = false;
@@ -105,17 +109,52 @@ class _OrganizerEventDetailScreenState
   bool _loadingFirst = true;
 
   // ── Filter ────────────────────────────────────────────────────────────────
-  String _regFilter = 'all'; // all | pending | approved | rejected
+  // Values: 'all' | 'pending' | 'approved' | 'rejected' | 'waitlist'
+  String _regFilter = 'all';
 
   // ── Optimistic update tracking ────────────────────────────────────────────
   String? _updatingId;
 
+  // ── Capacity confirm dialog ───────────────────────────────────────────────
+  // Holds {regId, approved, limit} when we need to show the over-capacity warning
+  Map<String, dynamic>? _capacityConfirmTarget;
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Derived helpers
+  // ─────────────────────────────────────────────────────────────────────────
+
+  int get _eventLimit {
+    final v = widget.data['event_limit'];
+    if (v == null) return 0;
+    if (v is int) return v;
+    if (v is double) return v.toInt();
+    return int.tryParse(v.toString()) ?? 0;
+  }
+
+  bool get _hasLimit => _eventLimit > 0;
+
+  bool get _isFull => _hasLimit && _counts.approved >= _eventLimit;
+
+  double get _fillPct =>
+      (_hasLimit && _eventLimit > 0) ? (_counts.approved / _eventLimit).clamp(0.0, 1.0) : 0.0;
+
+  Color get _fillColor {
+    if (_fillPct >= 0.9) return _C.capacityFull;
+    if (_fillPct >= 0.7) return const Color(0xFFB05A00);
+    return _C.approved;
+  }
+
   List<Map<String, dynamic>> get _filtered {
     if (_regFilter == 'all') return _regs;
-    return _regs
-        .where((r) => (r['status'] ?? 'pending') == _regFilter)
-        .toList();
+    return _regs.where((r) => (r['status'] ?? 'pending') == _regFilter).toList();
   }
+
+  // Main list = non-waitlist; shown first in "all" view
+  List<Map<String, dynamic>> get _mainList =>
+      _regs.where((r) => (r['status'] ?? 'pending') != 'waitlist').toList();
+
+  List<Map<String, dynamic>> get _waitlistList =>
+      _regs.where((r) => (r['status'] ?? 'pending') == 'waitlist').toList();
 
   // ─────────────────────────────────────────────────────────────────────────
   @override
@@ -125,7 +164,7 @@ class _OrganizerEventDetailScreenState
     _loadFirstPage();
   }
 
-  // ── 1. Fetch counts with count() — no document reads ─────────────────────
+  // ── 1. Fetch counts with count() ──────────────────────────────────────────
   Future<void> _fetchCounts() async {
     try {
       final base = FirebaseFirestore.instance
@@ -136,20 +175,23 @@ class _OrganizerEventDetailScreenState
         base.count().get(),
         base.where('status', isEqualTo: 'approved').count().get(),
         base.where('status', isEqualTo: 'rejected').count().get(),
+        base.where('status', isEqualTo: 'waitlist').count().get(),
       ]);
 
       final total    = results[0].count ?? 0;
       final approved = results[1].count ?? 0;
       final rejected = results[2].count ?? 0;
-      final pending  = total - approved - rejected;
+      final waitlist = results[3].count ?? 0;
+      final pending  = total - approved - rejected - waitlist;
 
       if (mounted) {
         setState(() {
           _counts = _RegCounts(
             total:    total,
             approved: approved,
-            pending:  pending,
+            pending:  pending < 0 ? 0 : pending,
             rejected: rejected,
+            waitlist: waitlist,
           );
           _loadingCounts = false;
         });
@@ -159,7 +201,7 @@ class _OrganizerEventDetailScreenState
     }
   }
 
-  // ── 2. Load first page (15 docs) ──────────────────────────────────────────
+  // ── 2. Load first page ────────────────────────────────────────────────────
   Future<void> _loadFirstPage() async {
     setState(() {
       _loadingFirst = true;
@@ -177,8 +219,7 @@ class _OrganizerEventDetailScreenState
 
       if (mounted) {
         setState(() {
-          _regs.addAll(
-              snap.docs.map((d) => {'_id': d.id, ...d.data()}).toList());
+          _regs.addAll(snap.docs.map((d) => {'_id': d.id, ...d.data()}).toList());
           _lastDoc = snap.docs.isNotEmpty ? snap.docs.last : null;
           _hasMore = snap.docs.length == _pageSize;
           _loadingFirst = false;
@@ -204,8 +245,7 @@ class _OrganizerEventDetailScreenState
 
       if (mounted) {
         setState(() {
-          _regs.addAll(
-              snap.docs.map((d) => {'_id': d.id, ...d.data()}).toList());
+          _regs.addAll(snap.docs.map((d) => {'_id': d.id, ...d.data()}).toList());
           _lastDoc = snap.docs.isNotEmpty ? snap.docs.last : null;
           _hasMore = snap.docs.length == _pageSize;
           _loadingPage = false;
@@ -216,8 +256,24 @@ class _OrganizerEventDetailScreenState
     }
   }
 
-  // ── 4. Status update ──────────────────────────────────────────────────────
-  Future<void> _updateStatus(String regId, String status) async {
+  // ── 4. Status update — mirrors web updateRegistrationStatus ───────────────
+  Future<void> _updateStatus(String regId, String status, {bool bypassCapacityCheck = false}) async {
+    // Capacity guard: if approving and at/over limit, show confirm dialog first
+    if (status == 'approved' && _hasLimit && !bypassCapacityCheck) {
+      final reg = _regs.firstWhere((r) => r['_id'] == regId, orElse: () => {});
+      final prevStatus = (reg['status'] ?? 'pending') as String;
+      if (prevStatus != 'approved' && _counts.approved >= _eventLimit) {
+        setState(() {
+          _capacityConfirmTarget = {
+            'regId': regId,
+            'approved': _counts.approved,
+            'limit': _eventLimit,
+          };
+        });
+        return;
+      }
+    }
+
     setState(() => _updatingId = regId);
     try {
       await FirebaseFirestore.instance
@@ -227,16 +283,73 @@ class _OrganizerEventDetailScreenState
         'status':     status,
         'updated_at': FieldValue.serverTimestamp(),
       });
+
+      // Auto-waitlist remaining pending if we just filled the last slot
+      if (status == 'approved' && _hasLimit) {
+        final newApproved = _counts.approved + 1;
+        if (newApproved >= _eventLimit) {
+          final pendingOthers = _regs
+              .where((r) => r['_id'] != regId && (r['status'] ?? 'pending') == 'pending')
+              .toList();
+          for (final pending in pendingOthers) {
+            await FirebaseFirestore.instance
+                .collection('event_registrations')
+                .doc(pending['_id'] as String)
+                .update({'status': 'waitlist', 'updated_at': FieldValue.serverTimestamp()});
+          }
+        }
+      }
+
       setState(() {
         final idx = _regs.indexWhere((r) => r['_id'] == regId);
         if (idx != -1) {
           final old = (_regs[idx]['status'] ?? 'pending') as String;
           _regs[idx] = {..._regs[idx], 'status': status};
+
+          // Auto-waitlist locally
+          if (status == 'approved' && _hasLimit) {
+            final newApproved = _counts.approved + (old == 'approved' ? 0 : 1);
+            if (newApproved >= _eventLimit) {
+              for (int i = 0; i < _regs.length; i++) {
+                if (_regs[i]['_id'] != regId && (_regs[i]['status'] ?? 'pending') == 'pending') {
+                  _regs[i] = {..._regs[i], 'status': 'waitlist'};
+                }
+              }
+            }
+          }
+
+          // Update counts optimistically
+          int newApproved = _counts.approved;
+          int newPending  = _counts.pending;
+          int newRejected = _counts.rejected;
+          int newWaitlist = _counts.waitlist;
+
+          // Subtract from old bucket
+          if (old == 'approved')  newApproved--;
+          else if (old == 'pending')   newPending--;
+          else if (old == 'rejected')  newRejected--;
+          else if (old == 'waitlist')  newWaitlist--;
+
+          // Add to new bucket
+          if (status == 'approved')  newApproved++;
+          else if (status == 'pending')   newPending++;
+          else if (status == 'rejected')  newRejected++;
+          else if (status == 'waitlist')  newWaitlist++;
+
+          // Pending → waitlist for auto-promoted items
+          if (status == 'approved' && _hasLimit && newApproved >= _eventLimit) {
+            final pendingCount = _regs.where((r) => r['_id'] != regId && (r['status'] ?? '') == 'pending').length;
+            // Already updated above in _regs loop, so recalculate from _regs
+            newPending  = _regs.where((r) => (r['status'] ?? 'pending') == 'pending').length;
+            newWaitlist = _regs.where((r) => (r['status'] ?? '') == 'waitlist').length;
+          }
+
           _counts = _RegCounts(
             total:    _counts.total,
-            approved: _counts.approved + (status == 'approved' ? 1 : 0) - (old == 'approved' ? 1 : 0),
-            pending:  _counts.pending  + (status == 'pending'  ? 1 : 0) - (old == 'pending'  ? 1 : 0),
-            rejected: _counts.rejected + (status == 'rejected' ? 1 : 0) - (old == 'rejected' ? 1 : 0),
+            approved: newApproved.clamp(0, _counts.total),
+            pending:  newPending.clamp(0, _counts.total),
+            rejected: newRejected.clamp(0, _counts.total),
+            waitlist: newWaitlist.clamp(0, _counts.total),
           );
         }
       });
@@ -306,10 +419,8 @@ class _OrganizerEventDetailScreenState
 
     final isApproved = d['event_checked'] == true && d['event_pending_review'] != true;
     final eventType  = (d['event_type'] ?? '').toString();
-    final limitVal   = (d['event_limit'] ?? 0);
-    final limitStr   = (limitVal != null && limitVal != 0)
-        ? '$limitVal'
-        : _t('No limit', '制限なし');
+    final limitVal   = _eventLimit;
+    final limitStr   = limitVal > 0 ? '$limitVal' : _t('No limit', '制限なし');
     final contact = (d['event_contact']    ?? '').toString();
     final venue   = (d['event_venue_name'] ?? '').toString();
     final link    = (d['event_link']       ?? '').toString();
@@ -415,6 +526,8 @@ class _OrganizerEventDetailScreenState
                 scrollController: scrollController,
                 regs:          _regs,
                 filtered:      _filtered,
+                mainList:      _mainList,
+                waitlistList:  _waitlistList,
                 filter:        _regFilter,
                 loading:       _loadingFirst,
                 loadingMore:   _loadingPage,
@@ -423,6 +536,10 @@ class _OrganizerEventDetailScreenState
                 counts:        _counts,
                 countsLoading: _loadingCounts,
                 lang:          lang,
+                eventLimit:    _eventLimit,
+                isFull:        _isFull,
+                fillPct:       _fillPct,
+                fillColor:     _fillColor,
                 onFilter:      (f) => setState(() => _regFilter = f),
                 onApprove:     (id) => _updateStatus(id, 'approved'),
                 onReject:      (id) => _updateStatus(id, 'rejected'),
@@ -430,6 +547,20 @@ class _OrganizerEventDetailScreenState
               );
             },
           ),
+
+          // ── CAPACITY CONFIRM DIALOG ────────────────────────────────────
+          if (_capacityConfirmTarget != null)
+            _CapacityConfirmOverlay(
+              approvedCount: _capacityConfirmTarget!['approved'] as int,
+              limit:         _capacityConfirmTarget!['limit'] as int,
+              lang:          lang,
+              onCancel: () => setState(() => _capacityConfirmTarget = null),
+              onConfirm: () {
+                final regId = _capacityConfirmTarget!['regId'] as String;
+                setState(() => _capacityConfirmTarget = null);
+                _updateStatus(regId, 'approved', bypassCapacityCheck: true);
+              },
+            ),
         ],
       ),
     );
@@ -473,15 +604,136 @@ class _OrganizerEventDetailScreenState
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// _RegSheet — draggable bottom sheet with paginated list
+// _CapacityConfirmOverlay — shown when approving over the limit
+// Mirrors the web app capacityConfirmTarget dialog
+// ─────────────────────────────────────────────────────────────────────────────
+class _CapacityConfirmOverlay extends StatelessWidget {
+  final int approvedCount, limit;
+  final String lang;
+  final VoidCallback onCancel, onConfirm;
+
+  const _CapacityConfirmOverlay({
+    required this.approvedCount,
+    required this.limit,
+    required this.lang,
+    required this.onCancel,
+    required this.onConfirm,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isJa = lang == 'ja';
+    return Material(
+      color: Colors.black54,
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFFBF0),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: _C.waitlist.withOpacity(0.4)),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.18), blurRadius: 28, offset: const Offset(0, 8))],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Icon
+                  Container(
+                    width: 52, height: 52,
+                    decoration: BoxDecoration(
+                      color: _C.waitlist.withOpacity(0.12),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: _C.waitlist.withOpacity(0.3)),
+                    ),
+                    child: const Icon(Icons.warning_amber_rounded, color: _C.waitlist, size: 26),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    isJa ? '定員超過の確認' : 'Capacity Warning',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: _C.textPri),
+                  ),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.black.withOpacity(0.06)),
+                    ),
+                    child: Text(
+                      isJa
+                          ? 'イベントは満員 ($approvedCount/$limit) です。本当に承認しますか？（定員を超過します）'
+                          : 'Event is at capacity ($approvedCount/$limit). Approve anyway? (will exceed limit)',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 13, color: _C.textMuted, height: 1.5),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Row(children: [
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: onCancel,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: Colors.black.withOpacity(0.1)),
+                          ),
+                          child: Text(
+                            isJa ? 'キャンセル' : 'Cancel',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _C.textMuted),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: onConfirm,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 13),
+                          decoration: BoxDecoration(
+                            color: _C.waitlist,
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Text(
+                            isJa ? '承認する' : 'Approve Anyway',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: Colors.white),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ]),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _RegSheet — draggable bottom sheet with capacity bar + waitlist section
 // ─────────────────────────────────────────────────────────────────────────────
 class _RegSheet extends StatelessWidget {
   final ScrollController scrollController;
-  final List<Map<String, dynamic>> regs, filtered;
+  final List<Map<String, dynamic>> regs, filtered, mainList, waitlistList;
   final String filter, lang;
   final bool loading, loadingMore, hasMore, countsLoading;
   final String? updatingId;
   final _RegCounts counts;
+  final int eventLimit;
+  final bool isFull;
+  final double fillPct;
+  final Color fillColor;
   final ValueChanged<String> onFilter;
   final ValueChanged<String> onApprove;
   final ValueChanged<String> onReject;
@@ -491,6 +743,8 @@ class _RegSheet extends StatelessWidget {
     required this.scrollController,
     required this.regs,
     required this.filtered,
+    required this.mainList,
+    required this.waitlistList,
     required this.filter,
     required this.lang,
     required this.loading,
@@ -499,6 +753,10 @@ class _RegSheet extends StatelessWidget {
     required this.countsLoading,
     required this.updatingId,
     required this.counts,
+    required this.eventLimit,
+    required this.isFull,
+    required this.fillPct,
+    required this.fillColor,
     required this.onFilter,
     required this.onApprove,
     required this.onReject,
@@ -546,6 +804,7 @@ class _RegSheet extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Title + stat pills
                       Row(children: [
                         Text(
                           _t('Event Registrations', 'イベント登録管理'),
@@ -571,9 +830,29 @@ class _RegSheet extends StatelessWidget {
                             const SizedBox(width: 5),
                             _StatPill('${counts.rejected} ✗', _C.rejected),
                           ],
+                          if (counts.waitlist > 0) ...[
+                            const SizedBox(width: 5),
+                            _StatPill('${counts.waitlist} ⏳', _C.waitlist),
+                          ],
                         ],
                       ]),
+
+                      // ── Capacity bar (only when event has a limit) ───────
+                      if (eventLimit > 0) ...[
+                        const SizedBox(height: 10),
+                        _CapacityBar(
+                          approvedCount: counts.approved,
+                          limit:         eventLimit,
+                          waitlistCount: counts.waitlist,
+                          isFull:        isFull,
+                          fillPct:       fillPct,
+                          fillColor:     fillColor,
+                          lang:          lang,
+                        ),
+                      ],
+
                       const SizedBox(height: 10),
+                      // ── Filter tabs ──────────────────────────────────────
                       SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
                         child: Row(children: [
@@ -604,6 +883,15 @@ class _RegSheet extends StatelessWidget {
                             selected: filter == 'rejected',
                             onTap: () => onFilter('rejected'),
                           ),
+                          // Waitlist tab — always shown, grayed when 0
+                          const SizedBox(width: 6),
+                          _FilterTab(
+                            label: _t('Waitlist', 'ウェイティング'),
+                            count: counts.waitlist,
+                            selected: filter == 'waitlist',
+                            onTap: () => onFilter('waitlist'),
+                            accentColor: _C.waitlist,
+                          ),
                         ]),
                       ),
                       const SizedBox(height: 10),
@@ -620,7 +908,7 @@ class _RegSheet extends StatelessWidget {
             const SliverFillRemaining(
               child: Center(child: CircularProgressIndicator(color: _C.accent)),
             )
-          else if (filtered.isEmpty)
+          else if (filter == 'all' && regs.isEmpty)
             SliverFillRemaining(
               child: Center(
                 child: Text(
@@ -629,78 +917,300 @@ class _RegSheet extends StatelessWidget {
                 ),
               ),
             )
-          else
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-              sliver: SliverList(
-                delegate: SliverChildBuilderDelegate(
-                      (context, i) {
-                    if (i < filtered.length) {
-                      final r = filtered[i];
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: _RegRow(
-                          reg:        r,
-                          lang:       lang,
-                          isUpdating: updatingId == r['_id'],
-                          onApprove:  () => onApprove(r['_id'] as String),
-                          onReject:   () => onReject(r['_id'] as String),
-                        ),
-                      );
-                    }
-                    // ── Load-more / end row ──────────────────────────────
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: loadingMore
-                          ? const Center(
-                          child: SizedBox(
-                              width: 22, height: 22,
-                              child: CircularProgressIndicator(
-                                  strokeWidth: 2.5, color: _C.accent)))
-                          : hasMore
-                          ? GestureDetector(
-                        onTap: onLoadMore,
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 20),
+          // ── "All" view: main list then waitlist section ──────────────────
+          else if (filter == 'all')
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                        (context, i) {
+                      // Total items = mainList + (divider row) + waitlistList + load-more
+                      final mainCount = mainList.length;
+                      final hasWaitlist = waitlistList.isNotEmpty;
+                      final dividerIdx = hasWaitlist ? mainCount : -1;
+                      final waitlistStart = hasWaitlist ? mainCount + 1 : -1;
+                      final waitlistEnd   = hasWaitlist ? mainCount + 1 + waitlistList.length : -1;
+                      final loadMoreIdx   = hasWaitlist ? waitlistEnd : mainCount;
+
+                      if (i < mainCount) {
+                        // Main registrant row
+                        final r = mainList[i];
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: _RegRow(
+                            reg:        r,
+                            lang:       lang,
+                            isUpdating: updatingId == r['_id'],
+                            onApprove:  () => onApprove(r['_id'] as String),
+                            onReject:   () => onReject(r['_id'] as String),
+                          ),
+                        );
+                      } else if (i == dividerIdx) {
+                        // ── Waitlist section divider ─────────────────────────
+                        return Padding(
                           padding: const EdgeInsets.symmetric(vertical: 12),
-                          decoration: BoxDecoration(
-                            color: _C.accent.withOpacity(0.07),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: _C.accent.withOpacity(0.25)),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                _t('Load more', 'もっと読み込む'),
-                                style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                    color: _C.accent.withOpacity(0.85)),
+                          child: Row(children: [
+                            Expanded(child: Divider(color: _C.waitlist.withOpacity(0.3), height: 1)),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                color: _C.waitlistBg,
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: _C.waitlist.withOpacity(0.35)),
                               ),
-                              const SizedBox(width: 6),
-                              Icon(Icons.expand_more_rounded,
-                                  size: 16, color: _C.accent.withOpacity(0.7)),
-                            ],
+                              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                const Text('⏳', style: TextStyle(fontSize: 10)),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${_t('WAITING LIST', 'ウェイティングリスト')} (${waitlistList.length})',
+                                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: _C.waitlist, letterSpacing: 0.3),
+                                ),
+                              ]),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(child: Divider(color: _C.waitlist.withOpacity(0.3), height: 1)),
+                          ]),
+                        );
+                      } else if (hasWaitlist && i >= waitlistStart && i < waitlistEnd) {
+                        // Waitlist row
+                        final r = waitlistList[i - waitlistStart];
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: _RegRow(
+                            reg:        r,
+                            lang:       lang,
+                            isUpdating: updatingId == r['_id'],
+                            onApprove:  () => onApprove(r['_id'] as String),
+                            onReject:   () => onReject(r['_id'] as String),
+                            isWaitlist: true,
                           ),
-                        ),
-                      )
-                          : Center(
-                        child: Text(
-                          _t('Showing ${regs.length} of ${regs.length}',
-                              '${regs.length}件 表示中'),
-                          style: TextStyle(fontSize: 11, color: _C.textDim),
-                        ),
-                      ),
-                    );
-                  },
-                  childCount: filtered.length + 1,
+                        );
+                      } else if (i == loadMoreIdx) {
+                        // Load-more / end row
+                        return _LoadMoreRow(
+                          loading:  loadingMore,
+                          hasMore:  hasMore,
+                          total:    regs.length,
+                          lang:     lang,
+                          onTap:    onLoadMore,
+                        );
+                      }
+                      return null;
+                    },
+                    childCount: mainList.length +
+                        (waitlistList.isNotEmpty ? 1 + waitlistList.length : 0) +
+                        1, // +1 for load-more/end row
+                  ),
                 ),
-              ),
-            ),
+              )
+            // ── Filtered view (pending / approved / rejected / waitlist) ─────
+            else if (filtered.isEmpty)
+                SliverFillRemaining(
+                  child: Center(
+                    child: Text(
+                      _t('No registrations yet.', 'まだ登録者がいません。'),
+                      style: TextStyle(fontSize: 13, color: _C.textMuted),
+                    ),
+                  ),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                          (context, i) {
+                        if (i < filtered.length) {
+                          final r = filtered[i];
+                          final isWL = (r['status'] ?? 'pending') == 'waitlist';
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _RegRow(
+                              reg:        r,
+                              lang:       lang,
+                              isUpdating: updatingId == r['_id'],
+                              onApprove:  () => onApprove(r['_id'] as String),
+                              onReject:   () => onReject(r['_id'] as String),
+                              isWaitlist: isWL,
+                            ),
+                          );
+                        }
+                        return _LoadMoreRow(
+                          loading:  loadingMore,
+                          hasMore:  hasMore,
+                          total:    regs.length,
+                          lang:     lang,
+                          onTap:    onLoadMore,
+                        );
+                      },
+                      childCount: filtered.length + 1,
+                    ),
+                  ),
+                ),
 
           const SliverToBoxAdapter(child: SizedBox(height: 32)),
         ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _CapacityBar — mirrors the web app capacity progress bar + "CAPACITY FULL"
+// ─────────────────────────────────────────────────────────────────────────────
+class _CapacityBar extends StatelessWidget {
+  final int approvedCount, limit, waitlistCount;
+  final bool isFull;
+  final double fillPct;
+  final Color fillColor;
+  final String lang;
+
+  const _CapacityBar({
+    required this.approvedCount,
+    required this.limit,
+    required this.waitlistCount,
+    required this.isFull,
+    required this.fillPct,
+    required this.fillColor,
+    required this.lang,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isJa = lang == 'ja';
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: isFull ? _C.capacityFull.withOpacity(0.05) : _C.accent.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isFull ? _C.capacityFull.withOpacity(0.3) : _C.accent.withOpacity(0.15),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Slots label row
+          Row(
+            children: [
+              Text(
+                isJa ? '$approvedCount / $limit 枠埋まり' : '$approvedCount / $limit slots filled',
+                style: TextStyle(
+                  fontSize: 12, fontWeight: FontWeight.w700,
+                  color: isFull ? _C.capacityFull : _C.textMuted,
+                ),
+              ),
+              const Spacer(),
+              if (isFull)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: _C.capacityFull.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: _C.capacityFull.withOpacity(0.4)),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.lock_rounded, size: 11, color: _C.capacityFull),
+                    const SizedBox(width: 4),
+                    Text(
+                      isJa ? '定員に達しました' : 'CAPACITY FULL',
+                      style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: _C.capacityFull, letterSpacing: 0.4),
+                    ),
+                  ]),
+                )
+              else
+                Text(
+                  '${(fillPct * 100).round()}%',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: fillColor),
+                ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          // Progress bar
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: fillPct,
+              minHeight: 5,
+              backgroundColor: Colors.black.withOpacity(0.07),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                isFull ? _C.capacityFull : fillColor,
+              ),
+            ),
+          ),
+          // Waitlist note
+          if (waitlistCount > 0) ...[
+            const SizedBox(height: 6),
+            Row(children: [
+              const Text('⏳', style: TextStyle(fontSize: 11)),
+              const SizedBox(width: 4),
+              Text(
+                isJa ? '$waitlistCount 名がウェイティング中' : '$waitlistCount on waitlist',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: _C.waitlist),
+              ),
+            ]),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _LoadMoreRow — reusable load-more / end of list widget
+// ─────────────────────────────────────────────────────────────────────────────
+class _LoadMoreRow extends StatelessWidget {
+  final bool loading, hasMore;
+  final int total;
+  final String lang;
+  final VoidCallback onTap;
+
+  const _LoadMoreRow({
+    required this.loading,
+    required this.hasMore,
+    required this.total,
+    required this.lang,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12),
+      child: loading
+          ? const Center(
+          child: SizedBox(
+              width: 22, height: 22,
+              child: CircularProgressIndicator(strokeWidth: 2.5, color: _C.accent)))
+          : hasMore
+          ? GestureDetector(
+        onTap: onTap,
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 20),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: _C.accent.withOpacity(0.07),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: _C.accent.withOpacity(0.25)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                lang == 'ja' ? 'もっと読み込む' : 'Load more',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _C.accent.withOpacity(0.85)),
+              ),
+              const SizedBox(width: 6),
+              Icon(Icons.expand_more_rounded, size: 16, color: _C.accent.withOpacity(0.7)),
+            ],
+          ),
+        ),
+      )
+          : Center(
+        child: Text(
+          lang == 'ja' ? '$total件 表示中' : 'Showing $total of $total',
+          style: TextStyle(fontSize: 11, color: _C.textDim),
+        ),
       ),
     );
   }
@@ -1036,12 +1546,13 @@ class _DetailRowW extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// _RegRow — single registrant card
+// _RegRow — single registrant card; waitlist variant has amber styling
 // ─────────────────────────────────────────────────────────────────────────────
 class _RegRow extends StatelessWidget {
   final Map<String, dynamic> reg;
   final String lang;
   final bool isUpdating;
+  final bool isWaitlist;
   final VoidCallback onApprove, onReject;
   const _RegRow({
     required this.reg,
@@ -1049,6 +1560,7 @@ class _RegRow extends StatelessWidget {
     required this.isUpdating,
     required this.onApprove,
     required this.onReject,
+    this.isWaitlist = false,
   });
 
   bool get _isJa => lang == 'ja';
@@ -1062,38 +1574,45 @@ class _RegRow extends StatelessWidget {
     final avatar = (reg['user_avatar'] ?? '').toString();
     final regTs  = reg['registered_at'];
 
-    // ── Date formatted according to language ─────────────────────────────
     String dateStr = '';
     if (regTs is Timestamp) {
       final d = regTs.toDate();
-      if (_isJa) {
-        dateStr = '${d.month}月${d.day}日';
-      } else {
-        const mo = ['Jan','Feb','Mar','Apr','May','Jun',
-          'Jul','Aug','Sep','Oct','Nov','Dec'];
-        dateStr = '${mo[d.month - 1]} ${d.day}';
-      }
+      dateStr = _isJa ? '${d.month}月${d.day}日' : _shortMonth(d.month) + ' ${d.day}';
     }
 
     Color statusColor;
     String statusLabel;
-    if (status == 'approved') {
+    Color rowBg;
+    Color rowBorder;
+
+    if (status == 'waitlist') {
+      statusColor = _C.waitlist;
+      statusLabel = _t('Waitlist', 'ウェイティング');
+      rowBg       = _C.waitlistBg.withOpacity(0.5);
+      rowBorder   = _C.waitlist.withOpacity(0.18);
+    } else if (status == 'approved') {
       statusColor = _C.approved;
       statusLabel = _t('Approved', '承認済み');
+      rowBg       = _C.accent.withOpacity(0.03);
+      rowBorder   = _C.accent.withOpacity(0.1);
     } else if (status == 'rejected') {
       statusColor = _C.rejected;
       statusLabel = _t('Rejected', '却下');
+      rowBg       = _C.accent.withOpacity(0.03);
+      rowBorder   = _C.accent.withOpacity(0.1);
     } else {
       statusColor = _C.pending;
       statusLabel = _t('Pending', '審査中');
+      rowBg       = _C.accent.withOpacity(0.03);
+      rowBorder   = _C.accent.withOpacity(0.1);
     }
 
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: _C.accent.withOpacity(0.03),
+        color: rowBg,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _C.accent.withOpacity(0.1)),
+        border: Border.all(color: rowBorder),
       ),
       child: Row(children: [
         CircleAvatar(
@@ -1163,6 +1682,12 @@ class _RegRow extends StatelessWidget {
       ]),
     );
   }
+
+  String _shortMonth(int m) {
+    const mo = ['Jan','Feb','Mar','Apr','May','Jun',
+      'Jul','Aug','Sep','Oct','Nov','Dec'];
+    return mo[m - 1];
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1208,39 +1733,45 @@ class _FilterTab extends StatelessWidget {
   final int count;
   final bool selected;
   final VoidCallback onTap;
+  final Color? accentColor;
+
   const _FilterTab({
     required this.label,
     required this.count,
     required this.selected,
     required this.onTap,
+    this.accentColor,
   });
 
   @override
-  Widget build(BuildContext context) => GestureDetector(
-    onTap: onTap,
-    child: AnimatedContainer(
-      duration: const Duration(milliseconds: 150),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: selected
-            ? const Color(0xFF6366F1).withOpacity(0.15)
-            : Colors.black.withOpacity(0.04),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-            color: selected
-                ? const Color(0xFF6366F1).withOpacity(0.4)
-                : Colors.black.withOpacity(0.07)),
+  Widget build(BuildContext context) {
+    final selColor = accentColor ?? const Color(0xFF6366F1);
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected
+              ? selColor.withOpacity(0.15)
+              : Colors.black.withOpacity(0.04),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+              color: selected
+                  ? selColor.withOpacity(0.4)
+                  : Colors.black.withOpacity(0.07)),
+        ),
+        child: Text(
+          '$label ($count)',
+          style: TextStyle(
+              fontSize: 11, fontWeight: FontWeight.w700,
+              color: selected
+                  ? Colors.black.withOpacity(0.85)
+                  : Colors.black.withOpacity(0.4)),
+        ),
       ),
-      child: Text(
-        '$label ($count)',
-        style: TextStyle(
-            fontSize: 11, fontWeight: FontWeight.w700,
-            color: selected
-                ? Colors.black.withOpacity(0.85)
-                : Colors.black.withOpacity(0.4)),
-      ),
-    ),
-  );
+    );
+  }
 }
 
 class _ActionBtn extends StatelessWidget {
