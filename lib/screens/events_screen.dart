@@ -35,9 +35,7 @@ class _S {
   String get locationSection  => isJa ? '場所'          : 'LOCATION';
   String get eventTypeSection => isJa ? 'イベント種類'   : 'EVENT TYPE';
   String get skillSection     => isJa ? 'スキルレベル'   : 'SKILL LEVELS';
-  // Category section label — note appended separately in UI
   String get categorySection  => isJa ? 'カテゴリー'    : 'CATEGORIES';
-  // The sub-note shown next to "Categories"
   String get categoryNote     => isJa ? 'M=男子、W=女子、Mixed=混合' : "M=Men's, W=Women's, Mixed";
   String get otherSection     => isJa ? 'その他'        : 'OTHER';
 
@@ -55,7 +53,6 @@ class _S {
   String get amateur  => isJa ? '中級' : 'Amateur';
   String get beginner => isJa ? '初級' : 'Beginner';
 
-  // ── Category labels — reordered to match web app ──────────────────────
   String get mensDoubles   => isJa ? '男子ダブルス'   : 'M Doubles';
   String get mensSingles   => isJa ? '男子シングルズ'  : 'M Singles';
   String get womensDoubles => isJa ? '女子ダブルス'   : 'W Doubles';
@@ -184,7 +181,11 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
   final ScrollController      _scrollController = ScrollController();
 
   String     _selectedFilter = 'Upcoming';
-  _AdvFilter _adv = _AdvFilter(country: 'Japan', prefecture: 'Tokyo');
+  _AdvFilter _adv = _AdvFilter();
+
+  List<Map<String, dynamic>> _events = [];
+  bool _loadingEvents = true;
+  String? _loadError;
 
   static const Color _bg         = Color(0xFFF7F8FA);
   static const Color _surface    = Color(0xFFFFFFFF);
@@ -198,70 +199,229 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
   _S get s => _S(ref.watch(appLangProvider));
 
-  static const int _defaultDays = 30;
+  // ── FIX: Use 100-day window, NO default location filter (matches web app) ──
+  static const int _defaultDays = 100;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadEventsDirectly();
+  }
+
+  // ── Mirrors web app query exactly ────────────────────────────────────────
+  Future<void> _loadEventsDirectly() async {
+    if (!mounted) return;
+    setState(() {
+      _loadingEvents = true;
+      _loadError = null;
+    });
+
+    try {
+      final now   = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final in100 = today.add(const Duration(days: 100));
+
+      final snap = await FirebaseFirestore.instance
+          .collection('events')
+          .where('event_active',         isEqualTo: true)
+          .where('event_checked',        isEqualTo: true)
+          .where('event_pending_review', isEqualTo: false)
+          .where('event_date', isGreaterThanOrEqualTo: Timestamp.fromDate(today))
+          .where('event_date', isLessThanOrEqualTo:    Timestamp.fromDate(in100))
+          .orderBy('event_date')
+          .limit(100)
+          .get();
+
+      if (!mounted) return;
+
+      final raw = snap.docs
+          .map((d) => <String, dynamic>{...d.data(), '_doc_id': d.id})
+          .toList();
+
+      debugPrint('[EventsScreen] Raw events fetched: ${raw.length}');
+
+      // ── Enrich concurrently, never throw ─────────────────────────────────
+      final enriched = await Future.wait(
+        raw.map((e) => _enrichEvent(e).catchError((_) => e)),
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _events = enriched;
+        _loadingEvents = false;
+      });
+
+      debugPrint('[EventsScreen] Enriched events: ${_events.length}');
+    } catch (e) {
+      debugPrint('[EventsScreen] Load error: $e');
+      if (!mounted) return;
+      setState(() {
+        _loadError = e.toString();
+        _loadingEvents = false;
+      });
+    }
+  }
+
+  // ── Enrich a single event with resolved location fields ──────────────────
+  // Mirrors web app resolveLocation() exactly
+  Future<Map<String, dynamic>> _enrichEvent(Map<String, dynamic> event) async {
+    final locId = (event['event_loc_id'] ?? event['loc_id'] ?? '').toString().trim();
+    Map<String, dynamic> locDoc = {};
+
+    if (locId.isNotEmpty) {
+      try {
+        final snap = await FirebaseFirestore.instance
+            .collection('locations')
+            .where('loc_id', isEqualTo: locId)
+            .limit(1)
+            .get();
+        if (snap.docs.isNotEmpty) {
+          locDoc = snap.docs.first.data();
+        }
+      } catch (_) {}
+    }
+
+    String getField(String key) =>
+        ((locDoc[key] ?? event[key] ?? '')).toString().trim();
+
+    final pref = [
+      getField('loc_prefecture_en'),
+      getField('loc_prefecture'),
+      getField('loc_prefecture_jp'),
+      getField('event_prefecture'),
+      getField('prefecture'),
+    ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
+
+    final prefJp = [
+      getField('loc_prefecture_jp'),
+      getField('event_prefecture_jp'),
+      pref,
+    ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
+
+    final country = [
+      getField('loc_country'),
+      getField('event_country'),
+      getField('country'),
+    ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
+
+    final countryJp = [
+      getField('loc_country_jp'),
+      getField('event_country_jp'),
+      country,
+    ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
+
+    final city = [
+      getField('loc_city_en'),
+      getField('loc_city'),
+      getField('event_city'),
+      getField('city'),
+    ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
+
+    final cityJp = [
+      getField('loc_city_jp'),
+      getField('event_city_jp'),
+      city,
+    ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
+
+    final addr = [
+      getField('loc_address'),
+      getField('event_venue_address'),
+    ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
+
+    final addrJp = [
+      getField('loc_address_jp'),
+      getField('event_venue_address_jp'),
+      addr,
+    ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
+
+    final googleLink = [
+      getField('loc_googlelink'),
+      getField('event_googlelink'),
+      getField('event_venue_link'),
+    ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
+
+    String label = city.isNotEmpty && pref.isNotEmpty
+        ? '$city, $pref'
+        : city.isNotEmpty
+        ? city
+        : pref.isNotEmpty
+        ? pref
+        : country;
+
+    String labelJp = cityJp.isNotEmpty && prefJp.isNotEmpty
+        ? '$prefJp$cityJp'
+        : cityJp.isNotEmpty
+        ? cityJp
+        : prefJp.isNotEmpty
+        ? prefJp
+        : countryJp;
+
+    return {
+      ...event,
+      'location':         label,
+      'location_jp':      labelJp,
+      'event_address':    addr,
+      'event_address_jp': addrJp,
+      'event_googlelink': googleLink,
+      '_prefecture':      pref,
+      '_prefecture_jp':   prefJp,
+      '_country':         country,
+      '_country_jp':      countryJp,
+      '_city':            city,
+      '_city_jp':         cityJp,
+    };
+  }
 
   String get _locationLabel {
+    if (_adv.city.isNotEmpty)       return _adv.city;
     if (_adv.prefecture.isNotEmpty) return _adv.prefecture;
     if (_adv.country.isNotEmpty)    return _adv.country;
     return s.allCountries;
   }
 
-  bool _matchesLocation(
-      Map<String, dynamic> event, List<Map<String, dynamic>> allLocs) {
-    if (_adv.country.isEmpty) return true;
-    final targetCountry = _adv.country.toLowerCase();
-    final targetPref    = _adv.prefecture.isNotEmpty ? _adv.prefecture.toLowerCase() : null;
-    final targetCity    = _adv.city.isNotEmpty       ? _adv.city.toLowerCase()       : null;
-
-    final locId = (event['loc_id'] ?? event['event_loc_id'] ?? '').toString().trim();
-    Map<String, dynamic> loc = {};
-    if (locId.isNotEmpty) {
-      loc = allLocs.firstWhere(
-            (l) => (l['loc_id'] ?? l['id'] ?? '').toString() == locId,
-        orElse: () => {},
-      );
+  bool _matchesLocation(Map<String, dynamic> event) {
+    // ── FIX: No default location filter — show ALL countries by default ──
+    // This matches the web app behaviour (defaultLocationActive only applies
+    // on web first load for Tokyo; mobile shows everything by default)
+    if (_adv.country.isEmpty && _adv.prefecture.isEmpty && _adv.city.isEmpty) {
+      return true;
     }
 
-    String get(String key) =>
-        ((loc.isNotEmpty ? loc[key] : null) ?? event[key] ?? '')
-            .toString().trim().toLowerCase();
-
-    final country = get('loc_country');
-    if (country.isEmpty ||
-        (!country.contains(targetCountry) && !targetCountry.contains(country))) {
-      return false;
-    }
-
-    if (targetPref != null && targetPref.isNotEmpty) {
-      bool prefMatch = false;
-      for (final key in ['loc_prefecture_en', 'loc_prefecture_jp', 'loc_prefecture',
-        'event_prefecture', 'prefecture']) {
-        final v = get(key);
-        if (v.isNotEmpty && (v.contains(targetPref) || targetPref.contains(v))) {
-          prefMatch = true; break;
-        }
+    if (_adv.country.isNotEmpty) {
+      final country = (event['_country'] ?? '').toString().toLowerCase();
+      final target  = _adv.country.toLowerCase();
+      if (country.isNotEmpty &&
+          !country.contains(target) && !target.contains(country)) {
+        return false;
       }
-      if (!prefMatch) return false;
     }
 
-    if (targetCity != null && targetCity.isNotEmpty) {
-      bool cityMatch = false;
-      for (final key in ['loc_city_en', 'loc_city', 'event_city', 'city']) {
-        final v = get(key);
-        if (v.isNotEmpty && (v.contains(targetCity) || targetCity.contains(v))) {
-          cityMatch = true; break;
-        }
+    if (_adv.prefecture.isNotEmpty) {
+      final pref   = (event['_prefecture'] ?? '').toString().toLowerCase();
+      final target = _adv.prefecture.toLowerCase();
+      if (pref.isNotEmpty &&
+          !pref.contains(target) && !target.contains(pref)) {
+        return false;
       }
-      if (!cityMatch) return false;
     }
+
+    if (_adv.city.isNotEmpty) {
+      final city   = (event['_city'] ?? '').toString().toLowerCase();
+      final target = _adv.city.toLowerCase();
+      if (city.isNotEmpty &&
+          !city.contains(target) && !target.contains(city)) {
+        return false;
+      }
+    }
+
     return true;
   }
 
-  List<Map<String, dynamic>> _applyFilter(
-      List<Map<String, dynamic>> events, List<Map<String, dynamic>> allLocs) {
+  List<Map<String, dynamic>> _applyFilter(List<Map<String, dynamic>> events) {
     final now        = DateTime.now();
     final today      = DateTime(now.year, now.month, now.day);
     final tomorrow   = today.add(const Duration(days: 1));
+    // ── FIX: Upcoming shows 100 days to match the fetch window ──
     final defaultEnd = today.add(const Duration(days: _defaultDays));
     final daysUntilSat = (DateTime.saturday - now.weekday + 7) % 7;
     final saturday   = today.add(Duration(days: daysUntilSat == 0 ? 7 : daysUntilSat));
@@ -270,6 +430,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     final q = _searchController.text.toLowerCase().trim();
 
     return events.where((e) {
+      // ── Search ──────────────────────────────────────────────────────────
       if (q.isNotEmpty) {
         final title   = (e['event_title']    ?? '').toString().toLowerCase();
         final titleJp = (e['event_title_jp'] ?? '').toString().toLowerCase();
@@ -277,8 +438,10 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
         if (!title.contains(q) && !titleJp.contains(q) && !type.contains(q)) return false;
       }
 
-      if (!_matchesLocation(e, allLocs)) return false;
+      // ── Location ─────────────────────────────────────────────────────────
+      if (!_matchesLocation(e)) return false;
 
+      // ── Date ─────────────────────────────────────────────────────────────
       final raw = e['event_date'];
       DateTime? d;
       if (raw is Timestamp)            d = raw.toDate();
@@ -300,13 +463,16 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
           case 'Weekend':
             if (!_isSameDay(day, saturday) && !_isSameDay(day, sunday)) return false;
           default:
+          // 'Upcoming': events from today within the fetch window
             if (day.isBefore(today) || day.isAfter(defaultEnd)) return false;
         }
       }
 
+      // ── Event type ───────────────────────────────────────────────────────
       if (_adv.type.isNotEmpty &&
           (e['event_type'] ?? '').toString() != _adv.type) return false;
 
+      // ── Skill level ──────────────────────────────────────────────────────
       if (_adv.skillPro || _adv.skillAmateur || _adv.skillBeginner) {
         final match =
             (_adv.skillPro      && e['event_skill_level_pro']      == true) ||
@@ -315,6 +481,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
         if (!match) return false;
       }
 
+      // ── Categories ───────────────────────────────────────────────────────
       if (_adv.catMx || _adv.catMd || _adv.catMs || _adv.catWs ||
           _adv.catWd || _adv.catSe || _adv.catJu || _adv.catCo) {
         final match =
@@ -329,6 +496,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
         if (!match) return false;
       }
 
+      // ── Tourist friendly ─────────────────────────────────────────────────
       if (_adv.tourist && e['event_touristfriendly'] != true) return false;
 
       return true;
@@ -344,32 +512,14 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
   void _showFilterModal() {
     _AdvFilter temp = _adv;
 
-    final allLocs   = ref.read(locationsProvider).asData?.value ?? [];
-    final allEvents = ref.read(eventsProvider).asData?.value   ?? [];
-
     final countries   = <String>{};
     final prefectures = <String>{};
     final cities      = <String>{};
 
-    for (final event in allEvents) {
-      final locId = (event['loc_id'] ?? event['event_loc_id'] ?? '').toString().trim();
-      final loc = locId.isNotEmpty
-          ? allLocs.firstWhere(
-              (l) => (l['loc_id'] ?? l['id'] ?? '').toString() == locId,
-          orElse: () => <String, dynamic>{})
-          : <String, dynamic>{};
-
-      String field(String key) =>
-          ((loc.isNotEmpty ? loc[key] : null) ?? event[key] ?? '').toString().trim();
-
-      final c  = field('loc_country');
-      final p  = field('loc_prefecture_en').isNotEmpty
-          ? field('loc_prefecture_en')
-          : field('loc_prefecture');
-      final ci = field('loc_city_en').isNotEmpty
-          ? field('loc_city_en')
-          : field('loc_city');
-
+    for (final event in _events) {
+      final c  = (event['_country']    ?? '').toString().trim();
+      final p  = (event['_prefecture'] ?? '').toString().trim();
+      final ci = (event['_city']       ?? '').toString().trim();
       if (c.isNotEmpty)  countries.add(c);
       if (p.isNotEmpty)  prefectures.add(p);
       if (ci.isNotEmpty) cities.add(ci);
@@ -385,7 +535,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(builder: (ctx, setS) {
 
-        // ── Plain section label ──────────────────────────────────────────
         Widget sectionLabel(String text) => Padding(
           padding: const EdgeInsets.only(bottom: 14),
           child: Row(children: [
@@ -406,13 +555,11 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
           ]),
         );
 
-        // ── Section label WITH inline note (used for Categories) ─────────
         Widget sectionLabelWithNote(String text, String note) => Padding(
           padding: const EdgeInsets.only(bottom: 14),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Green accent bar
               Container(
                 width: 3, height: 14,
                 margin: const EdgeInsets.only(right: 8),
@@ -421,7 +568,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
-              // Section title
               Text(text, style: const TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w800,
@@ -429,7 +575,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                 letterSpacing: 1.0,
               )),
               const SizedBox(width: 8),
-              // Inline muted note — matches web "M=Men's, W=Women's, Mixed"
               Flexible(
                 child: Text(
                   note,
@@ -525,19 +670,15 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
             }) {
           final hasVal = value.isNotEmpty;
 
-          // ── Deduplicate options and ensure current value is always present ──
           final seen = <String>{};
           final dedupedOptions = <String>[];
           for (final o in options) {
             if (o.isNotEmpty && seen.add(o)) dedupedOptions.add(o);
           }
-          // If the current value isn't in the list, append it so the
-          // DropdownButton never throws "exactly one item" assertion.
           if (hasVal && !dedupedOptions.contains(value)) {
             dedupedOptions.add(value);
           }
 
-          // The DropdownButton value must be either '' (sentinel) or a valid option.
           final dropdownValue = (hasVal && dedupedOptions.contains(value)) ? value : '';
 
           return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -627,7 +768,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
           );
         }
 
-        // ── Modal container ──────────────────────────────────────────────
         return Container(
           constraints: BoxConstraints(
             maxHeight: MediaQuery.of(ctx).size.height * 0.92,
@@ -689,7 +829,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
 
-                    // ── DATE ─────────────────────────────────────────────
                     sectionLabel(s.dateSection),
                     Row(children: [
                       Expanded(child: datePicker(
@@ -705,7 +844,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
                     divider(),
 
-                    // ── LOCATION ──────────────────────────────────────────
                     sectionLabel(s.locationSection),
                     Row(children: [
                       Expanded(child: dropdownField(
@@ -729,7 +867,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
                     divider(),
 
-                    // ── EVENT TYPE ────────────────────────────────────────
                     sectionLabel(s.eventTypeSection),
                     dropdownField(
                       '', temp.type,
@@ -740,7 +877,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
                     divider(),
 
-                    // ── SKILL LEVELS ──────────────────────────────────────
                     sectionLabel(s.skillSection),
                     Wrap(spacing: 8, runSpacing: 8, children: [
                       checkPill(s.pro,      temp.skillPro,
@@ -753,10 +889,8 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
                     divider(),
 
-                    // ── CATEGORIES — with inline note ─────────────────────
                     sectionLabelWithNote(s.categorySection, s.categoryNote),
                     Wrap(spacing: 8, runSpacing: 8, children: [
-                      // Order: M Doubles → M Singles → W Doubles → W Singles → Mixed Doubles
                       checkPill(s.mensDoubles,   temp.catMd,
                               () => setS(() => temp = temp.copyWith(catMd: !temp.catMd))),
                       checkPill(s.mensSingles,   temp.catMs,
@@ -777,14 +911,12 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
                     divider(),
 
-                    // ── OTHER ─────────────────────────────────────────────
                     sectionLabel(s.otherSection),
                     checkPill(s.touristFriendly, temp.tourist,
                             () => setS(() => temp = temp.copyWith(tourist: !temp.tourist))),
 
                     const SizedBox(height: 28),
 
-                    // ── Action buttons ─────────────────────────────────────
                     Row(children: [
                       Expanded(
                         child: GestureDetector(
@@ -1114,68 +1246,89 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
   }
 
   Widget _buildEventsList() {
-    final eventsAsync = ref.watch(eventsProvider);
-    final allLocs     = ref.watch(locationsProvider).asData?.value ?? [];
-    final isJa        = ref.watch(appLangProvider) == kLangJa;
+    final isJa = ref.watch(appLangProvider) == kLangJa;
 
-    return eventsAsync.when(
-      data: (events) {
-        final filtered = _applyFilter(events, allLocs);
-        if (filtered.isEmpty) {
-          return Center(
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.event_busy_rounded, size: 56, color: _textLight),
-              const SizedBox(height: 14),
-              Text(
-                s.noEvents(_locationLabel),
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 16, color: _textLight,
-                    fontWeight: FontWeight.w500),
-              ),
-              if (_adv.isActive) ...[
-                const SizedBox(height: 12),
-                GestureDetector(
-                  onTap: () => setState(() => _adv = _AdvFilter()),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: _greenLight,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(s.clearFilters, style: const TextStyle(
-                      fontSize: 13, fontWeight: FontWeight.w600, color: _green,
-                    )),
-                  ),
-                ),
-              ],
-            ]),
-          );
-        }
-
-        return ListView.builder(
-          controller: _scrollController,
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 110),
-          itemCount: filtered.length,
-          itemBuilder: (context, index) {
-            final event = filtered[index];
-            return EventCardFull(
-              event: event,
-              lang: isJa ? 'ja' : 'en',
-            );
-          },
-        );
-      },
-      loading: () => Center(
+    if (_loadingEvents) {
+      return Center(
         child: CircularProgressIndicator(color: _green, strokeWidth: 2.5),
-      ),
-      error: (error, _) => Center(
+      );
+    }
+
+    if (_loadError != null) {
+      return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Text('Something went wrong.\n$error',
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: _textLight, fontSize: 14)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Something went wrong.\n$_loadError',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: _textLight, fontSize: 14)),
+              const SizedBox(height: 16),
+              GestureDetector(
+                onTap: _loadEventsDirectly,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: _greenLight,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text('Retry',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _green)),
+                ),
+              ),
+            ],
+          ),
         ),
-      ),
+      );
+    }
+
+    final filtered = _applyFilter(_events);
+
+    debugPrint('[EventsScreen] Filtered events: ${filtered.length} / total: ${_events.length}');
+
+    if (filtered.isEmpty) {
+      return Center(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.event_busy_rounded, size: 56, color: _textLight),
+          const SizedBox(height: 14),
+          Text(
+            s.noEvents(_locationLabel),
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 16, color: _textLight,
+                fontWeight: FontWeight.w500),
+          ),
+          if (_adv.isActive) ...[
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: () => setState(() => _adv = _AdvFilter()),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: _greenLight,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(s.clearFilters, style: const TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w600, color: _green,
+                )),
+              ),
+            ),
+          ],
+        ]),
+      );
+    }
+
+    return ListView.builder(
+      controller: _scrollController,
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 110),
+      itemCount: filtered.length,
+      itemBuilder: (context, index) {
+        final event = filtered[index];
+        return EventCardFull(
+          event: event,
+          lang: isJa ? 'ja' : 'en',
+        );
+      },
     );
   }
 
