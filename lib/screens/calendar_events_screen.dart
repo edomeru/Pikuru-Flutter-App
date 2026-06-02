@@ -46,6 +46,7 @@ class _S {
   String get visitSiteYes   => isJa ? 'サイトを見る'  : 'Visit Website';
   String get visitSiteNo    => isJa ? 'いいえ'        : 'No thanks';
 
+  // ── Registration ─────────────────────────────────────────────────────────
   String get secRegistration        => isJa ? '登録'              : 'REGISTRATION';
   String get registerBtn            => isJa ? 'このイベントに登録する' : 'Register for this Event';
   String get registerConfirmTitle   => isJa ? 'このイベントに登録しますか？'    : 'Register for this event?';
@@ -55,12 +56,64 @@ class _S {
   String get registrationPending    => isJa ? '登録中（承認待ち）' : 'Registration Pending';
   String get registrationApproved   => isJa ? '登録承認済み'       : 'Registration Approved';
   String get registrationRejected   => isJa ? '登録却下'          : 'Registration Rejected';
+  String get registrationWaitlist   => isJa ? 'ウェイティングリスト待機中' : 'On Waitlist';
   String get alreadyRegistered      => isJa ? 'このイベントに登録済みです。' : 'You are registered for this event.';
   String get regApprovedMsg         => isJa ? '登録が承認されました！' : 'Your registration has been approved!';
   String get regRejectedMsg         => isJa ? '登録は承認されませんでした。' : 'Your registration was not approved.';
+  String get regWaitlistMsg         => isJa ? 'ウェイティングリストに登録しました。' : "You're on the waitlist. We'll notify you if a spot opens.";
   String get cancelReg              => isJa ? '登録をキャンセル'  : 'Cancel Registration';
   String get cancelRegTitle         => isJa ? '登録をキャンセルしますか？' : 'Cancel your registration?';
   String get cancelRegBody          => isJa ? 'このイベントから登録が削除されます。' : 'This will remove your registration from this event.';
+  String get capacityReached        => isJa ? '定員に達しました'  : 'Maximum Capacity Reached';
+  String get capacityMsg            => isJa ? 'このイベントは満席です。ウェイティングリストに登録できます。' : 'This event is full. You can join the waitlist.';
+  String get joinWaitlist           => isJa ? 'ウェイティングリストに登録' : 'Join Waitlist';
+  String get joiningWaitlist        => isJa ? '登録中…'                  : 'Joining waitlist…';
+  String get registrationClosed     => isJa ? '登録終了'                 : 'Registration Closed';
+  String get regClosedMsg           => isJa ? '主催者がこのイベントの登録を締め切りました。' : 'The organizer has closed registration for this event.';
+  String slotsLeft(int n)           => isJa ? '残り$n枠' : n == 1 ? '1 spot left' : '$n spots left';
+
+  // ── Registration form labels ──────────────────────────────────────────────
+  String get regFormTitle    => isJa ? 'イベント登録'   : 'Register for this Event';
+  String get regFormSubtitle => isJa ? '以下のフォームにご記入の上、登録してください。' : 'Fill in your details to submit your registration.';
+  String get stepDetails     => isJa ? '基本情報'       : 'Details';
+  String get stepPayment     => isJa ? 'お支払い方法'    : 'Payment';
+  String get stepConfirm     => isJa ? '確認'           : 'Confirm';
+  String get nameLbl         => isJa ? 'お名前'         : 'Full Name';
+  String get emailLbl        => isJa ? 'メールアドレス'  : 'Email Address';
+  String get phoneLbl        => isJa ? '電話番号（任意）': 'Phone Number (optional)';
+  String get notesLbl        => isJa ? 'メッセージ / 備考（任意）' : 'Message / Notes (optional)';
+  String get namePh          => isJa ? '山田 太郎'      : 'Your full name';
+  String get emailPh         => isJa ? 'example@email.com' : 'you@example.com';
+  String get phonePh         => isJa ? '+81 90-0000-0000'  : '+81 90-0000-0000';
+  String get notesPh         => isJa ? 'ご質問やご要望をどうぞ…' : 'Any questions or special requests…';
+  String get cancel          => isJa ? 'キャンセル'     : 'Cancel';
+  String get back            => isJa ? '戻る'          : 'Back';
+  String get next            => isJa ? '次へ'          : 'Next';
+  String get submit          => isJa ? '登録を送信'     : 'Submit Registration';
+  String get submitting      => isJa ? '送信中…'        : 'Submitting…';
+  String get confirmSubtitle => isJa ? '以下の内容で登録を送信します。' : 'Please review your details before submitting.';
+  String get paymentMethod   => isJa ? 'お支払い方法'   : 'Payment Method';
+  String get directPayment   => isJa ? '現地支払い / 直接支払い' : 'Direct / On-site Collection';
+  String get notProvided     => isJa ? '未入力'         : 'Not provided';
+  String get none            => isJa ? 'なし'           : 'None';
+  String get importantNote   => isJa ? '注意事項'       : 'Important Note';
+  String get paymentNote     => isJa ? '*現時点ではアプリ内での決済は行われません。参加費は参加者から直接回収してください。' : '*Payment is not collected through the app at this time. Please collect fees directly from participants.';
+  String get directActive    => isJa ? '選択中'         : 'Active';
+  String get creditCard      => isJa ? 'クレジットカード・デビットカード' : 'Credit / Debit Card';
+  String get comingSoon      => isJa ? '近日対応'        : 'Soon';
+  String get stripeNote      => isJa ? 'Stripeを利用した安全なアプリ内オンライン決済が間もなく登場します。' : 'Secure on-app online payment via Stripe is coming soon.';
+
+  // ── Success modal ─────────────────────────────────────────────────────────
+  String regSuccessTitle(bool waitlist) => waitlist
+      ? (isJa ? 'ウェイティングリストに登録されました！' : 'Added to Waitlist!')
+      : (isJa ? '登録申請を送信しました！' : 'Registration Request Submitted!');
+  String regSuccessBody(bool waitlist) => waitlist
+      ? (isJa ? 'ウェイティングリストに登録されました。空きが出た場合に通知されます。' : 'You have been added to the waitlist. You will be notified if a spot opens up.')
+      : (isJa ? '登録申請を受け付けました。主催者による承認をお待ちください。' : 'Your registration is now pending review by the organizer. You will be notified once your status is updated.');
+  String get currentStatus => isJa ? '現在のステータス' : 'Current Status';
+  String get pendingStatus => isJa ? '承認待ち' : 'PENDING APPROVAL';
+  String get waitlistStatus=> isJa ? 'キャンセル待ち' : 'ON WAITLIST';
+  String get close         => isJa ? '閉じる' : 'Close';
 
   String get secDateTime  => isJa ? '日時'   : 'DATE & TIME';
   String get secCatSkill  => isJa ? 'カテゴリー・スキルレベル' : 'CATEGORIES & SKILL LEVEL';
@@ -195,11 +248,10 @@ class _CalFilter {
 // Save / Reg status types
 // ─────────────────────────────────────────────────────────────────────────────
 enum _SaveStatus { none, myEvents, interested }
-enum _RegStatus  { none, pending, approved, rejected }
+enum _RegStatus  { none, pending, approved, rejected, waitlist }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Dedicated calendar provider — matches web app query exactly
-// Uses event_checked (not event_status) to mirror the web Firestore query
+// Dedicated calendar provider
 // ─────────────────────────────────────────────────────────────────────────────
 final _calendarFetchProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   final now   = DateTime.now();
@@ -209,7 +261,7 @@ final _calendarFetchProvider = StreamProvider<List<Map<String, dynamic>>>((ref) 
   return FirebaseFirestore.instance
       .collection('events')
       .where('event_active',         isEqualTo: true)
-      .where('event_checked',        isEqualTo: true)   // ← matches web app
+      .where('event_checked',        isEqualTo: true)
       .where('event_pending_review', isEqualTo: false)
       .where('event_date', isGreaterThanOrEqualTo: Timestamp.fromDate(today))
       .where('event_date', isLessThanOrEqualTo:    Timestamp.fromDate(in30))
@@ -222,6 +274,633 @@ final _calendarFetchProvider = StreamProvider<List<Map<String, dynamic>>>((ref) 
     return data;
   }).toList());
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 3-Step Registration Form Bottom Sheet
+// Mirrors the web app's RegistrationFormModal exactly
+// ─────────────────────────────────────────────────────────────────────────────
+class _RegistrationFormSheet extends StatefulWidget {
+  final _S s;
+  final String defaultName;
+  final String defaultEmail;
+  final bool asWaitlist;
+  final void Function(String name, String email, String phone, String notes) onSubmit;
+
+  const _RegistrationFormSheet({
+    required this.s,
+    required this.defaultName,
+    required this.defaultEmail,
+    required this.asWaitlist,
+    required this.onSubmit,
+  });
+
+  @override
+  State<_RegistrationFormSheet> createState() => _RegistrationFormSheetState();
+}
+
+class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
+  int _step = 1; // 1=Details, 2=Payment, 3=Confirm
+  late final TextEditingController _nameCtrl;
+  late final TextEditingController _emailCtrl;
+  final _phoneCtrl = TextEditingController();
+  final _notesCtrl = TextEditingController();
+
+  static const Color _surface   = Colors.white;
+  static const Color _border    = Color(0xFFE4E9EE);
+  static const Color _cardBg    = Color(0xFFF4F6F8);
+  static const Color _green     = Color(0xFF2E7D45);
+  static const Color _greenLt   = Color(0xFFE6F4EB);
+  static const Color _amber     = Color(0xFFD97706);
+  static const Color _amberLt   = Color(0xFFFFF3CD);
+  static const Color _textDark  = Color(0xFF111827);
+  static const Color _textMid   = Color(0xFF4B5563);
+  static const Color _textLight = Color(0xFF9CA3AF);
+
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrl  = TextEditingController(text: widget.defaultName);
+    _emailCtrl = TextEditingController(text: widget.defaultEmail);
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _emailCtrl.dispose();
+    _phoneCtrl.dispose();
+    _notesCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.s;
+    return DraggableScrollableSheet(
+      initialChildSize: 0.92,
+      minChildSize: 0.5,
+      maxChildSize: 0.95,
+      builder: (_, controller) => Container(
+        decoration: const BoxDecoration(
+          color: _surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(children: [
+          // Handle
+          Container(
+            margin: const EdgeInsets.only(top: 12, bottom: 4),
+            width: 36, height: 4,
+            decoration: BoxDecoration(color: _border, borderRadius: BorderRadius.circular(2)),
+          ),
+          // Header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 16, 8),
+            child: Row(children: [
+              Container(
+                width: 40, height: 40,
+                decoration: BoxDecoration(color: _greenLt, borderRadius: BorderRadius.circular(12)),
+                child: const Icon(Icons.how_to_reg_rounded, color: _green, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(s.regFormTitle, style: const TextStyle(
+                    fontSize: 17, fontWeight: FontWeight.w800, color: _textDark)),
+                Text(s.regFormSubtitle, style: const TextStyle(
+                    fontSize: 11, color: _textLight)),
+              ])),
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: Container(
+                  width: 32, height: 32,
+                  decoration: BoxDecoration(color: _cardBg, shape: BoxShape.circle,
+                      border: Border.all(color: _border)),
+                  child: const Icon(Icons.close_rounded, size: 16, color: _textMid),
+                ),
+              ),
+            ]),
+          ),
+          // Step Progress Bar
+          _buildStepBar(s),
+          const Divider(height: 1, color: _border),
+          // Content
+          Expanded(
+            child: SingleChildScrollView(
+              controller: controller,
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+              child: _step == 1 ? _buildStep1(s, context)
+                  : _step == 2 ? _buildStep2(s)
+                  : _buildStep3(s, context),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+
+  Widget _buildStepBar(_S s) {
+    final steps = [s.stepDetails, s.stepPayment, s.stepConfirm];
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+      child: Row(children: [
+        for (int i = 0; i < steps.length; i++) ...[
+          if (i > 0)
+            Expanded(child: Container(
+              height: 2,
+              color: _step > i ? const Color(0xFF2E7D45) : const Color(0xFFE4E9EE),
+            )),
+          _buildStepDot(i + 1, steps[i]),
+        ],
+      ]),
+    );
+  }
+
+  Widget _buildStepDot(int index, String label) {
+    final done   = _step > index;
+    final active = _step == index;
+    const green = Color(0xFF2E7D45);
+    final color = (done || active) ? green : const Color(0xFF9CA3AF);
+
+    return Column(mainAxisSize: MainAxisSize.min, children: [
+      AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: 22, height: 22,
+        decoration: BoxDecoration(
+          color: (done || active) ? green : const Color(0xFFF4F6F8),
+          shape: BoxShape.circle,
+          border: Border.all(color: color, width: 1.5),
+        ),
+        child: Center(
+          child: done
+              ? const Icon(Icons.check, size: 12, color: Colors.white)
+              : Text('$index', style: TextStyle(
+              fontSize: 10, fontWeight: FontWeight.w800,
+              color: active ? Colors.white : const Color(0xFF9CA3AF))),
+        ),
+      ),
+      const SizedBox(height: 4),
+      Text(label, style: TextStyle(
+          fontSize: 10, fontWeight: FontWeight.w700,
+          color: (done || active) ? green : const Color(0xFF9CA3AF))),
+    ]);
+  }
+
+  // ── Step 1: Details ───────────────────────────────────────────────────────
+  Widget _buildStep1(_S s, BuildContext context) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _buildFormField(s.nameLbl, _nameCtrl, s.namePh, required: true),
+      const SizedBox(height: 16),
+      _buildFormField(s.emailLbl, _emailCtrl, s.emailPh,
+          required: true, keyboardType: TextInputType.emailAddress),
+      const SizedBox(height: 16),
+      _buildFormField(s.phoneLbl, _phoneCtrl, s.phonePh,
+          required: false, keyboardType: TextInputType.phone),
+      const SizedBox(height: 16),
+      _buildFormField(s.notesLbl, _notesCtrl, s.notesPh,
+          required: false, maxLines: 3),
+      const SizedBox(height: 28),
+      _buildFormActions(
+        cancelLabel: s.cancel,
+        nextLabel: s.next,
+        nextIcon: Icons.arrow_forward_rounded,
+        onCancel: () => Navigator.pop(context),
+        onNext: () {
+          if (_nameCtrl.text.trim().isEmpty || _emailCtrl.text.trim().isEmpty) return;
+          setState(() => _step = 2);
+        },
+      ),
+    ]);
+  }
+
+  // ── Step 2: Payment ───────────────────────────────────────────────────────
+  Widget _buildStep2(_S s) {
+    const green  = Color(0xFF2E7D45);
+    const greenLt= Color(0xFFE6F4EB);
+    const amber  = Color(0xFFD97706);
+    const amberLt= Color(0xFFFFF3CD);
+    const cardBg = Color(0xFFF4F6F8);
+    const border = Color(0xFFE4E9EE);
+    const textDark = Color(0xFF111827);
+    const textMid  = Color(0xFF4B5563);
+    const textLight= Color(0xFF9CA3AF);
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(
+        s.isJa
+            ? 'このイベントの参加費支払いに使用する決済手段を選択してください。'
+            : 'Select your preferred payment method for the registration fee.',
+        style: const TextStyle(fontSize: 13, color: textMid),
+      ),
+      const SizedBox(height: 16),
+
+      // Direct payment (active)
+      Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: greenLt,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: green.withOpacity(0.35), width: 1.5),
+        ),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Container(
+            width: 22, height: 22,
+            decoration: BoxDecoration(color: green, shape: BoxShape.circle),
+            child: const Icon(Icons.check, color: Colors.white, size: 13),
+          ),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              const Text('💵 ', style: TextStyle(fontSize: 14)),
+              Expanded(child: Text(s.directPayment,
+                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: textDark))),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                    color: greenLt, borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: green.withOpacity(0.3))),
+                child: Text(s.directActive, style: const TextStyle(
+                    fontSize: 10, fontWeight: FontWeight.w800, color: green)),
+              ),
+            ]),
+            const SizedBox(height: 4),
+            Text(
+              s.isJa
+                  ? '主催者へ直接お支払いください。大会当日に現金または主催者指定の方法となります。'
+                  : 'Pay directly to the organizer. Fees collected at the venue.',
+              style: const TextStyle(fontSize: 12, color: textMid),
+            ),
+          ])),
+        ]),
+      ),
+
+      const SizedBox(height: 10),
+
+      // Credit card (coming soon)
+      Opacity(
+        opacity: 0.45,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: cardBg,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: border),
+          ),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Container(
+              width: 22, height: 22,
+              decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: border, width: 2)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                const Text('💳 ', style: TextStyle(fontSize: 14)),
+                Expanded(child: Text(s.creditCard, style: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w800, color: textDark))),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                      color: cardBg, borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: border)),
+                  child: Text('⏳ ${s.comingSoon}', style: const TextStyle(
+                      fontSize: 10, fontWeight: FontWeight.w700, color: textMid)),
+                ),
+              ]),
+              const SizedBox(height: 4),
+              Text(s.stripeNote,
+                  style: const TextStyle(fontSize: 12, color: textLight)),
+            ])),
+          ]),
+        ),
+      ),
+
+      const SizedBox(height: 16),
+
+      // Important note
+      Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: amberLt,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: amber.withOpacity(0.3)),
+        ),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Icon(Icons.info_outline_rounded, color: amber, size: 16),
+          const SizedBox(width: 8),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(s.importantNote, style: const TextStyle(
+                fontSize: 10, fontWeight: FontWeight.w800,
+                color: amber, letterSpacing: 0.6)),
+            const SizedBox(height: 4),
+            Text(s.paymentNote,
+                style: const TextStyle(fontSize: 12, color: textMid, fontStyle: FontStyle.italic)),
+          ])),
+        ]),
+      ),
+
+      const SizedBox(height: 28),
+      _buildFormActions(
+        cancelLabel: s.back,
+        nextLabel: s.next,
+        nextIcon: Icons.arrow_forward_rounded,
+        onCancel: () => setState(() => _step = 1),
+        onNext: () => setState(() => _step = 3),
+      ),
+    ]);
+  }
+
+  // ── Step 3: Confirm ───────────────────────────────────────────────────────
+  Widget _buildStep3(_S s, BuildContext context) {
+    const green    = Color(0xFF2E7D45);
+    const cardBg   = Color(0xFFF4F6F8);
+    const border   = Color(0xFFE4E9EE);
+    const textDark = Color(0xFF111827);
+    const textLight= Color(0xFF9CA3AF);
+
+    final rows = <({String label, String value})>[
+      (label: s.nameLbl,
+      value: _nameCtrl.text.trim().isEmpty ? s.notProvided : _nameCtrl.text.trim()),
+      (label: s.emailLbl,
+      value: _emailCtrl.text.trim().isEmpty ? s.notProvided : _emailCtrl.text.trim()),
+      (label: s.isJa ? '電話番号' : 'Phone Number',
+      value: _phoneCtrl.text.trim().isEmpty ? s.notProvided : _phoneCtrl.text.trim()),
+      (label: s.isJa ? 'メッセージ / 備考' : 'Message / Notes',
+      value: _notesCtrl.text.trim().isEmpty ? s.none : _notesCtrl.text.trim()),
+      (label: s.paymentMethod, value: '💵 ${s.directPayment}'),
+    ];
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(s.confirmSubtitle,
+          style: const TextStyle(fontSize: 13, color: Color(0xFF4B5563))),
+      const SizedBox(height: 16),
+      Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: cardBg,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: border),
+        ),
+        child: Column(children: [
+          for (int i = 0; i < rows.length; i++) ...[
+            if (i > 0) const Padding(
+                padding: EdgeInsets.symmetric(vertical: 10),
+                child: Divider(height: 1, color: border)),
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Expanded(flex: 2, child: Text(rows[i].label.toUpperCase(),
+                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
+                      color: textLight, letterSpacing: 0.6))),
+              const SizedBox(width: 8),
+              Expanded(flex: 3, child: Text(rows[i].value,
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
+                      color: rows[i].label == s.paymentMethod ? green : textDark))),
+            ]),
+          ],
+        ]),
+      ),
+      const SizedBox(height: 28),
+      _buildFormActions(
+        cancelLabel: s.back,
+        nextLabel: s.submit,
+        nextIcon: Icons.send_rounded,
+        onCancel: () => setState(() => _step = 2),
+        onNext: () => widget.onSubmit(
+          _nameCtrl.text.trim(),
+          _emailCtrl.text.trim(),
+          _phoneCtrl.text.trim(),
+          _notesCtrl.text.trim(),
+        ),
+      ),
+    ]);
+  }
+
+  // ── Form field helper ─────────────────────────────────────────────────────
+  Widget _buildFormField(
+      String label,
+      TextEditingController controller,
+      String placeholder, {
+        bool required = true,
+        int maxLines = 1,
+        TextInputType? keyboardType,
+      }) {
+    const green    = Color(0xFF2E7D45);
+    const cardBg   = Color(0xFFF4F6F8);
+    const border   = Color(0xFFE4E9EE);
+    const textDark = Color(0xFF111827);
+    const textLight= Color(0xFF9CA3AF);
+
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(children: [
+        Text(label.toUpperCase(), style: TextStyle(
+            fontSize: 10, fontWeight: FontWeight.w800,
+            color: required ? green : textLight, letterSpacing: 0.6)),
+        if (!required)
+          const Text(' (opt)', style: TextStyle(fontSize: 10, color: textLight)),
+      ]),
+      const SizedBox(height: 6),
+      TextFormField(
+        controller: controller,
+        maxLines: maxLines,
+        keyboardType: keyboardType,
+        style: const TextStyle(fontSize: 14, color: textDark),
+        decoration: InputDecoration(
+          hintText: placeholder,
+          hintStyle: const TextStyle(color: textLight, fontSize: 14),
+          filled: true,
+          fillColor: cardBg,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: border)),
+          enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: border)),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: green, width: 1.5)),
+        ),
+      ),
+    ]);
+  }
+
+  // ── Form action buttons ───────────────────────────────────────────────────
+  Widget _buildFormActions({
+    required String cancelLabel,
+    required String nextLabel,
+    required IconData nextIcon,
+    required VoidCallback onCancel,
+    required VoidCallback onNext,
+  }) {
+    const green   = Color(0xFF2E7D45);
+    const cardBg  = Color(0xFFF4F6F8);
+    const border  = Color(0xFFE4E9EE);
+    const textMid = Color(0xFF4B5563);
+
+    return Row(children: [
+      Expanded(
+        child: GestureDetector(
+          onTap: onCancel,
+          child: Container(
+            height: 50,
+            decoration: BoxDecoration(
+              color: cardBg,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: border, width: 1.5),
+            ),
+            child: Center(child: Text(cancelLabel, style: const TextStyle(
+                fontSize: 14, fontWeight: FontWeight.w700, color: textMid))),
+          ),
+        ),
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+        flex: 2,
+        child: GestureDetector(
+          onTap: onNext,
+          child: Container(
+            height: 50,
+            decoration: BoxDecoration(
+              color: green,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: [BoxShadow(
+                  color: green.withOpacity(0.3),
+                  blurRadius: 10, offset: const Offset(0, 4))],
+            ),
+            child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Text(nextLabel, style: const TextStyle(
+                  fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white)),
+              const SizedBox(width: 6),
+              Icon(nextIcon, color: Colors.white, size: 16),
+            ]),
+          ),
+        ),
+      ),
+    ]);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Registration Success Dialog
+// ─────────────────────────────────────────────────────────────────────────────
+class _RegistrationSuccessDialog extends StatelessWidget {
+  final _S s;
+  final bool isWaitlist;
+
+  const _RegistrationSuccessDialog({required this.s, required this.isWaitlist});
+
+  @override
+  Widget build(BuildContext context) {
+    const green = Color(0xFF2E7D45);
+    const amber = Color(0xFFD97706);
+    final accent = isWaitlist ? amber : green;
+
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 64, height: 64,
+            decoration: BoxDecoration(
+                color: accent.withOpacity(0.12), shape: BoxShape.circle),
+            child: Icon(
+              isWaitlist ? Icons.schedule_rounded : Icons.check_rounded,
+              color: accent, size: 30,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(s.regSuccessTitle(isWaitlist),
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800,
+                  color: Color(0xFF111827))),
+          const SizedBox(height: 8),
+          Text(s.regSuccessBody(isWaitlist),
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 13, color: Color(0xFF4B5563), height: 1.5)),
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+            decoration: BoxDecoration(
+              color: accent.withOpacity(0.07),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: accent.withOpacity(0.2)),
+            ),
+            child: Column(children: [
+              Text(s.currentStatus,
+                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
+                      color: Color(0xFF9CA3AF), letterSpacing: 0.8)),
+              const SizedBox(height: 4),
+              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                Container(width: 8, height: 8,
+                    decoration: BoxDecoration(color: accent, shape: BoxShape.circle)),
+                const SizedBox(width: 6),
+                Text(
+                  isWaitlist ? s.waitlistStatus : s.pendingStatus,
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800,
+                      color: accent, letterSpacing: 0.5),
+                ),
+              ]),
+            ]),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () => Navigator.pop(context),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: accent,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                elevation: 0,
+              ),
+              child: Text(s.close, style: const TextStyle(
+                  fontSize: 15, fontWeight: FontWeight.w700)),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Confirm Dialog
+// ─────────────────────────────────────────────────────────────────────────────
+class _ConfirmDialog extends StatelessWidget {
+  final String title;
+  final String body;
+  final String confirmLabel;
+  final Color confirmColor;
+  final VoidCallback onConfirm;
+  final VoidCallback onCancel;
+
+  const _ConfirmDialog({
+    required this.title, required this.body,
+    required this.confirmLabel, required this.confirmColor,
+    required this.onConfirm, required this.onCancel,
+  });
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    backgroundColor: Colors.white,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+    title: Text(title, style: const TextStyle(
+        fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF111827))),
+    content: Text(body, style: const TextStyle(fontSize: 14, color: Color(0xFF4B5563))),
+    actions: [
+      TextButton(
+        onPressed: onCancel,
+        child: const Text('Cancel', style: TextStyle(
+            color: Color(0xFF4B5563), fontWeight: FontWeight.w600)),
+      ),
+      TextButton(
+        onPressed: onConfirm,
+        child: Text(confirmLabel, style: TextStyle(
+            color: confirmColor, fontWeight: FontWeight.w700)),
+      ),
+    ],
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen
@@ -244,6 +923,10 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
   static const Color _textDark  = Color(0xFF0D0D0D);
   static const Color _textMid   = Color(0xFF555760);
   static const Color _textLight = Color(0xFF888A90);
+  static const Color _red       = Color(0xFFD32F2F);
+  static const Color _redLt     = Color(0xFFFFEBEE);
+  static const Color _amber     = Color(0xFFD97706);
+  static const Color _amberLt   = Color(0xFFFFF3CD);
 
   _S get s => _S(ref.watch(appLangProvider));
 
@@ -339,6 +1022,8 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                 ? _RegStatus.approved
                 : status == 'rejected'
                 ? _RegStatus.rejected
+                : status == 'waitlist'
+                ? _RegStatus.waitlist
                 : _RegStatus.pending;
           });
         }
@@ -374,7 +1059,19 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     }
   }
 
-  Future<void> _handleRegister(Map<String, dynamic> event) async {
+  // ── UPDATED: Full registration with 3-step form ────────────────────────────
+  // Mirrors the web app's handleRegister exactly:
+  //   - Saves to event_registrations with all required fields
+  //   - Handles both 'pending' and 'waitlist' status
+  //   - Shows success dialog after submission
+  Future<void> _submitRegistration({
+    required Map<String, dynamic> event,
+    required String name,
+    required String email,
+    required String phone,
+    required String notes,
+    required bool asWaitlist,
+  }) async {
     final firebaseUser = FirebaseAuth.instance.currentUser;
     if (firebaseUser == null) return;
     final docId = (event['_doc_id'] ?? '').toString();
@@ -385,38 +1082,94 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
       final db  = FirebaseFirestore.instance;
       final uid = firebaseUser.uid;
 
+      // Write to event_registrations — matches web app handleRegister fields exactly
       final ref = await db.collection('event_registrations').add({
-        'event_id':    docId,
-        'user_id':     uid,
-        'user_name':   firebaseUser.displayName ?? '',
-        'user_email':  firebaseUser.email ?? '',
-        'user_avatar': firebaseUser.photoURL ?? '',
-        'status':      'pending',
+        'event_id':      docId,           // ← always the Firestore doc ID
+        'user_id':       uid,
+        'user_name':     name.isNotEmpty ? name : (firebaseUser.displayName ?? ''),
+        'user_email':    email.isNotEmpty ? email : (firebaseUser.email ?? ''),
+        'user_phone':    phone,
+        'user_notes':    notes,
+        'user_avatar':   firebaseUser.photoURL ?? '',
+        'status':        asWaitlist ? 'waitlist' : 'pending',
         'registered_at': FieldValue.serverTimestamp(),
       });
-
-      await db.doc('user_events/${uid}_$docId').set({
-        'user_id':     uid,
-        'event_id':    docId,
-        'status':      'my_events',
-        'event_title': (event['event_title'] ?? '').toString(),
-        'event_pic':   (event['event_pic'] ??
-            event['event_pic_thumbnail'] ??
-            event['event_image'] ?? '').toString(),
-        'saved_at':    FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
 
       if (mounted) {
         setState(() {
           _regDocIds[docId]   = ref.id;
-          _regStatuses[docId] = _RegStatus.pending;
-          _saveStatuses[docId] = _SaveStatus.myEvents;
+          _regStatuses[docId] = asWaitlist ? _RegStatus.waitlist : _RegStatus.pending;
         });
+        // Show success dialog
+        _showSuccessModal(asWaitlist);
       }
     } catch (e) {
-      debugPrint('Registration failed: $e');
+      debugPrint('[CalendarScreen] _submitRegistration error: $e');
     } finally {
       if (mounted) setState(() => _regLoading[docId] = false);
+    }
+  }
+
+  // ── Show the 3-step registration form bottom sheet ─────────────────────────
+  void _showRegistrationForm(Map<String, dynamic> event, {required bool asWaitlist}) {
+    final firebaseUser = FirebaseAuth.instance.currentUser;
+    final lang = ref.read(appLangProvider);
+    final ls   = _S(lang);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      isDismissible: true,
+      builder: (_) => _RegistrationFormSheet(
+        s: ls,
+        defaultName:  firebaseUser?.displayName ?? '',
+        defaultEmail: firebaseUser?.email ?? '',
+        asWaitlist: asWaitlist,
+        onSubmit: (name, email, phone, notes) async {
+          Navigator.pop(context);
+          await _submitRegistration(
+            event: event,
+            name: name,
+            email: email,
+            phone: phone,
+            notes: notes,
+            asWaitlist: asWaitlist,
+          );
+        },
+      ),
+    );
+  }
+
+  void _showSuccessModal(bool waitlist) {
+    final lang = ref.read(appLangProvider);
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (_) => _RegistrationSuccessDialog(s: _S(lang), isWaitlist: waitlist),
+    );
+  }
+
+  // ── Register button handler — checks capacity & regOpen before showing form ─
+  Future<void> _handleRegisterTap(Map<String, dynamic> event) async {
+    final docId = (event['_doc_id'] ?? '').toString();
+    if (docId.isEmpty) return;
+
+    final regOpen     = event['event_registration_open'] != false;
+    final eventLimit  = event['event_limit'] != null
+        ? int.tryParse(event['event_limit'].toString())
+        : null;
+    final approvedCount = (event['event_approved_count'] ?? 0) as int;
+    final isFull = eventLimit != null && approvedCount >= eventLimit;
+
+    if (!regOpen) return; // registration closed — button shouldn't be shown
+
+    if (isFull) {
+      // Show waitlist form
+      _showRegistrationForm(event, asWaitlist: true);
+    } else {
+      // Show normal registration form
+      _showRegistrationForm(event, asWaitlist: false);
     }
   }
 
@@ -431,13 +1184,20 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     try {
       final db  = FirebaseFirestore.instance;
       final uid = firebaseUser.uid;
+
+      // If cancelling an approved reg, decrement approved count
+      if (_regStatuses[docId] == _RegStatus.approved) {
+        db.collection('events').doc(docId)
+            .update({'event_approved_count': FieldValue.increment(-1)})
+            .catchError((_) {});
+      }
+
       await db.doc('event_registrations/$regDocId').delete();
       await db.doc('user_events/${uid}_$docId').delete().catchError((_) {});
       if (mounted) {
         setState(() {
-          _regStatuses.remove(docId);
-          _regDocIds.remove(docId);
           _regStatuses[docId]  = _RegStatus.none;
+          _regDocIds.remove(docId);
           _saveStatuses[docId] = _SaveStatus.none;
         });
       }
@@ -629,158 +1389,23 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     );
   }
 
-  Future<void> _showRegisterConfirmModal(Map<String, dynamic> event) async {
-    final _S ls = _S(ref.read(appLangProvider));
-
-    await showDialog(
-      context: context,
-      barrierColor: Colors.black.withOpacity(0.55),
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 340),
-          decoration: BoxDecoration(
-            color: const Color(0xFF07170C),
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: Colors.white.withOpacity(0.08)),
-            boxShadow: [BoxShadow(
-              color: Colors.black.withOpacity(0.55),
-              blurRadius: 80, offset: const Offset(0, 24),
-            )],
-          ),
-          padding: const EdgeInsets.all(24),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(
-              width: 56, height: 56,
-              decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.14), shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.group_rounded, color: AppColors.primary, size: 26),
-            ),
-            const SizedBox(height: 16),
-            Text(ls.registerConfirmTitle,
-                style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900),
-                textAlign: TextAlign.center),
-            const SizedBox(height: 8),
-            Text(ls.registerConfirmBody,
-                style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 13, height: 1.5),
-                textAlign: TextAlign.center),
-            const SizedBox(height: 20),
-            Row(children: [
-              Expanded(
-                child: TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  style: TextButton.styleFrom(
-                    backgroundColor: Colors.black.withOpacity(0.18),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      side: BorderSide(color: Colors.white.withOpacity(0.16)),
-                    ),
-                  ),
-                  child: Text(ls.modalCancel,
-                      style: TextStyle(color: Colors.white.withOpacity(0.8),
-                          fontWeight: FontWeight.w800, fontSize: 13)),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    _handleRegister(event);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary, elevation: 0,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  ),
-                  child: Text(ls.registerBtn,
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13)),
-                ),
-              ),
-            ]),
-          ]),
-        ),
-      ),
-    );
-  }
-
   Future<void> _showCancelRegConfirmModal(Map<String, dynamic> event) async {
     final _S ls = _S(ref.read(appLangProvider));
-
-    await showDialog(
+    final confirmed = await showDialog<bool>(
       context: context,
       barrierColor: Colors.black.withOpacity(0.55),
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.transparent,
-        child: Container(
-          constraints: const BoxConstraints(maxWidth: 340),
-          decoration: BoxDecoration(
-            color: const Color(0xFF07170C),
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: Colors.white.withOpacity(0.08)),
-            boxShadow: [BoxShadow(
-              color: Colors.black.withOpacity(0.55),
-              blurRadius: 80, offset: const Offset(0, 24),
-            )],
-          ),
-          padding: const EdgeInsets.all(24),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(
-              width: 56, height: 56,
-              decoration: BoxDecoration(
-                color: const Color(0xFFEF476F).withOpacity(0.12), shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.cancel_outlined, color: Color(0xFFEF476F), size: 26),
-            ),
-            const SizedBox(height: 16),
-            Text(ls.cancelRegTitle,
-                style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900),
-                textAlign: TextAlign.center),
-            const SizedBox(height: 8),
-            Text(ls.cancelRegBody,
-                style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 13, height: 1.5),
-                textAlign: TextAlign.center),
-            const SizedBox(height: 20),
-            Row(children: [
-              Expanded(
-                child: TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  style: TextButton.styleFrom(
-                    backgroundColor: Colors.black.withOpacity(0.18),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      side: BorderSide(color: Colors.white.withOpacity(0.16)),
-                    ),
-                  ),
-                  child: Text(ls.modalCancel,
-                      style: TextStyle(color: Colors.white.withOpacity(0.8),
-                          fontWeight: FontWeight.w800, fontSize: 13)),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    _handleCancelRegistration(event);
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFEF476F), elevation: 0,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  ),
-                  child: Text(ls.cancelReg,
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13)),
-                ),
-              ),
-            ]),
-          ]),
-        ),
+      builder: (ctx) => _ConfirmDialog(
+        title: ls.cancelRegTitle,
+        body: ls.cancelRegBody,
+        confirmLabel: ls.cancelReg,
+        confirmColor: _red,
+        onConfirm: () => Navigator.pop(ctx, true),
+        onCancel:  () => Navigator.pop(ctx, false),
       ),
     );
+    if (confirmed == true) {
+      await _handleCancelRegistration(event);
+    }
   }
 
   String get _locationLabel {
@@ -793,7 +1418,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     if (_filter.country.isEmpty && _filter.prefecture.isEmpty && _filter.city.isEmpty) {
       return true;
     }
-
     if (_filter.country.isNotEmpty) {
       final country = (event['_resolvedCountry'] ?? '').toString().toLowerCase();
       final target  = _filter.country.toLowerCase();
@@ -801,7 +1425,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
         return false;
       }
     }
-
     if (_filter.prefecture.isNotEmpty) {
       final pref   = (event['_resolvedPrefecture'] ?? '').toString().toLowerCase();
       final target = _filter.prefecture.toLowerCase();
@@ -809,7 +1432,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
         return false;
       }
     }
-
     if (_filter.city.isNotEmpty) {
       final city   = (event['_resolvedCity'] ?? '').toString().toLowerCase();
       final target = _filter.city.toLowerCase();
@@ -817,14 +1439,12 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
         return false;
       }
     }
-
     return true;
   }
 
   bool _matchesAllFilters(Map<String, dynamic> e) {
     if (!_matchesLocation(e)) return false;
     if (_filter.type.isNotEmpty && (e['event_type'] ?? '').toString() != _filter.type) return false;
-
     if (_filter.skillPro || _filter.skillAmateur || _filter.skillBeginner) {
       final match =
           (_filter.skillPro      && e['event_skill_level_pro']      == true) ||
@@ -832,7 +1452,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
               (_filter.skillBeginner && e['event_skill_level_beginner']  == true);
       if (!match) return false;
     }
-
     if (_filter.catMx || _filter.catMd || _filter.catMs || _filter.catWs ||
         _filter.catWd || _filter.catSe || _filter.catJu || _filter.catCo) {
       final match =
@@ -846,7 +1465,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
               (_filter.catCo && e['event_category_collegiate']    == true);
       if (!match) return false;
     }
-
     if (_filter.tourist && e['event_touristfriendly'] != true) return false;
     return true;
   }
@@ -964,7 +1582,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     for (final e in events) {
       if (!_matchesAllFilters(e)) continue;
 
-      // Support both event_date and event_start_date field names
       final tsStart = e['event_date'] ?? e['event_start_date'];
       if (tsStart == null) continue;
 
@@ -1291,7 +1908,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
   @override
   Widget build(BuildContext context) {
     ref.watch(appLangProvider);
-    // ← Use the dedicated calendar provider with event_checked == true
     final eventsAsync  = ref.watch(_calendarFetchProvider);
     final firebaseUser = FirebaseAuth.instance.currentUser;
 
@@ -1491,7 +2107,7 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                             isRegLoading: _regLoading[docId] ?? false,
                             onTapMyEvents:   () => _showSaveConfirmModal(e, _SaveStatus.myEvents),
                             onTapInterested: () => _showSaveConfirmModal(e, _SaveStatus.interested),
-                            onTapRegister:   () => _showRegisterConfirmModal(e),
+                            onTapRegister:   () => _handleRegisterTap(e),
                             onTapCancelReg:  () => _showCancelRegConfirmModal(e),
                           );
                         }),
@@ -1673,7 +2289,7 @@ class _EmptyDayCell extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Event Card
+// Event Card — updated registration section with 3-step form
 // ─────────────────────────────────────────────────────────────────────────────
 class _EventCard extends StatelessWidget {
   final Map<String, dynamic> event;
@@ -1731,6 +2347,22 @@ class _EventCard extends StatelessWidget {
   String get _contact =>
       (event['event_contact'] ?? event['event_email'] ?? '').toString();
 
+  // Capacity helpers
+  int? get _eventLimit => event['event_limit'] != null
+      ? int.tryParse(event['event_limit'].toString())
+      : null;
+  int get _approvedCount => (event['event_approved_count'] ?? 0) as int;
+  bool get _isFull => _eventLimit != null && _approvedCount >= _eventLimit!;
+  bool get _regOpen => event['event_registration_open'] != false;
+
+  // Owner check
+  bool get _isEventOwner {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return false;
+    final submittedBy = (event['submittedBy'] ?? '').toString();
+    return submittedBy.isNotEmpty && submittedBy == currentUser.uid;
+  }
+
   String _fee(String freeLabel) {
     final f = event['event_fee'];
     if (f == null || f.toString().isEmpty ||
@@ -1785,6 +2417,10 @@ class _EventCard extends StatelessWidget {
   static const Color _border    = Color(0xFFEEEFF1);
   static const Color _textDark  = Color(0xFF0D0D0D);
   static const Color _textLight = Color(0xFF888A90);
+  static const Color _red       = Color(0xFFD32F2F);
+  static const Color _redLt     = Color(0xFFFFEBEE);
+  static const Color _amber     = Color(0xFFD97706);
+  static const Color _amberLt   = Color(0xFFFFF3CD);
 
   @override
   Widget build(BuildContext context) {
@@ -1809,6 +2445,18 @@ class _EventCard extends StatelessWidget {
 
     final isSavedMyEvents   = saveStatus == _SaveStatus.myEvents;
     final isSavedInterested = saveStatus == _SaveStatus.interested;
+
+    // Capacity
+    final eventLimit    = _eventLimit;
+    final approvedCount = _approvedCount;
+    final isFull        = _isFull;
+    final regOpen       = _regOpen;
+    final fillPct = eventLimit != null && eventLimit > 0
+        ? (approvedCount / eventLimit).clamp(0.0, 1.0)
+        : 0.0;
+    final fillColor = fillPct >= 0.9
+        ? _red
+        : fillPct >= 0.7 ? _amber : AppColors.primary;
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 20),
@@ -1953,6 +2601,42 @@ class _EventCard extends StatelessWidget {
                             TextSpan(text: contact,
                                 style: const TextStyle(fontSize: 13, color: AppColors.primary)),
                           ])),
+                        ],
+                        // ── Capacity progress bar ──
+                        if (eventLimit != null) ...[
+                          const SizedBox(height: 12),
+                          Row(children: [
+                            Text('$approvedCount / $eventLimit ${_isJa ? '名参加中' : 'filled'}',
+                                style: TextStyle(fontSize: 11, color: Colors.grey.shade500,
+                                    fontWeight: FontWeight.w500)),
+                            const Spacer(),
+                            if (isFull)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: _redLt,
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                child: Text(_isJa ? '満席' : 'Full',
+                                    style: const TextStyle(fontSize: 10,
+                                        fontWeight: FontWeight.w800, color: _red)),
+                              )
+                            else
+                              Text(s.slotsLeft((eventLimit - approvedCount).clamp(0, 9999)),
+                                  style: TextStyle(fontSize: 11,
+                                      fontWeight: FontWeight.w700, color: fillColor)),
+                          ]),
+                          const SizedBox(height: 6),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: LinearProgressIndicator(
+                              value: fillPct,
+                              minHeight: 5,
+                              backgroundColor: Colors.grey.shade200,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                  isFull ? _red : fillColor),
+                            ),
+                          ),
                         ],
                       ])),
                 ]),
@@ -2151,136 +2835,262 @@ class _EventCard extends StatelessWidget {
               const SizedBox(height: 20),
             ],
 
-            // REGISTRATION section
+            // ── REGISTRATION section ───────────────────────────────────
             _SectionLabel(label: s.secRegistration),
             const SizedBox(height: 12),
 
-            if (!isLoggedIn)
-              Text(s.loginToRegister,
-                  style: TextStyle(fontSize: 13, color: Colors.grey.shade400))
-            else if (regStatus == _RegStatus.none)
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: isRegLoading ? null : onTapRegister,
-                  icon: isRegLoading
-                      ? const SizedBox(width: 18, height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Icon(Icons.group_rounded, size: 18, color: Colors.white),
-                  label: Text(
-                    isRegLoading ? s.registering : s.registerBtn,
-                    style: const TextStyle(fontWeight: FontWeight.w800,
-                        color: Colors.white, fontSize: 15),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    disabledBackgroundColor: AppColors.primary.withOpacity(0.5),
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  ),
+            // Organizer viewing own event
+            if (_isEventOwner)
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.primary.withOpacity(0.2)),
                 ),
+                child: Row(children: [
+                  Container(
+                    width: 36, height: 36,
+                    decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.12), shape: BoxShape.circle),
+                    child: const Icon(Icons.shield_rounded, color: AppColors.primary, size: 18),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(
+                      _isJa ? 'あなたが主催するイベント' : 'You are the organizer',
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
+                          color: AppColors.primary),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      _isJa ? '自分のイベントへの登録は不要です。' : 'Registration is not required for your own event.',
+                      style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                    ),
+                  ])),
+                ]),
               )
-            else ...[
+
+            // Not logged in
+            else if (!isLoggedIn)
+              Text(s.loginToRegister,
+                  style: const TextStyle(fontSize: 13, color: _textLight))
+
+            // Registration closed
+            else if (!regOpen)
                 Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: regStatus == _RegStatus.approved
-                        ? AppColors.primary.withOpacity(0.08)
-                        : regStatus == _RegStatus.rejected
-                        ? const Color(0xFFEF476F).withOpacity(0.08)
-                        : const Color(0xFFFCD34D).withOpacity(0.08),
+                    color: const Color(0xFFF4F6F8),
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: regStatus == _RegStatus.approved
-                          ? AppColors.primary.withOpacity(0.3)
-                          : regStatus == _RegStatus.rejected
-                          ? const Color(0xFFEF476F).withOpacity(0.3)
-                          : const Color(0xFFFCD34D).withOpacity(0.3),
-                    ),
+                    border: Border.all(color: const Color(0xFFE4E9EE)),
                   ),
-                  child: Row(children: [
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Container(
                       width: 36, height: 36,
                       decoration: BoxDecoration(
-                        color: regStatus == _RegStatus.approved
-                            ? AppColors.primary.withOpacity(0.15)
-                            : regStatus == _RegStatus.rejected
-                            ? const Color(0xFFEF476F).withOpacity(0.15)
-                            : const Color(0xFFFCD34D).withOpacity(0.12),
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        regStatus == _RegStatus.approved
-                            ? Icons.check_rounded
-                            : regStatus == _RegStatus.rejected
-                            ? Icons.close_rounded
-                            : Icons.access_time_rounded,
-                        color: regStatus == _RegStatus.approved
-                            ? AppColors.primary
-                            : regStatus == _RegStatus.rejected
-                            ? const Color(0xFFEF476F)
-                            : const Color(0xFFFCD34D),
-                        size: 18,
-                      ),
+                          color: Colors.grey.withOpacity(0.12), shape: BoxShape.circle),
+                      child: Icon(Icons.lock_rounded, color: Colors.grey.shade500, size: 18),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            regStatus == _RegStatus.approved
-                                ? s.registrationApproved
-                                : regStatus == _RegStatus.rejected
-                                ? s.registrationRejected
-                                : s.registrationPending,
-                            style: TextStyle(
-                              fontSize: 14, fontWeight: FontWeight.w800,
-                              color: regStatus == _RegStatus.approved
-                                  ? AppColors.primary
-                                  : regStatus == _RegStatus.rejected
-                                  ? const Color(0xFFEF476F)
-                                  : const Color(0xFFFCD34D),
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            regStatus == _RegStatus.approved
-                                ? s.regApprovedMsg
-                                : regStatus == _RegStatus.rejected
-                                ? s.regRejectedMsg
-                                : s.alreadyRegistered,
-                            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-                          ),
-                        ])),
+                    const SizedBox(width: 10),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(s.registrationClosed,
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
+                              color: Colors.grey.shade600)),
+                      const SizedBox(height: 2),
+                      Text(s.regClosedMsg,
+                          style: const TextStyle(fontSize: 12, color: _textLight)),
+                    ])),
                   ]),
-                ),
-                if (regStatus == _RegStatus.pending || regStatus == _RegStatus.rejected) ...[
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: isRegLoading ? null : onTapCancelReg,
-                      icon: isRegLoading
-                          ? const SizedBox(width: 14, height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFFEF476F)))
-                          : const Icon(Icons.cancel_outlined, size: 16, color: Color(0xFFEF476F)),
-                      label: Text(s.cancelReg,
-                          style: const TextStyle(color: Color(0xFFEF476F),
-                              fontWeight: FontWeight.w700, fontSize: 13)),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        side: BorderSide(color: const Color(0xFFEF476F).withOpacity(0.4)),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                )
+
+              // Has existing registration
+              else if (regStatus != _RegStatus.none)
+                  Column(children: [
+                    // Status banner
+                    _RegStatusBanner(regStatus: regStatus, s: s),
+                    // Cancel button for pending/rejected/waitlist
+                    if (regStatus == _RegStatus.pending ||
+                        regStatus == _RegStatus.rejected ||
+                        regStatus == _RegStatus.waitlist) ...[
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: isRegLoading ? null : onTapCancelReg,
+                          icon: isRegLoading
+                              ? const SizedBox(width: 14, height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: _red))
+                              : const Icon(Icons.cancel_outlined, size: 16, color: _red),
+                          label: Text(s.cancelReg,
+                              style: const TextStyle(color: _red,
+                                  fontWeight: FontWeight.w700, fontSize: 13)),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            side: BorderSide(color: _red.withOpacity(0.4)),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ])
+
+                // Full event — show waitlist button
+                else if (isFull)
+                    Column(children: [
+                      // Capacity reached banner
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: _redLt,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: _red.withOpacity(0.25)),
+                        ),
+                        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Container(
+                            width: 36, height: 36,
+                            decoration: BoxDecoration(
+                                color: _red.withOpacity(0.12), shape: BoxShape.circle),
+                            child: const Icon(Icons.people_alt_rounded, color: _red, size: 18),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Text(s.capacityReached,
+                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
+                                    color: _red)),
+                            const SizedBox(height: 2),
+                            Text(s.capacityMsg,
+                                style: const TextStyle(fontSize: 12, color: _textLight)),
+                          ])),
+                        ]),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: isRegLoading ? null : onTapRegister,
+                          icon: isRegLoading
+                              ? const SizedBox(width: 18, height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                              : const Icon(Icons.schedule_rounded, size: 18, color: Colors.white),
+                          label: Text(
+                            isRegLoading ? s.joiningWaitlist : s.joinWaitlist,
+                            style: const TextStyle(fontWeight: FontWeight.w800,
+                                color: Colors.white, fontSize: 15),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _amber,
+                            disabledBackgroundColor: _amber.withOpacity(0.5),
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          ),
+                        ),
+                      ),
+                    ])
+
+                  // Normal register button
+                  else
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: isRegLoading ? null : onTapRegister,
+                        icon: isRegLoading
+                            ? const SizedBox(width: 18, height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Icon(Icons.how_to_reg_rounded, size: 18, color: Colors.white),
+                        label: Text(
+                          isRegLoading ? s.registering : s.registerBtn,
+                          style: const TextStyle(fontWeight: FontWeight.w800,
+                              color: Colors.white, fontSize: 15),
+                        ),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.primary,
+                          disabledBackgroundColor: AppColors.primary.withOpacity(0.5),
+                          elevation: 0,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
                       ),
                     ),
-                  ),
-                ],
-              ],
 
             const SizedBox(height: 8),
           ]),
         ),
+      ]),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Registration status banner widget
+// ─────────────────────────────────────────────────────────────────────────────
+class _RegStatusBanner extends StatelessWidget {
+  final _RegStatus regStatus;
+  final _S s;
+
+  const _RegStatusBanner({required this.regStatus, required this.s});
+
+  static const Color _red   = Color(0xFFD32F2F);
+  static const Color _redLt = Color(0xFFFFEBEE);
+  static const Color _amber = Color(0xFFD97706);
+  static const Color _amberLt = Color(0xFFFFF3CD);
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color;
+    final Color bg;
+    final Color border;
+    final IconData icon;
+    final String title;
+    final String subtitle;
+
+    switch (regStatus) {
+      case _RegStatus.approved:
+        color = AppColors.primary;
+        bg = AppColors.primary.withOpacity(0.08);
+        border = AppColors.primary.withOpacity(0.3);
+        icon = Icons.check_circle_rounded;
+        title = s.registrationApproved;
+        subtitle = s.regApprovedMsg;
+      case _RegStatus.rejected:
+        color = _red; bg = _redLt; border = _red.withOpacity(0.3);
+        icon = Icons.cancel_rounded;
+        title = s.registrationRejected;
+        subtitle = s.regRejectedMsg;
+      case _RegStatus.waitlist:
+        color = _amber; bg = _amberLt; border = _amber.withOpacity(0.3);
+        icon = Icons.schedule_rounded;
+        title = s.registrationWaitlist;
+        subtitle = s.regWaitlistMsg;
+      default:
+        color = _amber; bg = _amberLt; border = _amber.withOpacity(0.3);
+        icon = Icons.pending_rounded;
+        title = s.registrationPending;
+        subtitle = s.alreadyRegistered;
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: border),
+      ),
+      child: Row(children: [
+        Container(
+          width: 36, height: 36,
+          decoration: BoxDecoration(color: color.withOpacity(0.12), shape: BoxShape.circle),
+          child: Icon(icon, color: color, size: 18),
+        ),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: color)),
+          const SizedBox(height: 2),
+          Text(subtitle,
+              style: const TextStyle(fontSize: 12, color: Color(0xFF4B5563))),
+        ])),
       ]),
     );
   }
