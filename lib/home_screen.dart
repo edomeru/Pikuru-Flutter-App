@@ -65,6 +65,106 @@ String _t(String lang, String key) =>
     _L[lang]?[key] ?? _L[kLangEn]![key]!;
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Direct Firestore provider for home screen events
+// Mirrors web app's HomePage load() exactly:
+//   event_active == true
+//   event_checked == true          ← web uses event_checked, NOT event_status
+//   event_pending_review == false
+//   event_date >= today
+//   event_date <= today + 30 days
+//   orderBy event_date
+//   limit 50
+//   then filter: prefecture contains 'tokyo'
+// ─────────────────────────────────────────────────────────────────────────────
+final _homeEventsProvider =
+FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final now   = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final in30  = today.add(const Duration(days: 30));
+
+  final snap = await FirebaseFirestore.instance
+      .collection('events')
+      .where('event_active',         isEqualTo: true)
+      .where('event_checked',        isEqualTo: true)   // ← matches web app
+      .where('event_pending_review', isEqualTo: false)
+      .where('event_date', isGreaterThanOrEqualTo: Timestamp.fromDate(today))
+      .where('event_date', isLessThanOrEqualTo:    Timestamp.fromDate(in30))
+      .orderBy('event_date')
+      .limit(50)
+      .get();
+
+  final raw = snap.docs
+      .map((d) => <String, dynamic>{...d.data(), '_doc_id': d.id})
+      .toList();
+
+  // Enrich with resolved location (mirrors web resolveLocation)
+  final enriched = await Future.wait(raw.map(_resolveEventLocation));
+
+  // Mirror web app's Tokyo filter on home screen:
+  // .filter(e => pref.includes('tokyo') || pref.includes('東京'))
+  return enriched.where((e) {
+    final pref = (e['_pref'] ?? '').toString().toLowerCase();
+    return pref.contains('tokyo') || pref.contains('東京');
+  }).take(8).toList();
+});
+
+Future<Map<String, dynamic>> _resolveEventLocation(
+    Map<String, dynamic> event) async {
+  final locId =
+  (event['event_loc_id'] ?? event['loc_id'] ?? '').toString().trim();
+  Map<String, dynamic> locDoc = {};
+
+  if (locId.isNotEmpty) {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('locations')
+          .where('loc_id', isEqualTo: locId)
+          .limit(1)
+          .get();
+      if (snap.docs.isNotEmpty) locDoc = snap.docs.first.data();
+    } catch (_) {}
+  }
+
+  String get(String key) =>
+      ((locDoc[key] ?? event[key] ?? '')).toString().trim();
+
+  final cityEn = [get('loc_city_en'), get('loc_city')].firstWhere(
+          (v) => v.isNotEmpty, orElse: () => '');
+  final prefEn = [get('loc_prefecture_en'), get('loc_prefecture')].firstWhere(
+          (v) => v.isNotEmpty, orElse: () => '');
+  final cityJp = [get('loc_city_jp'), get('loc_city')].firstWhere(
+          (v) => v.isNotEmpty, orElse: () => '');
+  final prefJp = [get('loc_prefecture_jp'), get('loc_prefecture')].firstWhere(
+          (v) => v.isNotEmpty, orElse: () => '');
+  final country = get('loc_country');
+
+  String locEn = cityEn.isNotEmpty && prefEn.isNotEmpty
+      ? '$cityEn, $prefEn'
+      : cityEn.isNotEmpty && country.isNotEmpty
+      ? '$cityEn, $country'
+      : cityEn.isNotEmpty
+      ? cityEn
+      : prefEn.isNotEmpty
+      ? prefEn
+      : country;
+
+  String locJp = prefJp.isNotEmpty && cityJp.isNotEmpty
+      ? '$prefJp$cityJp'
+      : cityJp.isNotEmpty
+      ? cityJp
+      : prefJp.isNotEmpty
+      ? prefJp
+      : country;
+
+  return {
+    ...event,
+    'location':    locEn,
+    'location_jp': locJp,
+    '_pref':       prefEn,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // HomeScreen
 // ─────────────────────────────────────────────────────────────────────────────
 class HomeScreen extends ConsumerStatefulWidget {
@@ -164,7 +264,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   // Helpers (mirror web app logic)
   // ─────────────────────────────────────────────────────────────────────────
 
-  /// Returns the localised event title (uses event_title_jp when lang == 'ja').
   String _eventTitle(Map<String, dynamic> data, String lang) {
     if (lang == kLangJa) {
       final jp = (data['event_title_jp'] ?? '').toString().trim();
@@ -173,7 +272,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return (data['event_title'] ?? 'Untitled').toString();
   }
 
-  /// Returns the localised group name (uses org_name_jp when lang == 'ja').
   String _groupName(Map<String, dynamic> data, String lang) {
     if (lang == kLangJa) {
       final jp = (data['org_name_jp'] ?? '').toString().trim();
@@ -182,7 +280,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return (data['org_name'] ?? 'Unnamed Group').toString();
   }
 
-  /// Returns the localised court name (uses loc_name_jp when lang == 'ja').
   String _courtName(Map<String, dynamic> data, String lang) {
     if (lang == kLangJa) {
       final jp = (data['loc_name_jp'] ?? '').toString().trim();
@@ -191,8 +288,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return (data['loc_name'] ?? 'Unnamed Court').toString();
   }
 
-  /// Builds a localised city / country string for courts
-  /// (mirrors CourtCard logic in web app).
   String _courtLocation(Map<String, dynamic> data, String lang) {
     final String city = lang == kLangJa
         ? ((data['loc_city_jp'] ?? data['loc_city'] ?? '').toString().trim())
@@ -206,9 +301,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return '';
   }
 
-  /// Formats event date/time, respecting locale (mirrors web app formatDate).
-  /// Avoids DateFormat locale arguments (requires initializeDateFormatting)
-  /// by building the Japanese string manually from the DateTime fields.
   String _formatEventDateTime(Map<String, dynamic> data, String lang) {
     final rawDate = data['event_date'];
     final rawTime = data['event_time'];
@@ -217,9 +309,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (rawDate is Timestamp) {
       final d = rawDate.toDate();
       if (lang == kLangJa) {
-        // Build JP date string without requiring locale initialisation
         const jpWeekdays = ['日', '月', '火', '水', '木', '金', '土'];
-        final weekday = jpWeekdays[d.weekday % 7]; // DateTime.weekday: 1=Mon…7=Sun
+        final weekday = jpWeekdays[d.weekday % 7];
         dateStr = '${d.month}月${d.day}日($weekday)';
       } else {
         dateStr = DateFormat('EEE, MMM d').format(d);
@@ -230,7 +321,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (rawTime is Timestamp) {
       final t = rawTime.toDate();
       if (lang == kLangJa) {
-        // H:mm — no locale needed
         timeStr = '${t.hour}:${t.minute.toString().padLeft(2, '0')}';
       } else {
         timeStr = DateFormat('h:mm a').format(t);
@@ -250,7 +340,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // ✅ Watch global lang provider — rebuilds whenever lang changes anywhere
     final lang = ref.watch(appLangProvider);
 
     return Scaffold(
@@ -636,10 +725,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Events section (localised)
+  // Events section — uses _homeEventsProvider (event_checked == true)
   // ─────────────────────────────────────────────────────────────────────────
   Widget _buildEventsSection(WidgetRef ref, String lang) {
-    final eventsAsync = ref.watch(eventsProvider);
+    // Use the dedicated home provider that mirrors the web app query exactly
+    final eventsAsync = ref.watch(_homeEventsProvider);
     return eventsAsync.when(
       data: (events) {
         if (events.isEmpty) {
@@ -650,67 +740,46 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           clipBehavior: Clip.none,
           itemCount: events.length,
           itemBuilder: (context, index) {
-            final data           = events[index];
-            final imageUrl       = (data['event_pic'] ??
+            final data              = events[index];
+            final imageUrl          = (data['event_pic'] ??
                 data['event_pic_thumbnail'] ??
                 data['event_image'] ??
                 '')
                 .toString();
-            final title          = _eventTitle(data, lang);
+            final title             = _eventTitle(data, lang);
             final formattedDateTime = _formatEventDateTime(data, lang);
-            final eventLocId     = (data['event_loc_id'] ?? '').toString();
 
-            return Consumer(
-              builder: (context, ref, child) {
-                final locationAsync =
-                ref.watch(locationResolverProvider(eventLocId));
-                return locationAsync.when(
-                  data: (locationEn) {
-                    // Use JP location field if available and lang == ja
-                    final location = lang == kLangJa
-                        ? (data['location_jp'] as String? ?? '').isNotEmpty
-                        ? (data['location_jp'] as String)
-                        : locationEn
-                        : locationEn;
-                    return GestureDetector(
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => EventDetailScreen(event: data),
-                        ),
-                      ),
-                      child: EventCard(
-                          imageUrl: imageUrl,
-                          title: title,
-                          dateTime: formattedDateTime,
-                          location: location),
-                    );
-                  },
-                  loading: () => EventCard(
-                      imageUrl: imageUrl,
-                      title: title,
-                      dateTime: formattedDateTime,
-                      location: '...'),
-                  error: (_, __) => EventCard(
-                      imageUrl: imageUrl,
-                      title: title,
-                      dateTime: formattedDateTime,
-                      location: _t(lang, 'unknownLocation')),
-                );
-              },
+            // Location already resolved and attached by _homeEventsProvider
+            final location = lang == kLangJa
+                ? (data['location_jp'] ?? data['location'] ?? '').toString()
+                : (data['location'] ?? '').toString();
+
+            return GestureDetector(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => EventDetailScreen(event: data),
+                ),
+              ),
+              child: EventCard(
+                imageUrl: imageUrl,
+                title: title,
+                dateTime: formattedDateTime,
+                location: location.isNotEmpty
+                    ? location
+                    : _t(lang, 'unknownLocation'),
+              ),
             );
           },
         );
       },
-      loading: () =>
-      const Center(child: CircularProgressIndicator()),
-      error: (error, stack) =>
-          Center(child: Text('Error: $error')),
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, stack) => Center(child: Text('Error: $error')),
     );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Groups section (localised)
+  // Groups section (unchanged — uses existing organizationsProvider)
   // ─────────────────────────────────────────────────────────────────────────
   Widget _buildGroupsSection(WidgetRef ref, String lang) {
     final orgsAsync = ref.watch(organizationsProvider);
@@ -767,15 +836,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           },
         );
       },
-      loading: () =>
-      const Center(child: CircularProgressIndicator()),
-      error: (error, stack) =>
-          Center(child: Text('Error: $error')),
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, stack) => Center(child: Text('Error: $error')),
     );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Courts section (localised)
+  // Courts section (unchanged)
   // ─────────────────────────────────────────────────────────────────────────
   Widget _buildCourtsSection(WidgetRef ref, String lang) {
     final courtsAsync = ref.watch(locationsProvider);
@@ -806,10 +873,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           },
         );
       },
-      loading: () =>
-      const Center(child: CircularProgressIndicator()),
-      error: (error, stack) =>
-          Center(child: Text('Error: $error')),
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (error, stack) => Center(child: Text('Error: $error')),
     );
   }
 
@@ -854,7 +919,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// _LangButton — reusable pill segment (mirrors GroupsScreen)
+// _LangButton — reusable pill segment
 // ─────────────────────────────────────────────────────────────────────────────
 class _LangButton extends StatelessWidget {
   final String label;
