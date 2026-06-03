@@ -85,7 +85,8 @@ class _S {
   String get tagCollegiate    => isJa ? '大学生'        : 'COLLEGIATE';
   String get tagSeniors       => isJa ? 'シニア'        : 'SENIORS';
 
-  // Registration
+  // ── Registration ──────────────────────────────────────────────────────────
+  // Mirrors T object in web app events/[id]/page.tsx exactly
   String get registerSection    => isJa ? '登録'                    : 'Registration';
   String get registerBtn        => isJa ? 'このイベントに登録'        : 'Register for this Event';
   String get registering        => isJa ? '登録中…'                  : 'Registering…';
@@ -107,13 +108,17 @@ class _S {
   String get regWaitlist        => isJa ? 'ウェイティングリスト待機中'  : 'On Waitlist';
   String get cancelRegTitle     => isJa ? '登録をキャンセルしますか？' : 'Cancel your registration?';
   String get cancelRegBody      => isJa ? 'このイベントから登録が削除されます。' : 'This will remove your registration from this event.';
+  // Organizer badge — mirrors web app isEventOwner block
   String get isOrganizer        => isJa ? 'あなたが主催するイベント'   : 'You are the organizer';
   String get organizerNote      => isJa ? '自分のイベントへの登録は不要です。' : 'Registration is not required for your own event.';
+  // Capacity / slots
   String get filled             => isJa ? '名参加中'                  : 'filled';
   String get full               => isJa ? '満席'                     : 'Full';
   String slotsLeft(int n)       => isJa ? '残り$n枠' : n == 1 ? '1 spot left' : '$n spots left';
+  // External registration — mirrors web app "external" registration_type
+  String get goToRegistrationPage => isJa ? '登録ページへ移動'         : 'Go to Registration Page';
 
-  // Registration form labels
+  // Registration form labels (3-step modal)
   String get regFormTitle    => isJa ? 'イベント登録'   : 'Register for this Event';
   String get regFormSubtitle => isJa ? '以下のフォームにご記入の上、登録してください。' : 'Fill in your details to submit your registration.';
   String get stepDetails     => isJa ? '基本情報'       : 'Details';
@@ -202,25 +207,36 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
   _RegStatus _regStatus    = _RegStatus.none;
   String?    _regDocId;
   bool       _regLoading   = false;
-  int?       _dbApprovedCount; // live count from event_registrations
+  int?       _dbApprovedCount;
 
   _S get s => _S(ref.watch(appLangProvider));
 
   String get locId => (widget.event['event_loc_id'] ?? '').toString();
 
-  // ── FIX: Always use _doc_id (the Firestore document ID) as the event
-  //         identifier when reading/writing event_registrations.
-  //         The web app uses the route param `id` which is always the doc ID.
-  //         Never fall back to the `event_id` field inside the document because
-  //         that field may hold a different value or may not exist at all.
+  // ── Event ID: always the Firestore document ID ────────────────────────────
+  // Mirrors web app's use of the route `id` param (Firestore doc ID).
+  // Falls back through 'id' then 'event_id' for compatibility.
   String get eventId {
     final docId = (widget.event['_doc_id'] ?? '').toString().trim();
     if (docId.isNotEmpty) return docId;
-    // Secondary fallback: id field some providers add
     final id = (widget.event['id'] ?? '').toString().trim();
     if (id.isNotEmpty) return id;
-    // Last resort (should not be reached for correctly hydrated event maps)
     return (widget.event['event_id'] ?? '').toString().trim();
+  }
+
+  // ── Registration type helpers (mirrors web app registration_type field) ───
+  // 'pikuru'   → in-app 3-step registration form (default)
+  // 'external' → "Go to Registration Page" button → external_registration_link
+  String get _registrationType =>
+      (widget.event['registration_type'] ?? 'pikuru').toString().trim();
+
+  bool get _isPikuruReg  => _registrationType != 'external';
+  bool get _isExternalReg => _registrationType == 'external';
+
+  String get _externalRegistrationLink {
+    final raw = (widget.event['external_registration_link'] ?? '').toString().trim();
+    if (raw.isEmpty) return '';
+    return raw.startsWith('http') ? raw : 'https://$raw';
   }
 
   // ── Capacity helpers ──────────────────────────────────────────────────────
@@ -237,10 +253,15 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
   bool get _regOpen =>
       widget.event['event_registration_open'] != false;
 
+  // ── Organizer check — mirrors web app isEventOwner ────────────────────────
+  // Compares current user's uid with event.submittedBy (the Firestore field
+  // set when the event was created). When this is true the Registration section
+  // shows "You are the organizer" instead of the register button, exactly
+  // matching the web app behaviour shown in screenshot 1.
   bool get _isEventOwner {
     final uid = FirebaseAuth.instance.currentUser?.uid;
-    final submittedBy = (widget.event['submittedBy'] ?? '').toString();
-    return uid != null && uid.isNotEmpty && submittedBy == uid;
+    final submittedBy = (widget.event['submittedBy'] ?? '').toString().trim();
+    return uid != null && uid.isNotEmpty && submittedBy.isNotEmpty && submittedBy == uid;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -252,7 +273,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
     _loadApprovedCount();
   }
 
-  // ── Approved count from event_registrations (mirrors web getCountFromServer) ──
+  // ── Approved count from event_registrations ───────────────────────────────
   Future<void> _loadApprovedCount() async {
     if (eventId.isEmpty) return;
     try {
@@ -330,12 +351,8 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
     }
   }
 
-  // ── Register / cancel ─────────────────────────────────────────────────────
-  // FIX: mirrors the web app's handleRegister exactly:
-  //   - uses eventId (Firestore doc ID) for event_id field
-  //   - stores user_name, user_email, user_phone, user_notes, user_avatar
-  //   - sets status to 'pending' (or 'waitlist')
-  //   - registered_at: serverTimestamp()
+  // ── Register — mirrors web app handleRegister exactly ─────────────────────
+  // Writes event_id (Firestore doc ID), user fields, status='pending'.
   Future<void> _submitRegistration({
     required String name,
     required String email,
@@ -351,7 +368,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
       final docRef = await FirebaseFirestore.instance
           .collection('event_registrations')
           .add({
-        'event_id':      eventId,           // ← always the Firestore doc ID
+        'event_id':      eventId,
         'user_id':       user.uid,
         'user_name':     name.isNotEmpty ? name : (user.displayName ?? ''),
         'user_email':    email.isNotEmpty ? email : (user.email ?? ''),
@@ -505,6 +522,11 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
   Future<void> _openGoogleMaps(double lat, double lng) async {
     final url = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
     if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _openUrl(String url) async {
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   Future<Map<String, dynamic>?> _fetchLocation() async {
@@ -670,13 +692,14 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                             Text('${s.ends}: $endDateStr',
                                 style: const TextStyle(fontSize: 13, color: _textLight)),
                           ],
-                          if (limitStr.isNotEmpty) ...[
+                          // Only show limit & capacity for pikuru registration events
+                          if (_isPikuruReg && limitStr.isNotEmpty) ...[
                             const SizedBox(height: 4),
                             Text('${s.limit}: $limitStr',
                                 style: const TextStyle(fontSize: 13, color: _textLight)),
                           ],
-                          // ── Capacity progress bar ──
-                          if (_eventLimit != null) ...[
+                          // ── Capacity progress bar (pikuru only) ──────
+                          if (_isPikuruReg && _eventLimit != null) ...[
                             const SizedBox(height: 12),
                             _CapacityBar(
                               s: s,
@@ -942,10 +965,20 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
   }
 
   // ── Registration widget ───────────────────────────────────────────────────
+  // Mirrors the web app's _buildRegistrationWidget / registerEventSection block.
+  // Priority order (same as web app):
+  //   1. Organizer viewing own event → "You are the organizer" banner
+  //   2. Not logged in              → login prompt
+  //   3. External registration_type → "Go to Registration Page" button
+  //   4. Registration closed        → closed banner
+  //   5. Already registered         → status banner + cancel
+  //   6. Full + pikuru              → capacity banner + Join Waitlist
+  //   7. Normal                     → Register button
   Widget _buildRegistrationWidget() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
 
-    // Organizer viewing own event
+    // ── 1. Organizer viewing own event ───────────────────────────────────────
+    // Mirrors web app isEventOwner check. submittedBy must equal current uid.
     if (_isEventOwner) {
       return Container(
         padding: const EdgeInsets.all(16),
@@ -973,13 +1006,42 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
       );
     }
 
-    // Not logged in
+    // ── 2. Not logged in ─────────────────────────────────────────────────────
     if (uid == null) {
       return Text(s.loginToRegister,
           style: const TextStyle(fontSize: 13, color: _textLight));
     }
 
-    // Registration closed
+    // ── 3. External registration_type ────────────────────────────────────────
+    // Mirrors web app: when registration_type == 'external' show a single
+    // "Go to Registration Page" button that opens external_registration_link.
+    if (_isExternalReg) {
+      final extLink = _externalRegistrationLink;
+      return GestureDetector(
+        onTap: extLink.isNotEmpty ? () => _openUrl(extLink) : null,
+        child: Container(
+          height: 52,
+          decoration: BoxDecoration(
+            color: _green,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [BoxShadow(
+                color: _green.withOpacity(0.28),
+                blurRadius: 12, offset: const Offset(0, 4))],
+          ),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            const Icon(Icons.open_in_new_rounded, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Text(s.goToRegistrationPage,
+                style: const TextStyle(fontSize: 15,
+                    fontWeight: FontWeight.w700, color: Colors.white)),
+          ]),
+        ),
+      );
+    }
+
+    // ── From here: pikuru in-app registration ─────────────────────────────────
+
+    // ── 4. Registration closed ────────────────────────────────────────────────
     if (!_regOpen) {
       return _StatusBanner(
         icon: Icons.lock_rounded,
@@ -991,7 +1053,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
       );
     }
 
-    // Already has a registration
+    // ── 5. Already has a registration ─────────────────────────────────────────
     if (_regStatus != _RegStatus.none) {
       return Column(children: [
         _regStatusBanner(),
@@ -1010,7 +1072,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
       ]);
     }
 
-    // Full — show waitlist button
+    // ── 6. Full — show waitlist button ────────────────────────────────────────
     if (_isFull) {
       return Column(children: [
         _StatusBanner(
@@ -1032,7 +1094,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
       ]);
     }
 
-    // Normal register button
+    // ── 7. Normal register button ─────────────────────────────────────────────
     return _PrimaryButton(
       label: _regLoading ? s.registering : s.registerBtn,
       color: _green,
@@ -1138,7 +1200,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Capacity bar — mirrors web app progress bar
+// Capacity bar — mirrors web app capacity progress bar
 // ═════════════════════════════════════════════════════════════════════════════
 class _CapacityBar extends StatelessWidget {
   final _S s;
@@ -1473,7 +1535,7 @@ class _SuccessDialog extends StatelessWidget {
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Registration form — 3-step bottom sheet
-// mirrors web RegistrationFormModal exactly
+// Mirrors web app RegistrationFormModal exactly (Details → Payment → Confirm)
 // ═════════════════════════════════════════════════════════════════════════════
 class _RegistrationFormSheet extends StatefulWidget {
   final _S s;
@@ -1611,6 +1673,7 @@ class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
   );
 
   // ── Step 2: Payment ───────────────────────────────────────────────────────
+  // Mirrors web app payment step: direct payment (active) + credit card (coming soon)
   Widget _buildStep2(_S s) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [

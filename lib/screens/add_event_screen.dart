@@ -7,13 +7,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geocoding/geocoding.dart';
-import 'package:pikuru/providers/app_language_provider.dart'; // ← global lang
+import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:pikuru/screens/add_event_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// i18n — mirrors web app T object exactly
+// i18n
 // ─────────────────────────────────────────────────────────────────────────────
 class _S {
   final String lang;
@@ -61,15 +62,24 @@ class _S {
   String get cont        => isJa ? '次へ'                   : 'Continue';
   String get create      => isJa ? 'イベントを作成'           : 'Create Event';
   String get errFields   => isJa ? 'タイトル、日付、住所、連絡先メールを入力してください。' : 'Please fill in Title, Date, Address, and Contact Email.';
+  String get errExtLink  => isJa ? '外部登録URLを入力してください。' : 'Please enter the external registration URL.';
   String get noImageNote => isJa ? '画像なしで保存しました。'    : 'Could not upload image — saving without it.';
   String get submitted   => isJa ? 'イベントを審査に送信しました！' : 'Event submitted for review!';
 
-  // Skills — mirrors web app T.ja
+  // ── Registration Option strings (mirrors web app T exactly) ────────────────
+  String get lblRegOption        => isJa ? '登録方法のオプション'          : 'Registration Option';
+  String get regOptionPikuru     => isJa ? 'Pikuruで登録を受け付ける'      : 'Register through Pikuru';
+  String get regOptionPikuruSub  => isJa ? '参加者はこのアプリ内で直接登録を行います。' : 'Participants register directly on this app.';
+  String get regOptionExternal   => isJa ? '外部の登録リンクを使用する'     : 'External Registration Link';
+  String get regOptionExtSub     => isJa ? '参加者を外部の登録用のウェブサイトにリダイレクトします。' : 'Redirect participants to an external registration website.';
+  String get lblExternalLink     => isJa ? '外部の登録URL *'              : 'External Registration URL *';
+
+  // Skills
   String get skillBeginner => isJa ? '初級' : 'Beginner';
   String get skillAmateur  => isJa ? '中級' : 'Amateur';
   String get skillPro      => isJa ? '上級' : 'Pro';
 
-  // Categories — mirrors web app T.ja.cats
+  // Categories
   String get catMs => isJa ? '男子シングルス'  : "Men's Singles";
   String get catWs => isJa ? '女子シングルス'  : "Women's Singles";
   String get catMd => isJa ? '男子ダブルス'   : "Men's Doubles";
@@ -79,7 +89,6 @@ class _S {
   String get catCo => isJa ? '学生'           : 'Collegiate';
   String get catSe => isJa ? 'シニア'         : 'Seniors';
 
-  // Event-type localiser — mirrors web app T.ja.types
   List<String> get typeKeys => [
     'Professional Tournament', 'Global Tournament', 'Japan Tournament',
     'Open Play', 'Trial Session', 'Local Event',
@@ -129,10 +138,7 @@ Future<String> _translateText(String text, String targetLang) async {
 // ─────────────────────────────────────────────────────────────────────────────
 // Screen
 // ─────────────────────────────────────────────────────────────────────────────
-// ── AFTER ───────────────────────────────────────────────────────────────────
 class AddEventScreen extends ConsumerStatefulWidget {
-  /// All fields are optional — existing call sites (e.g. EventsScreen) can
-  /// still use `const AddEventScreen()` with no arguments.
   const AddEventScreen({
     super.key,
     this.initialOrgName,
@@ -172,9 +178,7 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
   static const Color _border     = Color(0xFFCDE5D1);
   static const Color _errorRed   = Color(0xFFE53935);
 
-  // ── Global lang helper ────────────────────────────────────────────────────
   _S get s => _S(ref.watch(appLangProvider));
-
   List<String> get _stepLabels => [s.s1, s.s2, s.s3, s.s4, s.s5];
 
   // ── Controllers ───────────────────────────────────────────────────────────
@@ -190,6 +194,7 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
   late TextEditingController _venueMapLinkController;
   late TextEditingController _orgNameController;
   late TextEditingController _mapSearchController;
+  late TextEditingController _externalLinkController;
 
   // ── Map state ─────────────────────────────────────────────────────────────
   GoogleMapController? _mapController;
@@ -199,7 +204,8 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
   Timer?  _searchDebounce;
 
   // ── Form state ────────────────────────────────────────────────────────────
-  String    _eventType      = 'Open Play';
+  String    _eventType         = 'Open Play';
+  String    _registrationType  = 'pikuru';
   DateTime? _eventDate;
   DateTime? _eventDateEnd;
   bool _acceptStripe    = false;
@@ -229,16 +235,13 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
     _venueMapLinkController = TextEditingController();
     _orgNameController      = TextEditingController();
     _mapSearchController    = TextEditingController();
+    _externalLinkController = TextEditingController();
 
-    // ── Pre-fill from group data when launched from OrganizerGroupSettingsScreen
-    // mirrors web app query-param pre-fill: orgName, venueName, city,
-    // prefecture, country, contactEmail, link
     if (widget.initialOrgName?.isNotEmpty == true)
       _orgNameController.text = widget.initialOrgName!;
     if (widget.initialVenueName?.isNotEmpty == true)
       _venueNameController.text = widget.initialVenueName!;
     if (widget.initialCity?.isNotEmpty == true) {
-      // Pre-populate the address field with city so the user sees something
       _venueAddressController.text = [
         widget.initialVenueName ?? '',
         widget.initialCity ?? '',
@@ -261,7 +264,7 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
       _titleController, _linkController, _feeController, _maxController,
       _contactController, _descController, _startTimeController,
       _venueNameController, _venueAddressController, _venueMapLinkController,
-      _orgNameController, _mapSearchController,
+      _orgNameController, _mapSearchController, _externalLinkController,
     ]) { c.dispose(); }
     super.dispose();
   }
@@ -346,6 +349,17 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
       _showSnack(s.errFields, isError: true);
       return;
     }
+
+    if (_registrationType == 'external' &&
+        _externalLinkController.text.trim().isEmpty) {
+      _showSnack(s.errExtLink, isError: true);
+      return;
+    }
+
+    // ── Get the current authenticated user's UID (mirrors web app: user.uid) ─
+    final currentUser = FirebaseAuth.instance.currentUser;
+    final submittedByUid = currentUser?.uid ?? '';
+
     setState(() => _isLoading = true);
     try {
       // ── Image upload ──────────────────────────────────────────────────────
@@ -362,7 +376,7 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
         }
       }
 
-      // ── Bilingual title (mirrors web app translateText logic) ─────────────
+      // ── Bilingual title ───────────────────────────────────────────────────
       String titleEn, titleJp;
       if (_isJapanese(title)) {
         titleJp = title;
@@ -398,7 +412,7 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
         }
       }
 
-      // ── Firestore document — matches web app field names exactly ──────────
+      // ── Firestore document ────────────────────────────────────────────────
       await FirebaseFirestore.instance.collection('events').add({
         // Review flags
         'event_pending_review': true,
@@ -410,13 +424,19 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
         'event_created': FieldValue.serverTimestamp(),
         'event_updated': FieldValue.serverTimestamp(),
 
-        // Bilingual title — same fields as web app
+        // Bilingual title
         'event_title':    titleEn,
         'event_title_en': titleEn,
         'event_title_jp': titleJp,
 
         'event_type': _eventType,
         'event_link': _linkController.text.trim(),
+
+        // Registration option fields (mirrors web app docData exactly)
+        'registration_type': _registrationType,
+        'external_registration_link': _registrationType == 'external'
+            ? _externalLinkController.text.trim()
+            : '',
 
         'event_date':       eventDateTs,
         'event_date_end':   eventDateEndTs,
@@ -450,14 +470,16 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
         'event_org_id':        '',
 
         'event_contact':        contact,
-        // Bilingual description — same fields as web app
         'event_description_en': descEn,
         'event_description_jp': descJp,
 
         'event_pic':           imageUrl,
         'event_pic_thumbnail': imageUrl,
-        'event_addedby':       '',
-        'submittedBy':         '',
+
+        // ── FIXED: populate submittedBy and event_addedby with the current
+        //    user's UID, exactly as the web app does with user.uid ────────────
+        'event_addedby': submittedByUid,
+        'submittedBy':   submittedByUid,
       });
 
       if (mounted) {
@@ -485,7 +507,6 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
   // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    // Watch global lang — rebuilds labels whenever lang changes anywhere in app
     ref.watch(appLangProvider);
 
     return Scaffold(
@@ -572,6 +593,7 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         _buildPageHeader(s.s1, Icons.info_outline),
 
+        // Event Name
         _buildTextField(label: s.lblTitle, controller: _titleController,
             hint: 'e.g. UTR Pickleball Japan Tour 2026'),
         const SizedBox(height: 6),
@@ -580,8 +602,13 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
           const SizedBox(width: 5),
           Text(s.translateHint, style: const TextStyle(color: _textLight, fontSize: 11)),
         ]),
-        const SizedBox(height: 14),
+        const SizedBox(height: 20),
 
+        // Registration Option
+        _buildRegistrationOptionSection(),
+        const SizedBox(height: 20),
+
+        // Event Type
         _buildLabel(s.lblType),
         const SizedBox(height: 6),
         _buildDropdown(
@@ -592,9 +619,12 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
         ),
         const SizedBox(height: 14),
 
-        _buildTextField(label: s.lblLink, controller: _linkController,
-            hint: 'https://', keyboardType: TextInputType.url),
-        const SizedBox(height: 20),
+        // Link (shown only for pikuru type)
+        if (_registrationType == 'pikuru') ...[
+          _buildTextField(label: s.lblLink, controller: _linkController,
+              hint: 'https://', keyboardType: TextInputType.url),
+          const SizedBox(height: 20),
+        ],
 
         Container(
           padding: const EdgeInsets.all(12),
@@ -608,6 +638,69 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
           ]),
         ),
       ]),
+    );
+  }
+
+  // ── Registration Option section widget ────────────────────────────────────
+  Widget _buildRegistrationOptionSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildLabel(s.lblRegOption),
+        const SizedBox(height: 10),
+
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(
+            child: _RegistrationOptionCard(
+              title: s.regOptionPikuru,
+              subtitle: s.regOptionPikuruSub,
+              isSelected: _registrationType == 'pikuru',
+              onTap: () => setState(() {
+                _registrationType = 'pikuru';
+              }),
+              primaryColor: _primary,
+              accentSoftColor: _accentSoft,
+              borderColor: _border,
+              surfaceColor: _surface,
+              textDarkColor: _textDark,
+              textLightColor: _textLight,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _RegistrationOptionCard(
+              title: s.regOptionExternal,
+              subtitle: s.regOptionExtSub,
+              isSelected: _registrationType == 'external',
+              onTap: () => setState(() {
+                _registrationType = 'external';
+              }),
+              primaryColor: _primary,
+              accentSoftColor: _accentSoft,
+              borderColor: _border,
+              surfaceColor: _surface,
+              textDarkColor: _textDark,
+              textLightColor: _textLight,
+            ),
+          ),
+        ]),
+
+        AnimatedSize(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeInOut,
+          child: _registrationType == 'external'
+              ? Padding(
+            padding: const EdgeInsets.only(top: 14),
+            child: _buildTextField(
+              label: s.lblExternalLink,
+              controller: _externalLinkController,
+              hint: 'https://',
+              keyboardType: TextInputType.url,
+            ),
+          )
+              : const SizedBox.shrink(),
+        ),
+      ],
     );
   }
 
@@ -739,7 +832,6 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         _buildPageHeader(s.s4, Icons.place_outlined),
 
-        // ── Embedded map ──────────────────────────────────────────────────
         ClipRRect(
           borderRadius: BorderRadius.circular(16),
           child: Container(
@@ -761,7 +853,6 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
                 myLocationButtonEnabled: false,
                 zoomControlsEnabled: true,
               ),
-              // Search bar
               Positioned(
                 top: 12, left: 12, right: 12,
                 child: Container(
@@ -882,16 +973,14 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
               Image.file(_imageFile!, fit: BoxFit.cover),
               Positioned(bottom: 8, right: 8,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                       color: _textDark.withOpacity(0.75),
                       borderRadius: BorderRadius.circular(20)),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    const Icon(Icons.edit_rounded, size: 13,
-                        color: Colors.white),
-                    const SizedBox(width: 5),
-                    const Text('Change', style: TextStyle(
+                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.edit_rounded, size: 13, color: Colors.white),
+                    SizedBox(width: 5),
+                    Text('Change', style: TextStyle(
                         color: Colors.white, fontSize: 12,
                         fontWeight: FontWeight.w600)),
                   ]),
@@ -1187,4 +1276,109 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
       ]),
     ),
   );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Registration Option Card widget
+// ═════════════════════════════════════════════════════════════════════════════
+class _RegistrationOptionCard extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final bool isSelected;
+  final VoidCallback onTap;
+  final Color primaryColor;
+  final Color accentSoftColor;
+  final Color borderColor;
+  final Color surfaceColor;
+  final Color textDarkColor;
+  final Color textLightColor;
+
+  const _RegistrationOptionCard({
+    required this.title,
+    required this.subtitle,
+    required this.isSelected,
+    required this.onTap,
+    required this.primaryColor,
+    required this.accentSoftColor,
+    required this.borderColor,
+    required this.surfaceColor,
+    required this.textDarkColor,
+    required this.textLightColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: isSelected ? accentSoftColor : surfaceColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isSelected ? primaryColor : borderColor,
+            width: isSelected ? 1.5 : 1,
+          ),
+          boxShadow: isSelected
+              ? [BoxShadow(
+              color: primaryColor.withOpacity(0.12),
+              blurRadius: 8,
+              offset: const Offset(0, 2))]
+              : [BoxShadow(
+              color: Colors.black.withOpacity(0.03),
+              blurRadius: 4,
+              offset: const Offset(0, 1))],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: isSelected ? primaryColor : textDarkColor,
+                      height: 1.3,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isSelected ? primaryColor : Colors.transparent,
+                    border: Border.all(
+                      color: isSelected ? primaryColor : borderColor,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: isSelected
+                      ? const Icon(Icons.check, size: 12, color: Colors.white)
+                      : null,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: 11,
+                color: textLightColor,
+                height: 1.45,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
