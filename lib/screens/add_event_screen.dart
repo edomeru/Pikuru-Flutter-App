@@ -34,10 +34,13 @@ class _S {
   String get lblDate     => isJa ? '開催日 *'               : 'Date of Event *';
   String get lblDateEnd  => isJa ? '終了日 (任意)'           : 'End Date (Optional)';
   String get lblStart    => isJa ? '開始時間 * (例: 09:00)'  : 'Start Time (e.g. 09:00)';
-  String get lblFee      => isJa ? '参加費 (例: 無料, ¥2000)': 'Fee (e.g. Free, ¥2000)';
-  String get lblMax      => isJa ? '最大参加人数'             : 'Max Participants';
+  String get lblFee      => isJa ? '登録料 (登録無料の場合は「0」を入力してください。)' : 'Registration Fee (Please enter "0" if registration is free.)';
+  String get lblMax      => isJa ? '最大参加人数'             : 'Maximum number of participants';
   String get lblStripe   => isJa ? 'Pikuruアプリで支払いを受け付けますか？' : 'Accept payment through Pikuru App?';
   String get stripeSub   => isJa ? '*Stripe手数料＋参加者1人あたり¥100の手数料がかかります。' : '*Stripe fees plus a ¥100 fee per participant will apply.';
+  String get stripePlaceholder => isJa
+      ? '*現時点ではアプリ内での決済は行われません。参加費は参加者から直接回収してください。オンライン決済は近日対応予定です！'
+      : '*Payment is not collected through the app at this time. Please collect fees directly from participants. Online payment coming soon!';
   String get yes         => isJa ? 'はい'                   : 'Yes';
   String get no          => isJa ? 'いいえ'                 : 'No';
   String get lblSkill    => isJa ? 'スキルレベル'             : 'Skill Level';
@@ -731,33 +734,54 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
 
         Row(children: [
           Expanded(child: _buildTextField(label: s.lblFee, controller: _feeController,
-              hint: '¥2,000')),
+              hint: '2,000')),
           const SizedBox(width: 12),
           Expanded(child: _buildTextField(label: s.lblMax, controller: _maxController,
               hint: 'e.g. 64', keyboardType: TextInputType.number)),
         ]),
         const SizedBox(height: 20),
 
-        _buildSectionCard(children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(s.lblStripe, style: const TextStyle(
-                  color: _textDark, fontSize: 13, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 12),
-              Row(children: [
-                _buildRadioOption(s.yes, true, _acceptStripe,
-                        (v) => setState(() => _acceptStripe = v)),
-                const SizedBox(width: 24),
-                _buildRadioOption(s.no, false, _acceptStripe,
-                        (v) => setState(() => _acceptStripe = v)),
-              ]),
-              const SizedBox(height: 8),
-              Text(s.stripeSub, style: const TextStyle(
-                  color: _textLight, fontSize: 11, fontStyle: FontStyle.italic)),
-            ]),
+        // ── Stripe payment section — temporarily commented out (mirrors web app) ──
+        // _buildSectionCard(children: [
+        //   Padding(
+        //     padding: const EdgeInsets.all(16),
+        //     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        //       Text(s.lblStripe, style: const TextStyle(
+        //           color: _textDark, fontSize: 13, fontWeight: FontWeight.w700)),
+        //       const SizedBox(height: 12),
+        //       Row(children: [
+        //         _buildRadioOption(s.yes, true, _acceptStripe,
+        //                 (v) => setState(() => _acceptStripe = v)),
+        //         const SizedBox(width: 24),
+        //         _buildRadioOption(s.no, false, _acceptStripe,
+        //                 (v) => setState(() => _acceptStripe = v)),
+        //       ]),
+        //       const SizedBox(height: 8),
+        //       Text(s.stripeSub, style: const TextStyle(
+        //           color: _textLight, fontSize: 11, fontStyle: FontStyle.italic)),
+        //     ]),
+        //   ),
+        // ]),
+
+        // ── Temporary payment notice — mirrors web app stripePlaceholder ──────
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: _surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: _border),
           ),
-        ]),
+          child: Text(
+            s.stripePlaceholder,
+            style: const TextStyle(
+              color: _textLight,
+              fontSize: 12,
+              fontStyle: FontStyle.italic,
+              fontWeight: FontWeight.w500,
+              height: 1.5,
+            ),
+          ),
+        ),
       ]),
     );
   }
