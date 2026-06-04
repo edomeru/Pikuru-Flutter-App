@@ -67,7 +67,7 @@ class _S {
   String get errFields   => isJa ? 'タイトル、日付、住所、連絡先メールを入力してください。' : 'Please fill in Title, Date, Address, and Contact Email.';
   String get errExtLink  => isJa ? '外部登録URLを入力してください。' : 'Please enter the external registration URL.';
   String get noImageNote => isJa ? '画像なしで保存しました。'    : 'Could not upload image — saving without it.';
-  String get submitted   => isJa ? 'イベントを審査に送信しました！' : 'Event submitted for review!';
+  String get submitted   => isJa ? 'イベントは検討中です。 48 時間以内にシステムに追加されます。' : 'Event is under review. It will be added to our system within 48 hours.';
 
   // ── Registration Option strings (mirrors web app T exactly) ────────────────
   String get lblRegOption        => isJa ? '登録方法のオプション'          : 'Registration Option';
