@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -7,6 +9,7 @@ import 'package:pikuru/providers/providers.dart';
 import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:pikuru/screens/event_detail_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // i18n
@@ -25,6 +28,8 @@ class _S {
   String get clearAll     => isJa ? 'クリア'                  : 'Clear All';
   String get applyFilters => isJa ? 'フィルターを適用'         : 'APPLY FILTERS';
   String get viewOnMaps   => isJa ? 'Googleマップで見る'       : 'View on Google Maps';
+  // ── NEW ──
+  String get viewFullDetails => isJa ? '詳細を見る' : 'View Full Details';
 
   String get dateSection  => isJa ? '日付'   : 'DATE';
   String get startDate    => isJa ? '開始日'  : 'Start Date';
@@ -916,7 +921,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
   final Map<String, String>      _regDocIds    = {};
   final Map<String, bool>        _regLoading   = {};
 
-  // ── CHANGED: Dynamic fetch state instead of static StreamProvider ──
   List<Map<String, dynamic>> _rawEvents = [];
   List<Map<String, dynamic>> _enrichedEvents = [];
   bool _loadingEvents = true;
@@ -937,7 +941,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     _slideAnim = Tween<Offset>(begin: const Offset(0, 0.05), end: Offset.zero)
         .animate(CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOutCubic));
 
-    // Initial fetch
     _fetchEvents();
   }
 
@@ -948,10 +951,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     super.dispose();
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // CHANGED: Dynamic fetch that mirrors web app load() exactly
-  // Adjusts qStart/qEnd based on filter dateStart/dateEnd
-  // ─────────────────────────────────────────────────────────────────────────
   Future<void> _fetchEvents() async {
     if (!mounted) return;
     setState(() => _loadingEvents = true);
@@ -960,9 +959,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
       final now   = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
 
-      // Mirror web app logic exactly:
-      // qStart: if dateStart filter set → use it, else → today
-      // qEnd:   if dateEnd filter set   → use it, else if no dateStart → today+30, else → null (no upper bound)
       DateTime qStart = today;
       DateTime? qEnd;
 
@@ -971,7 +967,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
       }
 
       if (_filter.dateEnd != null) {
-        // End of the selected end date (23:59:59)
         qEnd = DateTime(
           _filter.dateEnd!.year,
           _filter.dateEnd!.month,
@@ -979,10 +974,8 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
           23, 59, 59, 999,
         );
       } else if (_filter.dateStart == null) {
-        // Default: no custom dates → fetch next 30 days
         qEnd = DateTime(today.year, today.month, today.day + 30, 23, 59, 59, 999);
       }
-      // else: dateStart is set but no dateEnd → no upper bound (fetch all from qStart)
 
       Query query = FirebaseFirestore.instance
           .collection('events')
@@ -1005,7 +998,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
           .map((d) => <String, dynamic>{...d.data() as Map<String, dynamic>, '_doc_id': d.id})
           .toList();
 
-      // Filter out events without event_loc_id (mirrors web app)
       final rawWithLocId = raw
           .where((e) => (e['event_loc_id'] ?? '').toString().trim().isNotEmpty)
           .toList();
@@ -1030,9 +1022,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Location label
-  // ─────────────────────────────────────────────────────────────────────────
   String get _locationLabel {
     if (_filter.defaultLocationActive) {
       return s.isJa ? '東京' : 'Tokyo';
@@ -1042,9 +1031,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     return s.allCountries;
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Firestore status loading
-  // ─────────────────────────────────────────────────────────────────────────
   Future<void> _loadStatuses(List<Map<String, dynamic>> events) async {
     final firebaseUser = FirebaseAuth.instance.currentUser;
     if (firebaseUser == null) return;
@@ -1420,9 +1406,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Location matching
-  // ─────────────────────────────────────────────────────────────────────────
   bool _matchesLocation(Map<String, dynamic> event) {
     if (_filter.defaultLocationActive) {
       final pref = (event['_resolvedPrefecture'] ?? '').toString().toLowerCase();
@@ -1476,18 +1459,9 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     }
     if (_filter.tourist && e['event_touristfriendly'] != true) return false;
 
-    // NOTE: Date range filtering for the calendar event map is now handled
-    // by the Firestore query in _fetchEvents(), so we do NOT re-filter by
-    // date here — that would incorrectly hide multi-day events on days
-    // other than their start date. The fetch already constrains by event_date
-    // (start date), and _buildEventMap spans events across all their days.
-
     return true;
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Enrich events with resolved location
-  // ─────────────────────────────────────────────────────────────────────────
   Future<List<Map<String, dynamic>>> _enrichEvents(List<Map<String, dynamic>> raw) async {
     final locIds = raw
         .map((e) => (e['event_loc_id'] ?? '').toString().trim())
@@ -1629,9 +1603,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // FILTER MODAL
-  // ─────────────────────────────────────────────────────────────────────────
   void _showFilterModal(List<Map<String, dynamic>> enrichedEvents) {
     _CalFilter temp = _filter;
     final locationMap = _buildLocationMap(enrichedEvents);
@@ -1943,7 +1914,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                         onTap: () {
                           setState(() => _filter = temp);
                           Navigator.pop(ctx);
-                          // CHANGED: Re-fetch when filter is applied
                           _fetchEvents();
                         },
                         child: Container(
@@ -1970,15 +1940,11 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Build
-  // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     ref.watch(appLangProvider);
     final firebaseUser = FirebaseAuth.instance.currentUser;
 
-    // CHANGED: Use locally fetched events instead of StreamProvider
     final events       = _enrichedEvents;
     final eventMap     = _buildEventMap(events);
     final selectedEvts = _eventsForDate(eventMap, _selectedDate);
@@ -1989,7 +1955,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
           ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
           : CustomScrollView(slivers: [
 
-        // ── AppBar ────────────────────────────────────────────────
         SliverAppBar(
           pinned: true,
           backgroundColor: _surface,
@@ -2047,7 +2012,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
           ),
         ),
 
-        // ── Body ─────────────────────────────────────────────────
         SliverToBoxAdapter(
           child: FadeTransition(
             opacity: _fadeAnim,
@@ -2055,7 +2019,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
               position: _slideAnim,
               child: Column(children: [
 
-                // Calendar card
                 Container(
                   margin: const EdgeInsets.fromLTRB(16, 20, 16, 0),
                   decoration: BoxDecoration(
@@ -2106,7 +2069,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
 
                 const SizedBox(height: 20),
 
-                // Selected date header
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                   child: Row(children: [
@@ -2299,7 +2261,7 @@ class _EmptyDayCell extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Event Card (unchanged)
+// Event Card
 // ─────────────────────────────────────────────────────────────────────────────
 class _EventCard extends StatelessWidget {
   final Map<String, dynamic> event;
@@ -2453,6 +2415,9 @@ class _EventCard extends StatelessWidget {
     final fillPct = eventLimit != null && eventLimit > 0
         ? (approvedCount / eventLimit).clamp(0.0, 1.0) : 0.0;
     final fillColor = fillPct >= 0.9 ? _red : fillPct >= 0.7 ? _amber : AppColors.primary;
+
+    // Grab the doc ID for navigation
+    final docId = (event['_doc_id'] ?? '').toString();
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 20),
@@ -2902,6 +2867,55 @@ class _EventCard extends StatelessWidget {
                         ),
                       ),
                     ),
+
+            // ── NEW: View Full Details button ──────────────────────────────
+            const SizedBox(height: 12),
+            GestureDetector(
+              onTap: () {
+                if (docId.isEmpty) return;
+                final eventArg = Map<String, dynamic>.from(event);
+                eventArg['_id'] = docId;
+                eventArg['_doc_id'] = docId;
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => EventDetailScreen(event: eventArg),
+                  ),
+                );
+              },
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                decoration: BoxDecoration(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: Colors.black.withOpacity(0.10),
+                    width: 1.5,
+                  ),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.remove_red_eye_outlined,
+                        size: 15, color: Colors.black.withOpacity(0.45)),
+                    const SizedBox(width: 8),
+                    Text(
+                      s.viewFullDetails,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black.withOpacity(0.45),
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Icon(Icons.arrow_forward_rounded,
+                        size: 14, color: Colors.black.withOpacity(0.35)),
+                  ],
+                ),
+              ),
+            ),
+            // ──────────────────────────────────────────────────────────────
 
             const SizedBox(height: 8),
           ]),
