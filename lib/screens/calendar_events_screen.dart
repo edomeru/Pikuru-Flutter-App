@@ -26,6 +26,11 @@ class _S {
   String get applyFilters => isJa ? 'フィルターを適用'         : 'APPLY FILTERS';
   String get viewOnMaps   => isJa ? 'Googleマップで見る'       : 'View on Google Maps';
 
+  String get dateSection  => isJa ? '日付'   : 'DATE';
+  String get startDate    => isJa ? '開始日'  : 'Start Date';
+  String get endDate      => isJa ? '終了日'  : 'End Date';
+  String get selectDate   => isJa ? '選択'   : 'Select';
+
   String get secSave           => isJa ? '保存'           : 'SAVE';
   String get saveMyEvents      => isJa ? 'マイイベント'     : 'My Events';
   String get saveMyEventsSub   => isJa ? '参加予定のイベント' : "Events you're planning to join";
@@ -46,7 +51,6 @@ class _S {
   String get visitSiteYes   => isJa ? 'サイトを見る'  : 'Visit Website';
   String get visitSiteNo    => isJa ? 'いいえ'        : 'No thanks';
 
-  // ── Registration ─────────────────────────────────────────────────────────
   String get secRegistration        => isJa ? '登録'              : 'REGISTRATION';
   String get registerBtn            => isJa ? 'このイベントに登録する' : 'Register for this Event';
   String get registerConfirmTitle   => isJa ? 'このイベントに登録しますか？'    : 'Register for this event?';
@@ -72,7 +76,6 @@ class _S {
   String get regClosedMsg           => isJa ? '主催者がこのイベントの登録を締め切りました。' : 'The organizer has closed registration for this event.';
   String slotsLeft(int n)           => isJa ? '残り$n枠' : n == 1 ? '1 spot left' : '$n spots left';
 
-  // ── Registration form labels ──────────────────────────────────────────────
   String get regFormTitle    => isJa ? 'イベント登録'   : 'Register for this Event';
   String get regFormSubtitle => isJa ? '以下のフォームにご記入の上、登録してください。' : 'Fill in your details to submit your registration.';
   String get stepDetails     => isJa ? '基本情報'       : 'Details';
@@ -103,7 +106,6 @@ class _S {
   String get comingSoon      => isJa ? '近日対応'        : 'Soon';
   String get stripeNote      => isJa ? 'Stripeを利用した安全なアプリ内オンライン決済が間もなく登場します。' : 'Secure on-app online payment via Stripe is coming soon.';
 
-  // ── Success modal ─────────────────────────────────────────────────────────
   String regSuccessTitle(bool waitlist) => waitlist
       ? (isJa ? 'ウェイティングリストに登録されました！' : 'Added to Waitlist!')
       : (isJa ? '登録申請を送信しました！' : 'Registration Request Submitted!');
@@ -195,6 +197,8 @@ class _S {
 // Filter state
 // ─────────────────────────────────────────────────────────────────────────────
 class _CalFilter {
+  DateTime? dateStart;
+  DateTime? dateEnd;
   String country;
   String prefecture;
   String city;
@@ -202,8 +206,11 @@ class _CalFilter {
   bool skillPro, skillAmateur, skillBeginner;
   bool catMx, catMd, catMs, catWs, catWd, catSe, catJu, catCo;
   bool tourist;
+  bool defaultLocationActive;
 
   _CalFilter({
+    this.dateStart,
+    this.dateEnd,
     this.country = '',
     this.prefecture = '',
     this.city = '',
@@ -214,14 +221,21 @@ class _CalFilter {
     this.catMx = false, this.catMd = false, this.catMs = false, this.catWs = false,
     this.catWd = false, this.catSe = false, this.catJu = false, this.catCo = false,
     this.tourist = false,
+    this.defaultLocationActive = true,
   });
 
   _CalFilter copyWith({
+    DateTime? dateStart,
+    DateTime? dateEnd,
+    bool clearDates = false,
     String? country, String? prefecture, String? city, String? type,
     bool? skillPro, bool? skillAmateur, bool? skillBeginner,
     bool? catMx, bool? catMd, bool? catMs, bool? catWs,
     bool? catWd, bool? catSe, bool? catJu, bool? catCo, bool? tourist,
+    bool? defaultLocationActive,
   }) => _CalFilter(
+    dateStart:  clearDates ? null : (dateStart ?? this.dateStart),
+    dateEnd:    clearDates ? null : (dateEnd   ?? this.dateEnd),
     country: country ?? this.country,
     prefecture: prefecture ?? this.prefecture,
     city: city ?? this.city,
@@ -234,10 +248,12 @@ class _CalFilter {
     catWd: catWd ?? this.catWd, catSe: catSe ?? this.catSe,
     catJu: catJu ?? this.catJu, catCo: catCo ?? this.catCo,
     tourist: tourist ?? this.tourist,
+    defaultLocationActive: defaultLocationActive ?? this.defaultLocationActive,
   );
 
   bool get hasNonLocationFilters =>
-      type.isNotEmpty || skillPro || skillAmateur || skillBeginner ||
+      dateStart != null || dateEnd != null ||
+          type.isNotEmpty || skillPro || skillAmateur || skillBeginner ||
           catMx || catMd || catMs || catWs || catWd || catSe || catJu || catCo || tourist;
 
   bool get isActive =>
@@ -251,33 +267,7 @@ enum _SaveStatus { none, myEvents, interested }
 enum _RegStatus  { none, pending, approved, rejected, waitlist }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Dedicated calendar provider
-// ─────────────────────────────────────────────────────────────────────────────
-final _calendarFetchProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
-  final now   = DateTime.now();
-  final today = DateTime(now.year, now.month, now.day);
-  final in30  = today.add(const Duration(days: 30));
-
-  return FirebaseFirestore.instance
-      .collection('events')
-      .where('event_active',         isEqualTo: true)
-      .where('event_checked',        isEqualTo: true)
-      .where('event_pending_review', isEqualTo: false)
-      .where('event_date', isGreaterThanOrEqualTo: Timestamp.fromDate(today))
-      .where('event_date', isLessThanOrEqualTo:    Timestamp.fromDate(in30))
-      .orderBy('event_date')
-      .limit(100)
-      .snapshots()
-      .map((s) => s.docs.map((d) {
-    final data = Map<String, dynamic>.from(d.data());
-    data['_doc_id'] = d.id;
-    return data;
-  }).toList());
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
 // 3-Step Registration Form Bottom Sheet
-// Mirrors the web app's RegistrationFormModal exactly
 // ─────────────────────────────────────────────────────────────────────────────
 class _RegistrationFormSheet extends StatefulWidget {
   final _S s;
@@ -299,7 +289,7 @@ class _RegistrationFormSheet extends StatefulWidget {
 }
 
 class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
-  int _step = 1; // 1=Details, 2=Payment, 3=Confirm
+  int _step = 1;
   late final TextEditingController _nameCtrl;
   late final TextEditingController _emailCtrl;
   final _phoneCtrl = TextEditingController();
@@ -345,13 +335,11 @@ class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: Column(children: [
-          // Handle
           Container(
             margin: const EdgeInsets.only(top: 12, bottom: 4),
             width: 36, height: 4,
             decoration: BoxDecoration(color: _border, borderRadius: BorderRadius.circular(2)),
           ),
-          // Header
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 8, 16, 8),
             child: Row(children: [
@@ -378,10 +366,8 @@ class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
               ),
             ]),
           ),
-          // Step Progress Bar
           _buildStepBar(s),
           const Divider(height: 1, color: _border),
-          // Content
           Expanded(
             child: SingleChildScrollView(
               controller: controller,
@@ -418,7 +404,6 @@ class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
     final active = _step == index;
     const green = Color(0xFF2E7D45);
     final color = (done || active) ? green : const Color(0xFF9CA3AF);
-
     return Column(mainAxisSize: MainAxisSize.min, children: [
       AnimatedContainer(
         duration: const Duration(milliseconds: 200),
@@ -443,7 +428,6 @@ class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
     ]);
   }
 
-  // ── Step 1: Details ───────────────────────────────────────────────────────
   Widget _buildStep1(_S s, BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _buildFormField(s.nameLbl, _nameCtrl, s.namePh, required: true),
@@ -470,17 +454,16 @@ class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
     ]);
   }
 
-  // ── Step 2: Payment ───────────────────────────────────────────────────────
   Widget _buildStep2(_S s) {
-    const green  = Color(0xFF2E7D45);
-    const greenLt= Color(0xFFE6F4EB);
-    const amber  = Color(0xFFD97706);
-    const amberLt= Color(0xFFFFF3CD);
-    const cardBg = Color(0xFFF4F6F8);
-    const border = Color(0xFFE4E9EE);
-    const textDark = Color(0xFF111827);
-    const textMid  = Color(0xFF4B5563);
-    const textLight= Color(0xFF9CA3AF);
+    const green   = Color(0xFF2E7D45);
+    const greenLt = Color(0xFFE6F4EB);
+    const amber   = Color(0xFFD97706);
+    const amberLt = Color(0xFFFFF3CD);
+    const cardBg  = Color(0xFFF4F6F8);
+    const border  = Color(0xFFE4E9EE);
+    const textDark  = Color(0xFF111827);
+    const textMid   = Color(0xFF4B5563);
+    const textLight = Color(0xFF9CA3AF);
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(
@@ -490,8 +473,6 @@ class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
         style: const TextStyle(fontSize: 13, color: textMid),
       ),
       const SizedBox(height: 16),
-
-      // Direct payment (active)
       Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -502,7 +483,7 @@ class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Container(
             width: 22, height: 22,
-            decoration: BoxDecoration(color: green, shape: BoxShape.circle),
+            decoration: const BoxDecoration(color: green, shape: BoxShape.circle),
             child: const Icon(Icons.check, color: Colors.white, size: 13),
           ),
           const SizedBox(width: 12),
@@ -530,10 +511,7 @@ class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
           ])),
         ]),
       ),
-
       const SizedBox(height: 10),
-
-      // Credit card (coming soon)
       Opacity(
         opacity: 0.45,
         child: Container(
@@ -546,9 +524,7 @@ class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Container(
               width: 22, height: 22,
-              decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: border, width: 2)),
+              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: border, width: 2)),
             ),
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -566,16 +542,12 @@ class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
                 ),
               ]),
               const SizedBox(height: 4),
-              Text(s.stripeNote,
-                  style: const TextStyle(fontSize: 12, color: textLight)),
+              Text(s.stripeNote, style: const TextStyle(fontSize: 12, color: textLight)),
             ])),
           ]),
         ),
       ),
-
       const SizedBox(height: 16),
-
-      // Important note
       Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
@@ -588,15 +560,13 @@ class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
           const SizedBox(width: 8),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(s.importantNote, style: const TextStyle(
-                fontSize: 10, fontWeight: FontWeight.w800,
-                color: amber, letterSpacing: 0.6)),
+                fontSize: 10, fontWeight: FontWeight.w800, color: amber, letterSpacing: 0.6)),
             const SizedBox(height: 4),
-            Text(s.paymentNote,
-                style: const TextStyle(fontSize: 12, color: textMid, fontStyle: FontStyle.italic)),
+            Text(s.paymentNote, style: const TextStyle(
+                fontSize: 12, color: textMid, fontStyle: FontStyle.italic)),
           ])),
         ]),
       ),
-
       const SizedBox(height: 28),
       _buildFormActions(
         cancelLabel: s.back,
@@ -608,7 +578,6 @@ class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
     ]);
   }
 
-  // ── Step 3: Confirm ───────────────────────────────────────────────────────
   Widget _buildStep3(_S s, BuildContext context) {
     const green    = Color(0xFF2E7D45);
     const cardBg   = Color(0xFFF4F6F8);
@@ -629,8 +598,7 @@ class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
     ];
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(s.confirmSubtitle,
-          style: const TextStyle(fontSize: 13, color: Color(0xFF4B5563))),
+      Text(s.confirmSubtitle, style: const TextStyle(fontSize: 13, color: Color(0xFF4B5563))),
       const SizedBox(height: 16),
       Container(
         padding: const EdgeInsets.all(16),
@@ -672,7 +640,6 @@ class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
     ]);
   }
 
-  // ── Form field helper ─────────────────────────────────────────────────────
   Widget _buildFormField(
       String label,
       TextEditingController controller,
@@ -707,21 +674,17 @@ class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
           filled: true,
           fillColor: cardBg,
           contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: border)),
-          enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: border)),
-          focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(color: green, width: 1.5)),
         ),
       ),
     ]);
   }
 
-  // ── Form action buttons ───────────────────────────────────────────────────
   Widget _buildFormActions({
     required String cancelLabel,
     required String nextLabel,
@@ -760,8 +723,7 @@ class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
             decoration: BoxDecoration(
               color: green,
               borderRadius: BorderRadius.circular(14),
-              boxShadow: [BoxShadow(
-                  color: green.withOpacity(0.3),
+              boxShadow: [BoxShadow(color: green.withOpacity(0.3),
                   blurRadius: 10, offset: const Offset(0, 4))],
             ),
             child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -783,7 +745,6 @@ class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
 class _RegistrationSuccessDialog extends StatelessWidget {
   final _S s;
   final bool isWaitlist;
-
   const _RegistrationSuccessDialog({required this.s, required this.isWaitlist});
 
   @override
@@ -800,21 +761,16 @@ class _RegistrationSuccessDialog extends StatelessWidget {
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Container(
             width: 64, height: 64,
-            decoration: BoxDecoration(
-                color: accent.withOpacity(0.12), shape: BoxShape.circle),
-            child: Icon(
-              isWaitlist ? Icons.schedule_rounded : Icons.check_rounded,
-              color: accent, size: 30,
-            ),
+            decoration: BoxDecoration(color: accent.withOpacity(0.12), shape: BoxShape.circle),
+            child: Icon(isWaitlist ? Icons.schedule_rounded : Icons.check_rounded,
+                color: accent, size: 30),
           ),
           const SizedBox(height: 16),
-          Text(s.regSuccessTitle(isWaitlist),
-              textAlign: TextAlign.center,
+          Text(s.regSuccessTitle(isWaitlist), textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800,
                   color: Color(0xFF111827))),
           const SizedBox(height: 8),
-          Text(s.regSuccessBody(isWaitlist),
-              textAlign: TextAlign.center,
+          Text(s.regSuccessBody(isWaitlist), textAlign: TextAlign.center,
               style: const TextStyle(fontSize: 13, color: Color(0xFF4B5563), height: 1.5)),
           const SizedBox(height: 16),
           Container(
@@ -825,19 +781,16 @@ class _RegistrationSuccessDialog extends StatelessWidget {
               border: Border.all(color: accent.withOpacity(0.2)),
             ),
             child: Column(children: [
-              Text(s.currentStatus,
-                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
-                      color: Color(0xFF9CA3AF), letterSpacing: 0.8)),
+              Text(s.currentStatus, style: const TextStyle(fontSize: 10,
+                  fontWeight: FontWeight.w700, color: Color(0xFF9CA3AF), letterSpacing: 0.8)),
               const SizedBox(height: 4),
               Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                 Container(width: 8, height: 8,
                     decoration: BoxDecoration(color: accent, shape: BoxShape.circle)),
                 const SizedBox(width: 6),
-                Text(
-                  isWaitlist ? s.waitlistStatus : s.pendingStatus,
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800,
-                      color: accent, letterSpacing: 0.5),
-                ),
+                Text(isWaitlist ? s.waitlistStatus : s.pendingStatus,
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800,
+                        color: accent, letterSpacing: 0.5)),
               ]),
             ]),
           ),
@@ -888,17 +841,28 @@ class _ConfirmDialog extends StatelessWidget {
         fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFF111827))),
     content: Text(body, style: const TextStyle(fontSize: 14, color: Color(0xFF4B5563))),
     actions: [
-      TextButton(
-        onPressed: onCancel,
-        child: const Text('Cancel', style: TextStyle(
-            color: Color(0xFF4B5563), fontWeight: FontWeight.w600)),
-      ),
-      TextButton(
-        onPressed: onConfirm,
-        child: Text(confirmLabel, style: TextStyle(
-            color: confirmColor, fontWeight: FontWeight.w700)),
-      ),
+      TextButton(onPressed: onCancel,
+          child: const Text('Cancel', style: TextStyle(
+              color: Color(0xFF4B5563), fontWeight: FontWeight.w600))),
+      TextButton(onPressed: onConfirm,
+          child: Text(confirmLabel, style: TextStyle(
+              color: confirmColor, fontWeight: FontWeight.w700))),
     ],
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Section label widget
+// ─────────────────────────────────────────────────────────────────────────────
+class _SectionLabel extends StatelessWidget {
+  final String label;
+  const _SectionLabel({required this.label});
+
+  @override
+  Widget build(BuildContext context) => Text(
+    label,
+    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800,
+        color: AppColors.primary, letterSpacing: 1.2),
   );
 }
 
@@ -930,7 +894,7 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
 
   _S get s => _S(ref.watch(appLangProvider));
 
-  _CalFilter _filter = _CalFilter();
+  _CalFilter _filter = _CalFilter(defaultLocationActive: true);
 
   static const List<String> _eventTypeKeys = [
     'Professional Tournament', 'Global Tournament', 'Japan Tournament',
@@ -952,6 +916,11 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
   final Map<String, String>      _regDocIds    = {};
   final Map<String, bool>        _regLoading   = {};
 
+  // ── CHANGED: Dynamic fetch state instead of static StreamProvider ──
+  List<Map<String, dynamic>> _rawEvents = [];
+  List<Map<String, dynamic>> _enrichedEvents = [];
+  bool _loadingEvents = true;
+
   @override
   void initState() {
     super.initState();
@@ -967,6 +936,9 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
         vsync: this, duration: const Duration(milliseconds: 380))..forward();
     _slideAnim = Tween<Offset>(begin: const Offset(0, 0.05), end: Offset.zero)
         .animate(CurvedAnimation(parent: _slideCtrl, curve: Curves.easeOutCubic));
+
+    // Initial fetch
+    _fetchEvents();
   }
 
   @override
@@ -976,6 +948,103 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     super.dispose();
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // CHANGED: Dynamic fetch that mirrors web app load() exactly
+  // Adjusts qStart/qEnd based on filter dateStart/dateEnd
+  // ─────────────────────────────────────────────────────────────────────────
+  Future<void> _fetchEvents() async {
+    if (!mounted) return;
+    setState(() => _loadingEvents = true);
+
+    try {
+      final now   = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+
+      // Mirror web app logic exactly:
+      // qStart: if dateStart filter set → use it, else → today
+      // qEnd:   if dateEnd filter set   → use it, else if no dateStart → today+30, else → null (no upper bound)
+      DateTime qStart = today;
+      DateTime? qEnd;
+
+      if (_filter.dateStart != null) {
+        qStart = _filter.dateStart!;
+      }
+
+      if (_filter.dateEnd != null) {
+        // End of the selected end date (23:59:59)
+        qEnd = DateTime(
+          _filter.dateEnd!.year,
+          _filter.dateEnd!.month,
+          _filter.dateEnd!.day,
+          23, 59, 59, 999,
+        );
+      } else if (_filter.dateStart == null) {
+        // Default: no custom dates → fetch next 30 days
+        qEnd = DateTime(today.year, today.month, today.day + 30, 23, 59, 59, 999);
+      }
+      // else: dateStart is set but no dateEnd → no upper bound (fetch all from qStart)
+
+      Query query = FirebaseFirestore.instance
+          .collection('events')
+          .where('event_active',         isEqualTo: true)
+          .where('event_checked',        isEqualTo: true)
+          .where('event_pending_review', isEqualTo: false)
+          .where('event_date', isGreaterThanOrEqualTo: Timestamp.fromDate(qStart));
+
+      if (qEnd != null) {
+        query = query.where('event_date', isLessThanOrEqualTo: Timestamp.fromDate(qEnd));
+      }
+
+      query = query.orderBy('event_date').limit(100);
+
+      final snap = await query.get();
+
+      if (!mounted) return;
+
+      final raw = snap.docs
+          .map((d) => <String, dynamic>{...d.data() as Map<String, dynamic>, '_doc_id': d.id})
+          .toList();
+
+      // Filter out events without event_loc_id (mirrors web app)
+      final rawWithLocId = raw
+          .where((e) => (e['event_loc_id'] ?? '').toString().trim().isNotEmpty)
+          .toList();
+
+      final enriched = await _enrichEvents(rawWithLocId);
+
+      if (!mounted) return;
+      setState(() {
+        _rawEvents      = rawWithLocId;
+        _enrichedEvents = enriched;
+        _loadingEvents  = false;
+      });
+
+      final firebaseUser = FirebaseAuth.instance.currentUser;
+      if (firebaseUser != null) {
+        _loadStatuses(enriched);
+      }
+    } catch (e) {
+      debugPrint('[CalendarEventsScreen] _fetchEvents error: $e');
+      if (!mounted) return;
+      setState(() => _loadingEvents = false);
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Location label
+  // ─────────────────────────────────────────────────────────────────────────
+  String get _locationLabel {
+    if (_filter.defaultLocationActive) {
+      return s.isJa ? '東京' : 'Tokyo';
+    }
+    if (_filter.prefecture.isNotEmpty) return _filter.prefecture;
+    if (_filter.country.isNotEmpty)    return _filter.country;
+    return s.allCountries;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Firestore status loading
+  // ─────────────────────────────────────────────────────────────────────────
   Future<void> _loadStatuses(List<Map<String, dynamic>> events) async {
     final firebaseUser = FirebaseAuth.instance.currentUser;
     if (firebaseUser == null) return;
@@ -1059,11 +1128,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     }
   }
 
-  // ── UPDATED: Full registration with 3-step form ────────────────────────────
-  // Mirrors the web app's handleRegister exactly:
-  //   - Saves to event_registrations with all required fields
-  //   - Handles both 'pending' and 'waitlist' status
-  //   - Shows success dialog after submission
   Future<void> _submitRegistration({
     required Map<String, dynamic> event,
     required String name,
@@ -1082,9 +1146,8 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
       final db  = FirebaseFirestore.instance;
       final uid = firebaseUser.uid;
 
-      // Write to event_registrations — matches web app handleRegister fields exactly
       final ref = await db.collection('event_registrations').add({
-        'event_id':      docId,           // ← always the Firestore doc ID
+        'event_id':      docId,
         'user_id':       uid,
         'user_name':     name.isNotEmpty ? name : (firebaseUser.displayName ?? ''),
         'user_email':    email.isNotEmpty ? email : (firebaseUser.email ?? ''),
@@ -1100,7 +1163,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
           _regDocIds[docId]   = ref.id;
           _regStatuses[docId] = asWaitlist ? _RegStatus.waitlist : _RegStatus.pending;
         });
-        // Show success dialog
         _showSuccessModal(asWaitlist);
       }
     } catch (e) {
@@ -1110,7 +1172,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     }
   }
 
-  // ── Show the 3-step registration form bottom sheet ─────────────────────────
   void _showRegistrationForm(Map<String, dynamic> event, {required bool asWaitlist}) {
     final firebaseUser = FirebaseAuth.instance.currentUser;
     final lang = ref.read(appLangProvider);
@@ -1129,12 +1190,8 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
         onSubmit: (name, email, phone, notes) async {
           Navigator.pop(context);
           await _submitRegistration(
-            event: event,
-            name: name,
-            email: email,
-            phone: phone,
-            notes: notes,
-            asWaitlist: asWaitlist,
+            event: event, name: name, email: email,
+            phone: phone, notes: notes, asWaitlist: asWaitlist,
           );
         },
       ),
@@ -1150,27 +1207,18 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     );
   }
 
-  // ── Register button handler — checks capacity & regOpen before showing form ─
   Future<void> _handleRegisterTap(Map<String, dynamic> event) async {
     final docId = (event['_doc_id'] ?? '').toString();
     if (docId.isEmpty) return;
 
-    final regOpen     = event['event_registration_open'] != false;
-    final eventLimit  = event['event_limit'] != null
-        ? int.tryParse(event['event_limit'].toString())
-        : null;
+    final regOpen       = event['event_registration_open'] != false;
+    final eventLimit    = event['event_limit'] != null
+        ? int.tryParse(event['event_limit'].toString()) : null;
     final approvedCount = (event['event_approved_count'] ?? 0) as int;
-    final isFull = eventLimit != null && approvedCount >= eventLimit;
+    final isFull        = eventLimit != null && approvedCount >= eventLimit;
 
-    if (!regOpen) return; // registration closed — button shouldn't be shown
-
-    if (isFull) {
-      // Show waitlist form
-      _showRegistrationForm(event, asWaitlist: true);
-    } else {
-      // Show normal registration form
-      _showRegistrationForm(event, asWaitlist: false);
-    }
+    if (!regOpen) return;
+    _showRegistrationForm(event, asWaitlist: isFull);
   }
 
   Future<void> _handleCancelRegistration(Map<String, dynamic> event) async {
@@ -1185,7 +1233,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
       final db  = FirebaseFirestore.instance;
       final uid = firebaseUser.uid;
 
-      // If cancelling an approved reg, decrement approved count
       if (_regStatuses[docId] == _RegStatus.approved) {
         db.collection('events').doc(docId)
             .update({'event_approved_count': FieldValue.increment(-1)})
@@ -1208,8 +1255,7 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     }
   }
 
-  Future<void> _showSaveConfirmModal(
-      Map<String, dynamic> event, _SaveStatus next) async {
+  Future<void> _showSaveConfirmModal(Map<String, dynamic> event, _SaveStatus next) async {
     final _S ls = _S(ref.read(appLangProvider));
     final isMyEvents = next == _SaveStatus.myEvents;
 
@@ -1224,80 +1270,62 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
             color: const Color(0xFF07170C),
             borderRadius: BorderRadius.circular(22),
             border: Border.all(color: Colors.white.withOpacity(0.08)),
-            boxShadow: [BoxShadow(
-              color: Colors.black.withOpacity(0.55),
-              blurRadius: 80, offset: const Offset(0, 24),
-            )],
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.55),
+                blurRadius: 80, offset: const Offset(0, 24))],
           ),
           padding: const EdgeInsets.all(24),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Container(
               width: 56, height: 56,
               decoration: BoxDecoration(
-                color: isMyEvents
-                    ? AppColors.primary.withOpacity(0.14)
-                    : const Color(0xFFF5B23B).withOpacity(0.14),
+                color: isMyEvents ? AppColors.primary.withOpacity(0.14) : const Color(0xFFF5B23B).withOpacity(0.14),
                 shape: BoxShape.circle,
               ),
               child: Icon(
                 isMyEvents ? Icons.bookmark_rounded : Icons.star_rounded,
-                color: isMyEvents ? AppColors.primary : const Color(0xFFF5B23B),
-                size: 26,
+                color: isMyEvents ? AppColors.primary : const Color(0xFFF5B23B), size: 26,
               ),
             ),
             const SizedBox(height: 16),
-            Text(
-              isMyEvents ? ls.saveMarkMyEvents : ls.saveMarkInterested,
-              style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900),
-              textAlign: TextAlign.center,
-            ),
+            Text(isMyEvents ? ls.saveMarkMyEvents : ls.saveMarkInterested,
+                style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900),
+                textAlign: TextAlign.center),
             const SizedBox(height: 8),
-            Text(
-              isMyEvents ? ls.saveMarkMyEventsBody : ls.saveMarkInterestedBody,
-              style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 13, height: 1.5),
-              textAlign: TextAlign.center,
-            ),
+            Text(isMyEvents ? ls.saveMarkMyEventsBody : ls.saveMarkInterestedBody,
+                style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 13, height: 1.5),
+                textAlign: TextAlign.center),
             const SizedBox(height: 20),
             Row(children: [
-              Expanded(
-                child: TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  style: TextButton.styleFrom(
-                    backgroundColor: Colors.black.withOpacity(0.18),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      side: BorderSide(color: Colors.white.withOpacity(0.16)),
-                    ),
-                  ),
-                  child: Text(ls.modalCancel,
-                      style: TextStyle(color: Colors.white.withOpacity(0.8),
-                          fontWeight: FontWeight.w800, fontSize: 13)),
+              Expanded(child: TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                style: TextButton.styleFrom(
+                  backgroundColor: Colors.black.withOpacity(0.18),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(color: Colors.white.withOpacity(0.16))),
                 ),
-              ),
+                child: Text(ls.modalCancel, style: TextStyle(color: Colors.white.withOpacity(0.8),
+                    fontWeight: FontWeight.w800, fontSize: 13)),
+              )),
               const SizedBox(width: 10),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: () async {
-                    Navigator.pop(ctx);
-                    await _handleSave(event, next);
-                    final eventUrl = (event['event_link'] ?? event['event_url'] ?? '').toString().trim();
-                    if (eventUrl.isNotEmpty && mounted) {
-                      await _showVisitSiteModal(eventUrl);
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isMyEvents ? AppColors.primary : const Color(0xFFF5B23B),
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  ),
-                  child: Text(
-                    isMyEvents ? ls.saveYes : ls.saveMark,
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13),
-                  ),
+              Expanded(child: ElevatedButton(
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  await _handleSave(event, next);
+                  final eventUrl = (event['event_link'] ?? event['event_url'] ?? '').toString().trim();
+                  if (eventUrl.isNotEmpty && mounted) {
+                    await _showVisitSiteModal(eventUrl);
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: isMyEvents ? AppColors.primary : const Color(0xFFF5B23B),
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 ),
-              ),
+                child: Text(isMyEvents ? ls.saveYes : ls.saveMark,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13)),
+              )),
             ]),
           ]),
         ),
@@ -1319,69 +1347,55 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
             color: const Color(0xFF07170C),
             borderRadius: BorderRadius.circular(22),
             border: Border.all(color: const Color(0xFF6ABF7A).withOpacity(0.20)),
-            boxShadow: [BoxShadow(
-              color: Colors.black.withOpacity(0.60),
-              blurRadius: 80, offset: const Offset(0, 24),
-            )],
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.60),
+                blurRadius: 80, offset: const Offset(0, 24))],
           ),
           padding: const EdgeInsets.all(24),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Container(
               width: 56, height: 56,
-              decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.12), shape: BoxShape.circle,
-              ),
+              decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.12), shape: BoxShape.circle),
               child: const Icon(Icons.language_rounded, color: AppColors.primary, size: 26),
             ),
             const SizedBox(height: 16),
-            Text(ls.visitSiteTitle,
-                style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900),
+            Text(ls.visitSiteTitle, style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900),
                 textAlign: TextAlign.center),
             const SizedBox(height: 8),
-            Text(ls.visitSiteBody,
-                style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 13, height: 1.5),
+            Text(ls.visitSiteBody, style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 13, height: 1.5),
                 textAlign: TextAlign.center),
             const SizedBox(height: 20),
             Row(children: [
-              Expanded(
-                child: TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  style: TextButton.styleFrom(
-                    backgroundColor: Colors.black.withOpacity(0.18),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      side: BorderSide(color: Colors.white.withOpacity(0.16)),
-                    ),
-                  ),
-                  child: Text(ls.visitSiteNo,
-                      style: TextStyle(color: Colors.white.withOpacity(0.8),
-                          fontWeight: FontWeight.w800, fontSize: 13)),
+              Expanded(child: TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                style: TextButton.styleFrom(
+                  backgroundColor: Colors.black.withOpacity(0.18),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(color: Colors.white.withOpacity(0.16))),
                 ),
-              ),
+                child: Text(ls.visitSiteNo, style: TextStyle(color: Colors.white.withOpacity(0.8),
+                    fontWeight: FontWeight.w800, fontSize: 13)),
+              )),
               const SizedBox(width: 10),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: () async {
-                    Navigator.pop(ctx);
-                    final uri = Uri.tryParse(url);
-                    if (uri != null && await canLaunchUrl(uri)) {
-                      await launchUrl(uri, mode: LaunchMode.externalApplication);
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary, elevation: 0,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  ),
-                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    const Icon(Icons.open_in_new_rounded, size: 15, color: Colors.white),
-                    const SizedBox(width: 6),
-                    Text(ls.visitSiteYes,
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13)),
-                  ]),
+              Expanded(child: ElevatedButton(
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  final uri = Uri.tryParse(url);
+                  if (uri != null && await canLaunchUrl(uri)) {
+                    await launchUrl(uri, mode: LaunchMode.externalApplication);
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary, elevation: 0,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                 ),
-              ),
+                child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  const Icon(Icons.open_in_new_rounded, size: 15, color: Colors.white),
+                  const SizedBox(width: 6),
+                  Text(ls.visitSiteYes, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 13)),
+                ]),
+              )),
             ]),
           ]),
         ),
@@ -1395,10 +1409,8 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
       context: context,
       barrierColor: Colors.black.withOpacity(0.55),
       builder: (ctx) => _ConfirmDialog(
-        title: ls.cancelRegTitle,
-        body: ls.cancelRegBody,
-        confirmLabel: ls.cancelReg,
-        confirmColor: _red,
+        title: ls.cancelRegTitle, body: ls.cancelRegBody,
+        confirmLabel: ls.cancelReg, confirmColor: _red,
         onConfirm: () => Navigator.pop(ctx, true),
         onCancel:  () => Navigator.pop(ctx, false),
       ),
@@ -1408,36 +1420,32 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     }
   }
 
-  String get _locationLabel {
-    if (_filter.prefecture.isNotEmpty) return _filter.prefecture;
-    if (_filter.country.isNotEmpty)    return _filter.country;
-    return s.allCountries;
-  }
-
+  // ─────────────────────────────────────────────────────────────────────────
+  // Location matching
+  // ─────────────────────────────────────────────────────────────────────────
   bool _matchesLocation(Map<String, dynamic> event) {
+    if (_filter.defaultLocationActive) {
+      final pref = (event['_resolvedPrefecture'] ?? '').toString().toLowerCase();
+      return pref.contains('tokyo') || pref.contains('東京');
+    }
+
     if (_filter.country.isEmpty && _filter.prefecture.isEmpty && _filter.city.isEmpty) {
       return true;
     }
     if (_filter.country.isNotEmpty) {
       final country = (event['_resolvedCountry'] ?? '').toString().toLowerCase();
       final target  = _filter.country.toLowerCase();
-      if (country.isNotEmpty && !country.contains(target) && !target.contains(country)) {
-        return false;
-      }
+      if (country.isNotEmpty && !country.contains(target) && !target.contains(country)) return false;
     }
     if (_filter.prefecture.isNotEmpty) {
       final pref   = (event['_resolvedPrefecture'] ?? '').toString().toLowerCase();
       final target = _filter.prefecture.toLowerCase();
-      if (pref.isNotEmpty && !pref.contains(target) && !target.contains(pref)) {
-        return false;
-      }
+      if (pref.isNotEmpty && !pref.contains(target) && !target.contains(pref)) return false;
     }
     if (_filter.city.isNotEmpty) {
       final city   = (event['_resolvedCity'] ?? '').toString().toLowerCase();
       final target = _filter.city.toLowerCase();
-      if (city.isNotEmpty && !city.contains(target) && !target.contains(city)) {
-        return false;
-      }
+      if (city.isNotEmpty && !city.contains(target) && !target.contains(city)) return false;
     }
     return true;
   }
@@ -1445,6 +1453,7 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
   bool _matchesAllFilters(Map<String, dynamic> e) {
     if (!_matchesLocation(e)) return false;
     if (_filter.type.isNotEmpty && (e['event_type'] ?? '').toString() != _filter.type) return false;
+
     if (_filter.skillPro || _filter.skillAmateur || _filter.skillBeginner) {
       final match =
           (_filter.skillPro      && e['event_skill_level_pro']      == true) ||
@@ -1466,11 +1475,20 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
       if (!match) return false;
     }
     if (_filter.tourist && e['event_touristfriendly'] != true) return false;
+
+    // NOTE: Date range filtering for the calendar event map is now handled
+    // by the Firestore query in _fetchEvents(), so we do NOT re-filter by
+    // date here — that would incorrectly hide multi-day events on days
+    // other than their start date. The fetch already constrains by event_date
+    // (start date), and _buildEventMap spans events across all their days.
+
     return true;
   }
 
-  Future<List<Map<String, dynamic>>> _enrichEvents(
-      List<Map<String, dynamic>> raw) async {
+  // ─────────────────────────────────────────────────────────────────────────
+  // Enrich events with resolved location
+  // ─────────────────────────────────────────────────────────────────────────
+  Future<List<Map<String, dynamic>>> _enrichEvents(List<Map<String, dynamic>> raw) async {
     final locIds = raw
         .map((e) => (e['event_loc_id'] ?? '').toString().trim())
         .where((id) => id.isNotEmpty)
@@ -1484,14 +1502,8 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
             .where('loc_id', isEqualTo: locId)
             .limit(1)
             .get();
-        if (q.docs.isNotEmpty) {
-          locCache[locId] = q.docs.first.data();
-          continue;
-        }
-        final doc = await FirebaseFirestore.instance
-            .collection('locations')
-            .doc(locId)
-            .get();
+        if (q.docs.isNotEmpty) { locCache[locId] = q.docs.first.data(); continue; }
+        final doc = await FirebaseFirestore.instance.collection('locations').doc(locId).get();
         if (doc.exists) locCache[locId] = doc.data()!;
       } catch (_) {}
     }
@@ -1500,37 +1512,26 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
       final locId = (e['event_loc_id'] ?? '').toString().trim();
       final loc   = locId.isNotEmpty ? (locCache[locId] ?? <String, dynamic>{}) : <String, dynamic>{};
 
-      String get(String key) =>
-          ((loc.isNotEmpty ? loc[key] : null) ?? e[key] ?? '').toString().trim();
+      String get(String key) => ((loc.isNotEmpty ? loc[key] : null) ?? e[key] ?? '').toString().trim();
 
-      final prefEn = [
-        get('loc_prefecture_en'), get('loc_prefecture'),
-        get('event_prefecture'),  get('prefecture'),
-      ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
-
+      final prefEn = [get('loc_prefecture_en'), get('loc_prefecture'), get('event_prefecture'), get('prefecture')]
+          .firstWhere((v) => v.isNotEmpty, orElse: () => '');
       final cityEn  = get('loc_city_en').isNotEmpty ? get('loc_city_en') : get('loc_city');
       final country = get('loc_country');
 
-      final label = cityEn.isNotEmpty && prefEn.isNotEmpty
-          ? '$cityEn, $prefEn'
-          : cityEn.isNotEmpty ? cityEn
-          : prefEn.isNotEmpty ? prefEn
-          : country;
+      final label = cityEn.isNotEmpty && prefEn.isNotEmpty ? '$cityEn, $prefEn'
+          : cityEn.isNotEmpty ? cityEn : prefEn.isNotEmpty ? prefEn : country;
 
       final prefJp    = get('loc_prefecture_jp').isNotEmpty ? get('loc_prefecture_jp') : prefEn;
       final cityJp    = get('loc_city_jp').isNotEmpty       ? get('loc_city_jp')       : cityEn;
       final countryJp = get('loc_country_jp').isNotEmpty    ? get('loc_country_jp')    : (country == 'Japan' ? '日本' : country);
       final addrJp    = get('loc_address_jp').isNotEmpty    ? get('loc_address_jp')    : get('loc_address');
 
-      final labelJp = cityJp.isNotEmpty && prefJp.isNotEmpty
-          ? '$prefJp$cityJp'
-          : cityJp.isNotEmpty ? cityJp
-          : prefJp.isNotEmpty ? prefJp
-          : countryJp;
+      final labelJp = cityJp.isNotEmpty && prefJp.isNotEmpty ? '$prefJp$cityJp'
+          : cityJp.isNotEmpty ? cityJp : prefJp.isNotEmpty ? prefJp : countryJp;
 
-      final googleLink = [
-        get('loc_googlelink'), get('event_googlelink'), get('event_venue_link'),
-      ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
+      final googleLink = [get('loc_googlelink'), get('event_googlelink'), get('event_venue_link')]
+          .firstWhere((v) => v.isNotEmpty, orElse: () => '');
 
       final orgNameEn = [get('org_name'), get('event_org_name')]
           .firstWhere((v) => v.isNotEmpty, orElse: () => '');
@@ -1555,8 +1556,7 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     }).toList();
   }
 
-  Map<String, List<Map<String, String>>> _buildLocationMap(
-      List<Map<String, dynamic>> enrichedEvents) {
+  Map<String, List<Map<String, String>>> _buildLocationMap(List<Map<String, dynamic>> enrichedEvents) {
     final map = <String, List<Map<String, String>>>{};
     for (final e in enrichedEvents) {
       final country = (e['_resolvedCountry'] ?? '').toString().trim();
@@ -1568,16 +1568,14 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
         map[country]!.add({'en': pref});
       }
     }
-    final sorted = Map.fromEntries(
-        map.entries.toList()..sort((a, b) => a.key.compareTo(b.key)));
+    final sorted = Map.fromEntries(map.entries.toList()..sort((a, b) => a.key.compareTo(b.key)));
     for (final prefs in sorted.values) {
       prefs.sort((a, b) => a['en']!.compareTo(b['en']!));
     }
     return sorted;
   }
 
-  Map<DateTime, List<Map<String, dynamic>>> _buildEventMap(
-      List<Map<String, dynamic>> events) {
+  Map<DateTime, List<Map<String, dynamic>>> _buildEventMap(List<Map<String, dynamic>> events) {
     final map = <DateTime, List<Map<String, dynamic>>>{};
     for (final e in events) {
       if (!_matchesAllFilters(e)) continue;
@@ -1593,7 +1591,7 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
       }
       final keyStart = DateTime(dtStart.year, dtStart.month, dtStart.day);
 
-      final tsEnd  = e['event_date_end'];
+      final tsEnd = e['event_date_end'];
       DateTime dtEnd;
       if (tsEnd is Timestamp) {
         dtEnd = tsEnd.toDate();
@@ -1631,6 +1629,9 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     }
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // FILTER MODAL
+  // ─────────────────────────────────────────────────────────────────────────
   void _showFilterModal(List<Map<String, dynamic>> enrichedEvents) {
     _CalFilter temp = _filter;
     final locationMap = _buildLocationMap(enrichedEvents);
@@ -1652,14 +1653,10 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
         Widget sectionLabel(String text) => Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: Row(children: [
-            Container(
-              width: 3, height: 14,
-              margin: const EdgeInsets.only(right: 8),
-              decoration: BoxDecoration(
-                  color: AppColors.primary, borderRadius: BorderRadius.circular(2)),
-            ),
-            Text(text, style: const TextStyle(fontSize: 12,
-                fontWeight: FontWeight.w800, color: _textMid, letterSpacing: 0.8)),
+            Container(width: 3, height: 14, margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(color: AppColors.primary, borderRadius: BorderRadius.circular(2))),
+            Text(text, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800,
+                color: _textMid, letterSpacing: 0.8)),
           ]),
         );
 
@@ -1667,6 +1664,61 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
           padding: EdgeInsets.symmetric(vertical: 20),
           child: Divider(height: 1, color: _borderMd),
         );
+
+        Widget datePicker(String label, DateTime? value, ValueChanged<DateTime?> onPicked) {
+          final hasVal = value != null;
+          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: _textLight)),
+            const SizedBox(height: 6),
+            GestureDetector(
+              onTap: () async {
+                final picked = await showDatePicker(
+                  context: ctx,
+                  initialDate: value ?? DateTime.now(),
+                  firstDate: DateTime.now().subtract(const Duration(days: 365)),
+                  lastDate: DateTime.now().add(const Duration(days: 365 * 3)),
+                  builder: (c, child) => Theme(
+                    data: Theme.of(c).copyWith(
+                      colorScheme: const ColorScheme.light(
+                        primary: AppColors.primary,
+                        surface: _surface,
+                        onSurface: _textDark,
+                      ),
+                    ),
+                    child: child!,
+                  ),
+                );
+                onPicked(picked);
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+                decoration: BoxDecoration(
+                  color: hasVal ? AppColors.primary.withOpacity(0.08) : _cardBg,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: hasVal ? AppColors.primary.withOpacity(0.5) : _borderMd,
+                    width: 1.5,
+                  ),
+                ),
+                child: Row(children: [
+                  Icon(Icons.calendar_today_rounded, size: 14,
+                      color: hasVal ? AppColors.primary : _textLight),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(
+                    hasVal ? DateFormat('MM/dd/yyyy').format(value!) : curS.selectDate,
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
+                        color: hasVal ? AppColors.primary : _textLight),
+                  )),
+                  if (hasVal) GestureDetector(
+                    onTap: () => onPicked(null),
+                    child: Icon(Icons.close_rounded, size: 14, color: AppColors.primary),
+                  ),
+                ]),
+              ),
+            ),
+          ]);
+        }
 
         Widget checkPill(String label, bool value, VoidCallback onTap) {
           return GestureDetector(
@@ -1689,12 +1741,9 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                   decoration: BoxDecoration(
                     color: value ? AppColors.primary : Colors.transparent,
                     borderRadius: BorderRadius.circular(4),
-                    border: Border.all(
-                        color: value ? AppColors.primary : _borderMd, width: 1.5),
+                    border: Border.all(color: value ? AppColors.primary : _borderMd, width: 1.5),
                   ),
-                  child: value
-                      ? const Icon(Icons.check, size: 10, color: Colors.white)
-                      : null,
+                  child: value ? const Icon(Icons.check, size: 10, color: Colors.white) : null,
                 ),
                 const SizedBox(width: 8),
                 Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
@@ -1704,13 +1753,14 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
           );
         }
 
-        Widget dropdownField(String label, String value,
-            List<String> options, String allLabel, ValueChanged<String> onChange) {
+        Widget dropdownField(String label, String value, List<String> options,
+            String allLabel, ValueChanged<String> onChange) {
           final hasVal = value.isNotEmpty;
           return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(label, style: const TextStyle(
-                fontSize: 12, fontWeight: FontWeight.w700, color: _textLight)),
-            const SizedBox(height: 6),
+            if (label.isNotEmpty) ...[
+              Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _textLight)),
+              const SizedBox(height: 6),
+            ],
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               decoration: BoxDecoration(
@@ -1761,20 +1811,16 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 12, 12, 12),
               child: Row(children: [
-                Text(curS.filters,
-                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800,
-                        color: _textDark, letterSpacing: -0.4)),
+                Text(curS.filters, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800,
+                    color: _textDark, letterSpacing: -0.4)),
                 const Spacer(),
                 if (_filter.isActive) ...[
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(curS.filterActive,
-                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-                            color: AppColors.primary)),
+                        color: AppColors.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
+                    child: Text(curS.filterActive, style: const TextStyle(fontSize: 11,
+                        fontWeight: FontWeight.w700, color: AppColors.primary)),
                   ),
                   const SizedBox(width: 8),
                 ],
@@ -1782,8 +1828,7 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                   onTap: () => Navigator.pop(ctx),
                   child: Container(
                     width: 34, height: 34,
-                    decoration: BoxDecoration(
-                        color: _cardBg, shape: BoxShape.circle,
+                    decoration: BoxDecoration(color: _cardBg, shape: BoxShape.circle,
                         border: Border.all(color: _borderMd)),
                     child: const Icon(Icons.close_rounded, color: _textMid, size: 18),
                   ),
@@ -1796,44 +1841,65 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
 
+                  sectionLabel(curS.dateSection),
+                  Row(children: [
+                    Expanded(child: datePicker(
+                      curS.startDate, temp.dateStart,
+                          (d) => setS(() => temp = temp.copyWith(dateStart: d)),
+                    )),
+                    const SizedBox(width: 12),
+                    Expanded(child: datePicker(
+                      curS.endDate, temp.dateEnd,
+                          (d) => setS(() => temp = temp.copyWith(dateEnd: d)),
+                    )),
+                  ]),
+
+                  divider(),
+
                   sectionLabel(curS.secLocation),
                   Row(children: [
                     Expanded(child: dropdownField(
                       curS.fCountry, temp.country,
                       locationMap.keys.toList(), curS.allCountries,
-                          (v) => setS(() => temp = temp.copyWith(country: v, prefecture: '', city: '')),
+                          (v) => setS(() => temp = temp.copyWith(country: v, prefecture: '', city: '', defaultLocationActive: false)),
                     )),
                     const SizedBox(width: 12),
                     Expanded(child: dropdownField(
                       curS.fPrefecture, temp.prefecture,
                       sortedPrefs, curS.fAll,
-                          (v) => setS(() => temp = temp.copyWith(prefecture: v)),
+                          (v) => setS(() => temp = temp.copyWith(prefecture: v, defaultLocationActive: false)),
                     )),
                   ]),
                   const SizedBox(height: 12),
-                  Row(children: [
-                    Expanded(child: dropdownField(
-                      curS.fCity, temp.city,
-                      sortedCities, curS.fAll,
-                          (v) => setS(() => temp = temp.copyWith(city: v)),
-                    )),
-                    const SizedBox(width: 12),
-                    Expanded(child: dropdownField(
-                      curS.fType, temp.type,
-                      _eventTypeKeys, curS.fAllTypes,
-                          (v) => setS(() => temp = temp.copyWith(type: v)),
-                    )),
-                  ]),
+                  dropdownField(
+                    curS.fCity, temp.city,
+                    sortedCities, curS.fAll,
+                        (v) => setS(() => temp = temp.copyWith(city: v, defaultLocationActive: false)),
+                  ),
 
                   divider(),
+
+                  sectionLabel(curS.fType),
+                  dropdownField(
+                    '', temp.type,
+                    _eventTypeKeys, curS.fAllTypes,
+                        (v) => setS(() => temp = temp.copyWith(type: v)),
+                  ),
+
+                  divider(),
+
                   sectionLabel(curS.secSkill),
                   Wrap(spacing: 8, runSpacing: 8, children: [
-                    checkPill(curS.skillPro,      temp.skillPro,      () => setS(() => temp = temp.copyWith(skillPro:      !temp.skillPro))),
-                    checkPill(curS.skillAmateur,   temp.skillAmateur,  () => setS(() => temp = temp.copyWith(skillAmateur:  !temp.skillAmateur))),
-                    checkPill(curS.skillBeginner,  temp.skillBeginner, () => setS(() => temp = temp.copyWith(skillBeginner: !temp.skillBeginner))),
+                    checkPill(curS.skillPro,      temp.skillPro,
+                            () => setS(() => temp = temp.copyWith(skillPro:      !temp.skillPro))),
+                    checkPill(curS.skillAmateur,   temp.skillAmateur,
+                            () => setS(() => temp = temp.copyWith(skillAmateur:  !temp.skillAmateur))),
+                    checkPill(curS.skillBeginner,  temp.skillBeginner,
+                            () => setS(() => temp = temp.copyWith(skillBeginner: !temp.skillBeginner))),
                   ]),
 
                   divider(),
+
                   sectionLabel(curS.secCat),
                   Wrap(spacing: 8, runSpacing: 8, children: [
                     checkPill(curS.catMx, temp.catMx, () => setS(() => temp = temp.copyWith(catMx: !temp.catMx))),
@@ -1847,15 +1913,17 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                   ]),
 
                   divider(),
+
                   sectionLabel(curS.secOther),
                   checkPill(curS.tourist, temp.tourist,
                           () => setS(() => temp = temp.copyWith(tourist: !temp.tourist))),
 
                   const SizedBox(height: 28),
+
                   Row(children: [
                     Expanded(
                       child: GestureDetector(
-                        onTap: () => setS(() => temp = _CalFilter()),
+                        onTap: () => setS(() => temp = _CalFilter(defaultLocationActive: true)),
                         child: Container(
                           height: 52,
                           decoration: BoxDecoration(
@@ -1864,8 +1932,7 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                             border: Border.all(color: _borderMd, width: 1.5),
                           ),
                           child: Center(child: Text(curS.clearAll,
-                              style: const TextStyle(fontSize: 14,
-                                  fontWeight: FontWeight.w700, color: _textMid))),
+                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: _textMid))),
                         ),
                       ),
                     ),
@@ -1876,14 +1943,15 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                         onTap: () {
                           setState(() => _filter = temp);
                           Navigator.pop(ctx);
+                          // CHANGED: Re-fetch when filter is applied
+                          _fetchEvents();
                         },
                         child: Container(
                           height: 52,
                           decoration: BoxDecoration(
                             color: AppColors.primary,
                             borderRadius: BorderRadius.circular(14),
-                            boxShadow: [BoxShadow(
-                                color: AppColors.primary.withOpacity(0.30),
+                            boxShadow: [BoxShadow(color: AppColors.primary.withOpacity(0.30),
                                 blurRadius: 14, offset: const Offset(0, 4))],
                           ),
                           child: Center(child: Text(curS.applyFilters,
@@ -1908,219 +1976,187 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
   @override
   Widget build(BuildContext context) {
     ref.watch(appLangProvider);
-    final eventsAsync  = ref.watch(_calendarFetchProvider);
     final firebaseUser = FirebaseAuth.instance.currentUser;
+
+    // CHANGED: Use locally fetched events instead of StreamProvider
+    final events       = _enrichedEvents;
+    final eventMap     = _buildEventMap(events);
+    final selectedEvts = _eventsForDate(eventMap, _selectedDate);
 
     return Scaffold(
       backgroundColor: _bg,
-      body: eventsAsync.when(
-        loading: () => const Center(
-            child: CircularProgressIndicator(color: AppColors.primary)),
-        error: (e, _) => Center(child: Text('Error: $e')),
-        data: (rawEvents) => FutureBuilder<List<Map<String, dynamic>>>(
-          future: _enrichEvents(rawEvents),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
-              return const Center(
-                  child: CircularProgressIndicator(color: AppColors.primary));
-            }
-            final events       = snapshot.data ?? [];
-            final eventMap     = _buildEventMap(events);
-            final selectedEvts = _eventsForDate(eventMap, _selectedDate);
+      body: _loadingEvents
+          ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
+          : CustomScrollView(slivers: [
 
-            if (snapshot.hasData && firebaseUser != null) {
-              _loadStatuses(events);
-            }
-
-            return CustomScrollView(slivers: [
-
-              // ── AppBar ────────────────────────────────────────────────
-              SliverAppBar(
-                pinned: true,
-                backgroundColor: _surface,
-                elevation: 0,
-                scrolledUnderElevation: 0.5,
-                shadowColor: _border,
-                leading: IconButton(
-                  icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _textDark, size: 20),
-                  onPressed: () => Navigator.pop(context),
-                ),
-                title: Text(s.page,
-                    style: const TextStyle(color: _textDark, fontWeight: FontWeight.w800,
-                        fontSize: 18, letterSpacing: -0.3)),
-                actions: [
-                  Padding(
-                    padding: const EdgeInsets.only(right: 12),
-                    child: GestureDetector(
-                      onTap: () => _showFilterModal(events),
-                      child: Stack(clipBehavior: Clip.none, children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: _filter.isActive
-                                ? AppColors.primary
-                                : AppColors.primary.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Row(mainAxisSize: MainAxisSize.min, children: [
-                            Icon(Icons.location_on_rounded, size: 13,
-                                color: _filter.isActive ? Colors.white : AppColors.primary),
-                            const SizedBox(width: 4),
-                            Text(_locationLabel,
-                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700,
-                                    color: _filter.isActive ? Colors.white : AppColors.primary)),
-                            const SizedBox(width: 2),
-                            Icon(Icons.keyboard_arrow_down_rounded, size: 14,
-                                color: _filter.isActive ? Colors.white : AppColors.primary),
-                          ]),
-                        ),
-                        if (_filter.hasNonLocationFilters)
-                          Positioned(
-                            top: -3, right: -3,
-                            child: Container(
-                              width: 10, height: 10,
-                              decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                              child: Center(child: Container(
-                                  width: 7, height: 7,
-                                  decoration: const BoxDecoration(
-                                      color: Colors.orange, shape: BoxShape.circle))),
-                            ),
-                          ),
-                      ]),
+        // ── AppBar ────────────────────────────────────────────────
+        SliverAppBar(
+          pinned: true,
+          backgroundColor: _surface,
+          elevation: 0,
+          scrolledUnderElevation: 0.5,
+          shadowColor: _border,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios_new_rounded, color: _textDark, size: 20),
+            onPressed: () => Navigator.pop(context),
+          ),
+          title: Text(s.page, style: const TextStyle(color: _textDark, fontWeight: FontWeight.w800,
+              fontSize: 18, letterSpacing: -0.3)),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: GestureDetector(
+                onTap: () => _showFilterModal(events),
+                child: Stack(clipBehavior: Clip.none, children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: _filter.isActive
+                          ? AppColors.primary
+                          : AppColors.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(20),
                     ),
-                  ),
-                ],
-                bottom: PreferredSize(
-                  preferredSize: const Size.fromHeight(1),
-                  child: Container(height: 1, color: _border),
-                ),
-              ),
-
-              // ── Body ─────────────────────────────────────────────────
-              SliverToBoxAdapter(
-                child: FadeTransition(
-                  opacity: _fadeAnim,
-                  child: SlideTransition(
-                    position: _slideAnim,
-                    child: Column(children: [
-
-                      // Calendar card
-                      Container(
-                        margin: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-                        decoration: BoxDecoration(
-                          color: _surface,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: _border),
-                          boxShadow: [BoxShadow(
-                              color: Colors.black.withOpacity(0.04),
-                              blurRadius: 16, offset: const Offset(0, 4))],
-                        ),
-                        child: Column(children: [
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(8, 18, 8, 10),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                IconButton(
-                                  onPressed: _prevMonth,
-                                  icon: const Icon(Icons.chevron_left_rounded,
-                                      color: AppColors.primary, size: 28),
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(),
-                                ),
-                                Text(s.formatMonth(_focusedMonth),
-                                    style: const TextStyle(fontSize: 18,
-                                        fontWeight: FontWeight.w800,
-                                        color: _textDark, letterSpacing: -0.3)),
-                                IconButton(
-                                  onPressed: _nextMonth,
-                                  icon: const Icon(Icons.chevron_right_rounded,
-                                      color: AppColors.primary, size: 28),
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            child: Row(
-                              children: s.weekdays.map((d) => Expanded(
-                                child: Center(child: Text(d,
-                                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-                                        color: Colors.grey.shade400, letterSpacing: 0.5))),
-                              )).toList(),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
-                            child: _buildGrid(eventMap),
-                          ),
-                        ]),
-                      ),
-
-                      const SizedBox(height: 20),
-
-                      // Selected date header
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                        child: Row(children: [
-                          Container(width: 4, height: 18,
-                              decoration: BoxDecoration(
-                                  color: AppColors.primary,
-                                  borderRadius: BorderRadius.circular(2))),
-                          const SizedBox(width: 8),
-                          Text(s.formatDate(_selectedDate),
-                              style: const TextStyle(fontSize: 16,
-                                  fontWeight: FontWeight.w800, color: _textDark)),
-                          const Spacer(),
-                          if (selectedEvts.isNotEmpty)
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: AppColors.primary.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(s.eventCount(selectedEvts.length),
-                                  style: const TextStyle(fontSize: 11,
-                                      fontWeight: FontWeight.w700,
-                                      color: AppColors.primary)),
-                            ),
-                        ]),
-                      ),
-
-                      // Events or empty state
-                      if (selectedEvts.isEmpty)
-                        _buildEmptyState()
-                      else
-                        ...selectedEvts.map((e) {
-                          final docId = (e['_doc_id'] ?? '').toString();
-                          return _EventCard(
-                            event: e,
-                            lang: ref.watch(appLangProvider),
-                            onOpenLink: _openLink,
-                            isLoggedIn: firebaseUser != null,
-                            saveStatus: _saveStatuses[docId] ?? _SaveStatus.none,
-                            isSaving:   _savingIds[docId] ?? false,
-                            regStatus:  _regStatuses[docId] ?? _RegStatus.none,
-                            isRegLoading: _regLoading[docId] ?? false,
-                            onTapMyEvents:   () => _showSaveConfirmModal(e, _SaveStatus.myEvents),
-                            onTapInterested: () => _showSaveConfirmModal(e, _SaveStatus.interested),
-                            onTapRegister:   () => _handleRegisterTap(e),
-                            onTapCancelReg:  () => _showCancelRegConfirmModal(e),
-                          );
-                        }),
-
-                      const SizedBox(height: 40),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.location_on_rounded, size: 13,
+                          color: _filter.isActive ? Colors.white : AppColors.primary),
+                      const SizedBox(width: 4),
+                      Text(_locationLabel, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700,
+                          color: _filter.isActive ? Colors.white : AppColors.primary)),
+                      const SizedBox(width: 2),
+                      Icon(Icons.keyboard_arrow_down_rounded, size: 14,
+                          color: _filter.isActive ? Colors.white : AppColors.primary),
                     ]),
                   ),
-                ),
+                  if (_filter.hasNonLocationFilters)
+                    Positioned(
+                      top: -3, right: -3,
+                      child: Container(
+                        width: 10, height: 10,
+                        decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                        child: Center(child: Container(width: 7, height: 7,
+                            decoration: const BoxDecoration(color: Colors.orange, shape: BoxShape.circle))),
+                      ),
+                    ),
+                ]),
               ),
-            ]);
-          },
+            ),
+          ],
+          bottom: PreferredSize(
+            preferredSize: const Size.fromHeight(1),
+            child: Container(height: 1, color: _border),
+          ),
         ),
-      ),
+
+        // ── Body ─────────────────────────────────────────────────
+        SliverToBoxAdapter(
+          child: FadeTransition(
+            opacity: _fadeAnim,
+            child: SlideTransition(
+              position: _slideAnim,
+              child: Column(children: [
+
+                // Calendar card
+                Container(
+                  margin: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+                  decoration: BoxDecoration(
+                    color: _surface,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: _border),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04),
+                        blurRadius: 16, offset: const Offset(0, 4))],
+                  ),
+                  child: Column(children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 18, 8, 10),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          IconButton(
+                            onPressed: _prevMonth,
+                            icon: const Icon(Icons.chevron_left_rounded, color: AppColors.primary, size: 28),
+                            padding: EdgeInsets.zero, constraints: const BoxConstraints(),
+                          ),
+                          Text(s.formatMonth(_focusedMonth), style: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.w800, color: _textDark, letterSpacing: -0.3)),
+                          IconButton(
+                            onPressed: _nextMonth,
+                            icon: const Icon(Icons.chevron_right_rounded, color: AppColors.primary, size: 28),
+                            padding: EdgeInsets.zero, constraints: const BoxConstraints(),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Row(
+                        children: s.weekdays.map((d) => Expanded(
+                          child: Center(child: Text(d, style: TextStyle(
+                              fontSize: 11, fontWeight: FontWeight.w700,
+                              color: Colors.grey.shade400, letterSpacing: 0.5))),
+                        )).toList(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 16),
+                      child: _buildGrid(eventMap),
+                    ),
+                  ]),
+                ),
+
+                const SizedBox(height: 20),
+
+                // Selected date header
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: Row(children: [
+                    Container(width: 4, height: 18,
+                        decoration: BoxDecoration(color: AppColors.primary,
+                            borderRadius: BorderRadius.circular(2))),
+                    const SizedBox(width: 8),
+                    Text(s.formatDate(_selectedDate), style: const TextStyle(
+                        fontSize: 16, fontWeight: FontWeight.w800, color: _textDark)),
+                    const Spacer(),
+                    if (selectedEvts.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                            color: AppColors.primary.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(20)),
+                        child: Text(s.eventCount(selectedEvts.length),
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
+                                color: AppColors.primary)),
+                      ),
+                  ]),
+                ),
+
+                if (selectedEvts.isEmpty)
+                  _buildEmptyState()
+                else
+                  ...selectedEvts.map((e) {
+                    final docId = (e['_doc_id'] ?? '').toString();
+                    return _EventCard(
+                      event: e,
+                      lang: ref.watch(appLangProvider),
+                      onOpenLink: _openLink,
+                      isLoggedIn: firebaseUser != null,
+                      saveStatus: _saveStatuses[docId] ?? _SaveStatus.none,
+                      isSaving:   _savingIds[docId] ?? false,
+                      regStatus:  _regStatuses[docId] ?? _RegStatus.none,
+                      isRegLoading: _regLoading[docId] ?? false,
+                      onTapMyEvents:   () => _showSaveConfirmModal(e, _SaveStatus.myEvents),
+                      onTapInterested: () => _showSaveConfirmModal(e, _SaveStatus.interested),
+                      onTapRegister:   () => _handleRegisterTap(e),
+                      onTapCancelReg:  () => _showCancelRegConfirmModal(e),
+                    );
+                  }),
+
+                const SizedBox(height: 40),
+              ]),
+            ),
+          ),
+        ),
+      ]),
     );
   }
 
@@ -2139,19 +2175,14 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
       final dayEvents  = _eventsForDate(eventMap, date);
       final hasEvents  = dayEvents.isNotEmpty;
       final isToday    = date == todayKey;
-      final isSelected = date ==
-          DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+      final isSelected = date == DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
       final isPast     = date.isBefore(todayKey);
 
       cells.add(GestureDetector(
         onTap: () => setState(() => _selectedDate = date),
         child: hasEvents
-            ? _EventThumbCell(
-            day: day, events: dayEvents,
-            isSelected: isSelected, isToday: isToday)
-            : _EmptyDayCell(
-            day: day, isSelected: isSelected,
-            isToday: isToday, isPast: isPast),
+            ? _EventThumbCell(day: day, events: dayEvents, isSelected: isSelected, isToday: isToday)
+            : _EmptyDayCell(day: day, isSelected: isSelected, isToday: isToday, isPast: isPast),
       ));
     }
 
@@ -2174,9 +2205,8 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     child: Row(children: [
       Icon(Icons.event_available_rounded, color: Colors.grey.shade300, size: 32),
       const SizedBox(width: 16),
-      Text(s.noEvents,
-          style: TextStyle(fontSize: 14,
-              color: Colors.grey.shade400, fontWeight: FontWeight.w500)),
+      Text(s.noEvents, style: TextStyle(fontSize: 14,
+          color: Colors.grey.shade400, fontWeight: FontWeight.w500)),
     ]),
   );
 }
@@ -2188,10 +2218,8 @@ class _EventThumbCell extends StatelessWidget {
   final int day;
   final List<Map<String, dynamic>> events;
   final bool isSelected, isToday;
-  const _EventThumbCell({
-    required this.day, required this.events,
-    required this.isSelected, required this.isToday,
-  });
+  const _EventThumbCell({required this.day, required this.events,
+    required this.isSelected, required this.isToday});
 
   @override
   Widget build(BuildContext context) {
@@ -2210,8 +2238,7 @@ class _EventThumbCell extends StatelessWidget {
               errorBuilder: (_, __, ___) => Container(
                   color: AppColors.primary.withOpacity(0.12),
                   child: const Icon(Icons.event, size: 16, color: AppColors.primary)))
-              : Container(
-              color: AppColors.primary.withOpacity(0.12),
+              : Container(color: AppColors.primary.withOpacity(0.12),
               child: const Icon(Icons.event, size: 16, color: AppColors.primary)),
           Container(
             decoration: BoxDecoration(
@@ -2222,29 +2249,23 @@ class _EventThumbCell extends StatelessWidget {
             ),
           ),
           if (isSelected) Container(color: AppColors.primary.withOpacity(0.52)),
-          Positioned(
-            left: 5, bottom: 4,
-            child: Text('$day',
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                    shadows: [Shadow(color: Colors.black54, blurRadius: 4, offset: Offset(0, 1))])),
-          ),
-          Positioned(
-            top: 4, right: 4,
-            child: Container(
-              width: 16, height: 16,
-              decoration: BoxDecoration(
-                color: isSelected ? Colors.white : AppColors.primary,
-                shape: BoxShape.circle,
-                boxShadow: [BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
-                    blurRadius: 4, offset: const Offset(0, 1))],
-              ),
-              child: Center(child: Text('$count',
-                  style: TextStyle(fontSize: 8, fontWeight: FontWeight.w900,
-                      color: isSelected ? AppColors.primary : Colors.white))),
-            ),
-          ),
+          Positioned(left: 5, bottom: 4,
+              child: Text('$day', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                  shadows: [Shadow(color: Colors.black54, blurRadius: 4, offset: Offset(0, 1))]))),
+          Positioned(top: 4, right: 4,
+              child: Container(
+                width: 16, height: 16,
+                decoration: BoxDecoration(
+                  color: isSelected ? Colors.white : AppColors.primary,
+                  shape: BoxShape.circle,
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2),
+                      blurRadius: 4, offset: const Offset(0, 1))],
+                ),
+                child: Center(child: Text('$count', style: TextStyle(fontSize: 8,
+                    fontWeight: FontWeight.w900,
+                    color: isSelected ? AppColors.primary : Colors.white))),
+              )),
         ]),
       ),
     );
@@ -2254,42 +2275,31 @@ class _EventThumbCell extends StatelessWidget {
 class _EmptyDayCell extends StatelessWidget {
   final int day;
   final bool isSelected, isToday, isPast;
-  const _EmptyDayCell({
-    required this.day, required this.isSelected,
-    required this.isToday, required this.isPast,
-  });
+  const _EmptyDayCell({required this.day, required this.isSelected,
+    required this.isToday, required this.isPast});
 
   @override
   Widget build(BuildContext context) => Container(
     margin: const EdgeInsets.all(2),
     decoration: BoxDecoration(
-      color: isSelected
-          ? AppColors.primary
-          : isToday
-          ? AppColors.primary.withOpacity(0.10)
-          : Colors.transparent,
+      color: isSelected ? AppColors.primary
+          : isToday ? AppColors.primary.withOpacity(0.10) : Colors.transparent,
       borderRadius: BorderRadius.circular(10),
       border: isToday && !isSelected
-          ? Border.all(color: AppColors.primary.withOpacity(0.35), width: 1.5)
-          : null,
+          ? Border.all(color: AppColors.primary.withOpacity(0.35), width: 1.5) : null,
     ),
     child: Center(
-      child: Text('$day',
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: isSelected || isToday ? FontWeight.w800 : FontWeight.w500,
-            color: isSelected
-                ? Colors.white
-                : isPast
-                ? Colors.grey.shade300
-                : const Color(0xFF1A1A1A),
-          )),
+      child: Text('$day', style: TextStyle(
+        fontSize: 13,
+        fontWeight: isSelected || isToday ? FontWeight.w800 : FontWeight.w500,
+        color: isSelected ? Colors.white : isPast ? Colors.grey.shade300 : const Color(0xFF1A1A1A),
+      )),
     ),
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Event Card — updated registration section with 3-step form
+// Event Card (unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
 class _EventCard extends StatelessWidget {
   final Map<String, dynamic> event;
@@ -2306,18 +2316,11 @@ class _EventCard extends StatelessWidget {
   final VoidCallback onTapCancelReg;
 
   const _EventCard({
-    required this.event,
-    required this.lang,
-    required this.onOpenLink,
-    required this.isLoggedIn,
-    required this.saveStatus,
-    required this.isSaving,
-    required this.regStatus,
-    required this.isRegLoading,
-    required this.onTapMyEvents,
-    required this.onTapInterested,
-    required this.onTapRegister,
-    required this.onTapCancelReg,
+    required this.event, required this.lang, required this.onOpenLink,
+    required this.isLoggedIn, required this.saveStatus, required this.isSaving,
+    required this.regStatus, required this.isRegLoading,
+    required this.onTapMyEvents, required this.onTapInterested,
+    required this.onTapRegister, required this.onTapCancelReg,
   });
 
   bool get _isJa => lang == kLangJa;
@@ -2347,15 +2350,12 @@ class _EventCard extends StatelessWidget {
   String get _contact =>
       (event['event_contact'] ?? event['event_email'] ?? '').toString();
 
-  // Capacity helpers
   int? get _eventLimit => event['event_limit'] != null
-      ? int.tryParse(event['event_limit'].toString())
-      : null;
+      ? int.tryParse(event['event_limit'].toString()) : null;
   int get _approvedCount => (event['event_approved_count'] ?? 0) as int;
   bool get _isFull => _eventLimit != null && _approvedCount >= _eventLimit!;
   bool get _regOpen => event['event_registration_open'] != false;
 
-  // Owner check
   bool get _isEventOwner {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) return false;
@@ -2446,26 +2446,20 @@ class _EventCard extends StatelessWidget {
     final isSavedMyEvents   = saveStatus == _SaveStatus.myEvents;
     final isSavedInterested = saveStatus == _SaveStatus.interested;
 
-    // Capacity
     final eventLimit    = _eventLimit;
     final approvedCount = _approvedCount;
     final isFull        = _isFull;
     final regOpen       = _regOpen;
     final fillPct = eventLimit != null && eventLimit > 0
-        ? (approvedCount / eventLimit).clamp(0.0, 1.0)
-        : 0.0;
-    final fillColor = fillPct >= 0.9
-        ? _red
-        : fillPct >= 0.7 ? _amber : AppColors.primary;
+        ? (approvedCount / eventLimit).clamp(0.0, 1.0) : 0.0;
+    final fillColor = fillPct >= 0.9 ? _red : fillPct >= 0.7 ? _amber : AppColors.primary;
 
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 20),
       decoration: BoxDecoration(
-        color: _surface,
-        borderRadius: BorderRadius.circular(20),
+        color: _surface, borderRadius: BorderRadius.circular(20),
         border: Border.all(color: _border),
-        boxShadow: [BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05),
             blurRadius: 16, offset: const Offset(0, 4))],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -2487,9 +2481,8 @@ class _EventCard extends StatelessWidget {
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
 
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Expanded(child: Text(_title,
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900,
-                      color: _textDark, letterSpacing: -0.3))),
+              Expanded(child: Text(_title, style: const TextStyle(fontSize: 20,
+                  fontWeight: FontWeight.w900, color: _textDark, letterSpacing: -0.3))),
               const SizedBox(width: 10),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
@@ -2497,9 +2490,8 @@ class _EventCard extends StatelessWidget {
                   color: isFree ? Colors.green.shade50 : AppColors.primary.withOpacity(0.09),
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: Text(feeStr,
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
-                        color: isFree ? Colors.green.shade600 : AppColors.primary)),
+                child: Text(feeStr, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
+                    color: isFree ? Colors.green.shade600 : AppColors.primary)),
               ),
             ]),
 
@@ -2508,8 +2500,8 @@ class _EventCard extends StatelessWidget {
               Row(children: [
                 Icon(Icons.access_time_rounded, size: 14, color: Colors.grey.shade400),
                 const SizedBox(width: 5),
-                Text(timeStr, style: TextStyle(fontSize: 13,
-                    color: Colors.grey.shade500, fontWeight: FontWeight.w500)),
+                Text(timeStr, style: TextStyle(fontSize: 13, color: Colors.grey.shade500,
+                    fontWeight: FontWeight.w500)),
               ]),
             ],
 
@@ -2521,11 +2513,11 @@ class _EventCard extends StatelessWidget {
                   Icon(Icons.location_on_rounded, size: 14,
                       color: hasGMap ? AppColors.primary : Colors.grey.shade400),
                   const SizedBox(width: 5),
-                  Expanded(child: Text(locDisplay,
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500,
-                          color: hasGMap ? AppColors.primary : Colors.grey.shade500,
-                          decoration: hasGMap ? TextDecoration.underline : TextDecoration.none,
-                          decorationColor: AppColors.primary))),
+                  Expanded(child: Text(locDisplay, style: TextStyle(fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                      color: hasGMap ? AppColors.primary : Colors.grey.shade500,
+                      decoration: hasGMap ? TextDecoration.underline : TextDecoration.none,
+                      decorationColor: AppColors.primary))),
                   if (hasGMap) ...[
                     const SizedBox(width: 4),
                     Icon(Icons.open_in_new_rounded, size: 12, color: AppColors.primary),
@@ -2539,9 +2531,8 @@ class _EventCard extends StatelessWidget {
               Row(children: [
                 Icon(Icons.person_outline_rounded, size: 14, color: Colors.grey.shade400),
                 const SizedBox(width: 5),
-                Expanded(child: Text(_orgName,
-                    style: TextStyle(fontSize: 13,
-                        color: Colors.grey.shade500, fontWeight: FontWeight.w500))),
+                Expanded(child: Text(_orgName, style: TextStyle(fontSize: 13,
+                    color: Colors.grey.shade500, fontWeight: FontWeight.w500))),
               ]),
             ],
 
@@ -2562,83 +2553,64 @@ class _EventCard extends StatelessWidget {
                 child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Container(
                     width: 40, height: 40,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(Icons.calendar_today_rounded,
-                        color: AppColors.primary, size: 20),
+                    decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(10)),
+                    child: const Icon(Icons.calendar_today_rounded, color: AppColors.primary, size: 20),
                   ),
                   const SizedBox(width: 12),
-                  Expanded(child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(s.formatDateLong(startDate),
-                            style: const TextStyle(fontSize: 15,
-                                fontWeight: FontWeight.w800, color: _textDark)),
-                        if (timeStr.isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 3),
-                            child: Text(timeStr,
-                                style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
-                          ),
-                        if (endDate != null) ...[
-                          const SizedBox(height: 6),
-                          RichText(text: TextSpan(children: [
-                            TextSpan(text: '${s.ends} ',
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
-                                    color: Colors.grey.shade600)),
-                            TextSpan(text: s.formatDateLong(endDate),
-                                style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
-                          ])),
-                        ],
-                        if (contact.isNotEmpty) ...[
-                          const SizedBox(height: 6),
-                          RichText(text: TextSpan(children: [
-                            TextSpan(text: '${s.contact} ',
-                                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
-                                    color: Colors.grey.shade600)),
-                            TextSpan(text: contact,
-                                style: const TextStyle(fontSize: 13, color: AppColors.primary)),
-                          ])),
-                        ],
-                        // ── Capacity progress bar ──
-                        if (eventLimit != null) ...[
-                          const SizedBox(height: 12),
-                          Row(children: [
-                            Text('$approvedCount / $eventLimit ${_isJa ? '名参加中' : 'filled'}',
-                                style: TextStyle(fontSize: 11, color: Colors.grey.shade500,
-                                    fontWeight: FontWeight.w500)),
-                            const Spacer(),
-                            if (isFull)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: _redLt,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Text(_isJa ? '満席' : 'Full',
-                                    style: const TextStyle(fontSize: 10,
-                                        fontWeight: FontWeight.w800, color: _red)),
-                              )
-                            else
-                              Text(s.slotsLeft((eventLimit - approvedCount).clamp(0, 9999)),
-                                  style: TextStyle(fontSize: 11,
-                                      fontWeight: FontWeight.w700, color: fillColor)),
-                          ]),
-                          const SizedBox(height: 6),
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: LinearProgressIndicator(
-                              value: fillPct,
-                              minHeight: 5,
-                              backgroundColor: Colors.grey.shade200,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                  isFull ? _red : fillColor),
-                            ),
-                          ),
-                        ],
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(s.formatDateLong(startDate), style: const TextStyle(fontSize: 15,
+                        fontWeight: FontWeight.w800, color: _textDark)),
+                    if (timeStr.isNotEmpty)
+                      Padding(padding: const EdgeInsets.only(top: 3),
+                          child: Text(timeStr, style: TextStyle(fontSize: 13, color: Colors.grey.shade500))),
+                    if (endDate != null) ...[
+                      const SizedBox(height: 6),
+                      RichText(text: TextSpan(children: [
+                        TextSpan(text: '${s.ends} ', style: TextStyle(fontSize: 13,
+                            fontWeight: FontWeight.w700, color: Colors.grey.shade600)),
+                        TextSpan(text: s.formatDateLong(endDate),
+                            style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
                       ])),
+                    ],
+                    if (contact.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      RichText(text: TextSpan(children: [
+                        TextSpan(text: '${s.contact} ', style: TextStyle(fontSize: 13,
+                            fontWeight: FontWeight.w700, color: Colors.grey.shade600)),
+                        TextSpan(text: contact,
+                            style: const TextStyle(fontSize: 13, color: AppColors.primary)),
+                      ])),
+                    ],
+                    if (eventLimit != null) ...[
+                      const SizedBox(height: 12),
+                      Row(children: [
+                        Text('$approvedCount / $eventLimit ${_isJa ? '名参加中' : 'filled'}',
+                            style: TextStyle(fontSize: 11, color: Colors.grey.shade500,
+                                fontWeight: FontWeight.w500)),
+                        const Spacer(),
+                        if (isFull)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(color: _redLt, borderRadius: BorderRadius.circular(10)),
+                            child: Text(_isJa ? '満席' : 'Full', style: const TextStyle(
+                                fontSize: 10, fontWeight: FontWeight.w800, color: _red)),
+                          )
+                        else
+                          Text(s.slotsLeft((eventLimit - approvedCount).clamp(0, 9999)),
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: fillColor)),
+                      ]),
+                      const SizedBox(height: 6),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: fillPct, minHeight: 5,
+                          backgroundColor: Colors.grey.shade200,
+                          valueColor: AlwaysStoppedAnimation<Color>(isFull ? _red : fillColor),
+                        ),
+                      ),
+                    ],
+                  ])),
                 ]),
               ),
               const SizedBox(height: 20),
@@ -2658,9 +2630,8 @@ class _EventCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(30),
                     border: Border.all(color: AppColors.primary.withOpacity(0.4)),
                   ),
-                  child: Text(tag,
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800,
-                          color: AppColors.primary, letterSpacing: 0.3)),
+                  child: Text(tag, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800,
+                      color: AppColors.primary, letterSpacing: 0.3)),
                 )).toList(),
               ),
               const SizedBox(height: 20),
@@ -2682,27 +2653,18 @@ class _EventCard extends StatelessWidget {
                   Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Container(
                       width: 36, height: 36,
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(Icons.location_on_rounded,
-                          color: AppColors.primary, size: 18),
+                      decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(10)),
+                      child: const Icon(Icons.location_on_rounded, color: AppColors.primary, size: 18),
                     ),
                     const SizedBox(width: 12),
-                    Expanded(child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(locDisplay,
-                              style: const TextStyle(fontSize: 15,
-                                  fontWeight: FontWeight.w800, color: _textDark)),
-                          if (address.isNotEmpty && address != locDisplay)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 3),
-                              child: Text(address,
-                                  style: TextStyle(fontSize: 13, color: Colors.grey.shade500)),
-                            ),
-                        ])),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(locDisplay, style: const TextStyle(fontSize: 15,
+                          fontWeight: FontWeight.w800, color: _textDark)),
+                      if (address.isNotEmpty && address != locDisplay)
+                        Padding(padding: const EdgeInsets.only(top: 3),
+                            child: Text(address, style: TextStyle(fontSize: 13, color: Colors.grey.shade500))),
+                    ])),
                   ]),
                   if (hasGMap) ...[
                     const SizedBox(height: 12),
@@ -2711,10 +2673,9 @@ class _EventCard extends StatelessWidget {
                       child: Row(children: [
                         const Icon(Icons.location_on_rounded, size: 16, color: AppColors.primary),
                         const SizedBox(width: 6),
-                        Text(s.viewOnMaps,
+                        Text(s.isJa ? 'Googleマップで見る' : 'View on Google Maps',
                             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
-                                color: AppColors.primary,
-                                decoration: TextDecoration.underline,
+                                color: AppColors.primary, decoration: TextDecoration.underline,
                                 decorationColor: AppColors.primary)),
                       ]),
                     ),
@@ -2726,7 +2687,6 @@ class _EventCard extends StatelessWidget {
               const SizedBox(height: 20),
             ],
 
-            // SAVE section
             if (isLoggedIn) ...[
               _SectionLabel(label: s.secSave),
               const SizedBox(height: 12),
@@ -2736,38 +2696,23 @@ class _EventCard extends StatelessWidget {
                   duration: const Duration(milliseconds: 180),
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: isSavedMyEvents
-                        ? AppColors.primary.withOpacity(0.06)
-                        : const Color(0xFFF2F8F4),
+                    color: isSavedMyEvents ? AppColors.primary.withOpacity(0.06) : const Color(0xFFF2F8F4),
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: isSavedMyEvents
-                          ? AppColors.primary.withOpacity(0.5)
-                          : AppColors.primary.withOpacity(0.15),
-                    ),
+                    border: Border.all(color: isSavedMyEvents
+                        ? AppColors.primary.withOpacity(0.5) : AppColors.primary.withOpacity(0.15)),
                   ),
                   child: Row(children: [
-                    Container(
-                      width: 44, height: 44,
-                      decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        isSavedMyEvents ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                        color: AppColors.primary, size: 22,
-                      ),
-                    ),
+                    Container(width: 44, height: 44,
+                        decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(12)),
+                        child: Icon(isSavedMyEvents ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                            color: AppColors.primary, size: 22)),
                     const SizedBox(width: 14),
-                    Expanded(child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(s.saveMyEvents,
-                              style: const TextStyle(fontSize: 15,
-                                  fontWeight: FontWeight.w800, color: _textDark)),
-                          Text(s.saveMyEventsSub,
-                              style: const TextStyle(fontSize: 12, color: _textLight)),
-                        ])),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(s.saveMyEvents, style: const TextStyle(fontSize: 15,
+                          fontWeight: FontWeight.w800, color: _textDark)),
+                      Text(s.saveMyEventsSub, style: const TextStyle(fontSize: 12, color: _textLight)),
+                    ])),
                     if (isSaving)
                       const SizedBox(width: 20, height: 20,
                           child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary))
@@ -2785,46 +2730,29 @@ class _EventCard extends StatelessWidget {
                   duration: const Duration(milliseconds: 180),
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: isSavedInterested
-                        ? const Color(0xFFFFF8E7)
-                        : const Color(0xFFF2F8F4),
+                    color: isSavedInterested ? const Color(0xFFFFF8E7) : const Color(0xFFF2F8F4),
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: isSavedInterested
-                          ? const Color(0xFFD4A017).withOpacity(0.5)
-                          : AppColors.primary.withOpacity(0.15),
-                    ),
+                    border: Border.all(color: isSavedInterested
+                        ? const Color(0xFFD4A017).withOpacity(0.5) : AppColors.primary.withOpacity(0.15)),
                   ),
                   child: Row(children: [
-                    Container(
-                      width: 44, height: 44,
-                      decoration: BoxDecoration(
-                        color: isSavedInterested
-                            ? const Color(0xFFFFF0C0)
-                            : AppColors.primary.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        isSavedInterested ? Icons.star_rounded : Icons.star_border_rounded,
-                        color: isSavedInterested ? const Color(0xFFD4A017) : AppColors.primary,
-                        size: 22,
-                      ),
-                    ),
+                    Container(width: 44, height: 44,
+                        decoration: BoxDecoration(
+                            color: isSavedInterested ? const Color(0xFFFFF0C0) : AppColors.primary.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(12)),
+                        child: Icon(isSavedInterested ? Icons.star_rounded : Icons.star_border_rounded,
+                            color: isSavedInterested ? const Color(0xFFD4A017) : AppColors.primary, size: 22)),
                     const SizedBox(width: 14),
-                    Expanded(child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(s.saveInterested,
-                              style: const TextStyle(fontSize: 15,
-                                  fontWeight: FontWeight.w800, color: _textDark)),
-                          Text(s.saveInterestedSub,
-                              style: const TextStyle(fontSize: 12, color: _textLight)),
-                        ])),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(s.saveInterested, style: const TextStyle(fontSize: 15,
+                          fontWeight: FontWeight.w800, color: _textDark)),
+                      Text(s.saveInterestedSub, style: const TextStyle(fontSize: 12, color: _textLight)),
+                    ])),
                     if (isSaving)
                       const SizedBox(width: 20, height: 20,
                           child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary))
                     else if (isSavedInterested)
-                      const Icon(Icons.check_rounded, color: Color(0xFFD4A017), size: 22)
+                      const Icon(Icons.check_rounded, color: const Color(0xFFD4A017), size: 22)
                     else
                       const Icon(Icons.chevron_right_rounded, color: _textLight, size: 20),
                   ]),
@@ -2835,11 +2763,9 @@ class _EventCard extends StatelessWidget {
               const SizedBox(height: 20),
             ],
 
-            // ── REGISTRATION section ───────────────────────────────────
             _SectionLabel(label: s.secRegistration),
             const SizedBox(height: 12),
 
-            // Organizer viewing own event
             if (_isEventOwner)
               Container(
                 padding: const EdgeInsets.all(16),
@@ -2849,34 +2775,23 @@ class _EventCard extends StatelessWidget {
                   border: Border.all(color: AppColors.primary.withOpacity(0.2)),
                 ),
                 child: Row(children: [
-                  Container(
-                    width: 36, height: 36,
-                    decoration: BoxDecoration(
-                        color: AppColors.primary.withOpacity(0.12), shape: BoxShape.circle),
-                    child: const Icon(Icons.shield_rounded, color: AppColors.primary, size: 18),
-                  ),
+                  Container(width: 36, height: 36,
+                      decoration: BoxDecoration(color: AppColors.primary.withOpacity(0.12), shape: BoxShape.circle),
+                      child: const Icon(Icons.shield_rounded, color: AppColors.primary, size: 18)),
                   const SizedBox(width: 12),
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(
-                      _isJa ? 'あなたが主催するイベント' : 'You are the organizer',
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
-                          color: AppColors.primary),
-                    ),
+                    Text(_isJa ? 'あなたが主催するイベント' : 'You are the organizer',
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.primary)),
                     const SizedBox(height: 2),
-                    Text(
-                      _isJa ? '自分のイベントへの登録は不要です。' : 'Registration is not required for your own event.',
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-                    ),
+                    Text(_isJa ? '自分のイベントへの登録は不要です。' : 'Registration is not required for your own event.',
+                        style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
                   ])),
                 ]),
               )
 
-            // Not logged in
             else if (!isLoggedIn)
-              Text(s.loginToRegister,
-                  style: const TextStyle(fontSize: 13, color: _textLight))
+              Text(s.loginToRegister, style: const TextStyle(fontSize: 13, color: _textLight))
 
-            // Registration closed
             else if (!regOpen)
                 Container(
                   padding: const EdgeInsets.all(14),
@@ -2886,30 +2801,22 @@ class _EventCard extends StatelessWidget {
                     border: Border.all(color: const Color(0xFFE4E9EE)),
                   ),
                   child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Container(
-                      width: 36, height: 36,
-                      decoration: BoxDecoration(
-                          color: Colors.grey.withOpacity(0.12), shape: BoxShape.circle),
-                      child: Icon(Icons.lock_rounded, color: Colors.grey.shade500, size: 18),
-                    ),
+                    Container(width: 36, height: 36,
+                        decoration: BoxDecoration(color: Colors.grey.withOpacity(0.12), shape: BoxShape.circle),
+                        child: Icon(Icons.lock_rounded, color: Colors.grey.shade500, size: 18)),
                     const SizedBox(width: 10),
                     Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(s.registrationClosed,
-                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
-                              color: Colors.grey.shade600)),
+                      Text(s.registrationClosed, style: TextStyle(fontSize: 13,
+                          fontWeight: FontWeight.w700, color: Colors.grey.shade600)),
                       const SizedBox(height: 2),
-                      Text(s.regClosedMsg,
-                          style: const TextStyle(fontSize: 12, color: _textLight)),
+                      Text(s.regClosedMsg, style: const TextStyle(fontSize: 12, color: _textLight)),
                     ])),
                   ]),
                 )
 
-              // Has existing registration
               else if (regStatus != _RegStatus.none)
                   Column(children: [
-                    // Status banner
                     _RegStatusBanner(regStatus: regStatus, s: s),
-                    // Cancel button for pending/rejected/waitlist
                     if (regStatus == _RegStatus.pending ||
                         regStatus == _RegStatus.rejected ||
                         regStatus == _RegStatus.waitlist) ...[
@@ -2922,46 +2829,36 @@ class _EventCard extends StatelessWidget {
                               ? const SizedBox(width: 14, height: 14,
                               child: CircularProgressIndicator(strokeWidth: 2, color: _red))
                               : const Icon(Icons.cancel_outlined, size: 16, color: _red),
-                          label: Text(s.cancelReg,
-                              style: const TextStyle(color: _red,
-                                  fontWeight: FontWeight.w700, fontSize: 13)),
+                          label: Text(s.cancelReg, style: const TextStyle(color: _red,
+                              fontWeight: FontWeight.w700, fontSize: 13)),
                           style: OutlinedButton.styleFrom(
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             side: BorderSide(color: _red.withOpacity(0.4)),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14)),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                           ),
                         ),
                       ),
                     ],
                   ])
 
-                // Full event — show waitlist button
                 else if (isFull)
                     Column(children: [
-                      // Capacity reached banner
                       Container(
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: _redLt,
-                          borderRadius: BorderRadius.circular(14),
+                          color: _redLt, borderRadius: BorderRadius.circular(14),
                           border: Border.all(color: _red.withOpacity(0.25)),
                         ),
                         child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Container(
-                            width: 36, height: 36,
-                            decoration: BoxDecoration(
-                                color: _red.withOpacity(0.12), shape: BoxShape.circle),
-                            child: const Icon(Icons.people_alt_rounded, color: _red, size: 18),
-                          ),
+                          Container(width: 36, height: 36,
+                              decoration: BoxDecoration(color: _red.withOpacity(0.12), shape: BoxShape.circle),
+                              child: const Icon(Icons.people_alt_rounded, color: _red, size: 18)),
                           const SizedBox(width: 10),
                           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            Text(s.capacityReached,
-                                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700,
-                                    color: _red)),
+                            Text(s.capacityReached, style: const TextStyle(fontSize: 13,
+                                fontWeight: FontWeight.w700, color: _red)),
                             const SizedBox(height: 2),
-                            Text(s.capacityMsg,
-                                style: const TextStyle(fontSize: 12, color: _textLight)),
+                            Text(s.capacityMsg, style: const TextStyle(fontSize: 12, color: _textLight)),
                           ])),
                         ]),
                       ),
@@ -2974,23 +2871,18 @@ class _EventCard extends StatelessWidget {
                               ? const SizedBox(width: 18, height: 18,
                               child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                               : const Icon(Icons.schedule_rounded, size: 18, color: Colors.white),
-                          label: Text(
-                            isRegLoading ? s.joiningWaitlist : s.joinWaitlist,
-                            style: const TextStyle(fontWeight: FontWeight.w800,
-                                color: Colors.white, fontSize: 15),
-                          ),
+                          label: Text(isRegLoading ? s.joiningWaitlist : s.joinWaitlist,
+                              style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white, fontSize: 15)),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: _amber,
                             disabledBackgroundColor: _amber.withOpacity(0.5),
-                            elevation: 0,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            elevation: 0, padding: const EdgeInsets.symmetric(vertical: 16),
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                           ),
                         ),
                       ),
                     ])
 
-                  // Normal register button
                   else
                     SizedBox(
                       width: double.infinity,
@@ -3000,16 +2892,12 @@ class _EventCard extends StatelessWidget {
                             ? const SizedBox(width: 18, height: 18,
                             child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                             : const Icon(Icons.how_to_reg_rounded, size: 18, color: Colors.white),
-                        label: Text(
-                          isRegLoading ? s.registering : s.registerBtn,
-                          style: const TextStyle(fontWeight: FontWeight.w800,
-                              color: Colors.white, fontSize: 15),
-                        ),
+                        label: Text(isRegLoading ? s.registering : s.registerBtn,
+                            style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white, fontSize: 15)),
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primary,
                           disabledBackgroundColor: AppColors.primary.withOpacity(0.5),
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          elevation: 0, padding: const EdgeInsets.symmetric(vertical: 16),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         ),
                       ),
@@ -3024,18 +2912,17 @@ class _EventCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Registration status banner widget
+// Registration status banner
 // ─────────────────────────────────────────────────────────────────────────────
 class _RegStatusBanner extends StatelessWidget {
   final _RegStatus regStatus;
   final _S s;
-
   const _RegStatusBanner({required this.regStatus, required this.s});
 
-  static const Color _red   = Color(0xFFD32F2F);
-  static const Color _redLt = Color(0xFFFFEBEE);
-  static const Color _amber = Color(0xFFD97706);
-  static const Color _amberLt = Color(0xFFFFF3CD);
+  static const Color _red    = Color(0xFFD32F2F);
+  static const Color _redLt  = Color(0xFFFFEBEE);
+  static const Color _amber  = Color(0xFFD97706);
+  static const Color _amberLt= Color(0xFFFFF3CD);
 
   @override
   Widget build(BuildContext context) {
@@ -3048,65 +2935,41 @@ class _RegStatusBanner extends StatelessWidget {
 
     switch (regStatus) {
       case _RegStatus.approved:
-        color = AppColors.primary;
-        bg = AppColors.primary.withOpacity(0.08);
+        color = AppColors.primary; bg = AppColors.primary.withOpacity(0.08);
         border = AppColors.primary.withOpacity(0.3);
         icon = Icons.check_circle_rounded;
-        title = s.registrationApproved;
-        subtitle = s.regApprovedMsg;
+        title = s.registrationApproved; subtitle = s.regApprovedMsg;
       case _RegStatus.rejected:
         color = _red; bg = _redLt; border = _red.withOpacity(0.3);
         icon = Icons.cancel_rounded;
-        title = s.registrationRejected;
-        subtitle = s.regRejectedMsg;
+        title = s.registrationRejected; subtitle = s.regRejectedMsg;
       case _RegStatus.waitlist:
         color = _amber; bg = _amberLt; border = _amber.withOpacity(0.3);
         icon = Icons.schedule_rounded;
-        title = s.registrationWaitlist;
-        subtitle = s.regWaitlistMsg;
+        title = s.registrationWaitlist; subtitle = s.regWaitlistMsg;
       default:
         color = _amber; bg = _amberLt; border = _amber.withOpacity(0.3);
         icon = Icons.pending_rounded;
-        title = s.registrationPending;
-        subtitle = s.alreadyRegistered;
+        title = s.registrationPending; subtitle = s.alreadyRegistered;
     }
 
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(14),
+        color: bg, borderRadius: BorderRadius.circular(14),
         border: Border.all(color: border),
       ),
       child: Row(children: [
-        Container(
-          width: 36, height: 36,
-          decoration: BoxDecoration(color: color.withOpacity(0.12), shape: BoxShape.circle),
-          child: Icon(icon, color: color, size: 18),
-        ),
+        Container(width: 36, height: 36,
+            decoration: BoxDecoration(color: color.withOpacity(0.12), shape: BoxShape.circle),
+            child: Icon(icon, color: color, size: 18)),
         const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(title, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: color)),
           const SizedBox(height: 2),
-          Text(subtitle,
-              style: const TextStyle(fontSize: 12, color: Color(0xFF4B5563))),
+          Text(subtitle, style: const TextStyle(fontSize: 12, color: Color(0xFF4B5563))),
         ])),
       ]),
     );
   }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Section label widget
-// ─────────────────────────────────────────────────────────────────────────────
-class _SectionLabel extends StatelessWidget {
-  final String label;
-  const _SectionLabel({required this.label});
-
-  @override
-  Widget build(BuildContext context) => Text(
-    label,
-    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800,
-        color: AppColors.primary, letterSpacing: 1.2),
-  );
 }

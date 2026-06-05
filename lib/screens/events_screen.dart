@@ -31,6 +31,10 @@ class _S {
   String get clearAll      => isJa ? 'クリア'             : 'Clear All';
   String get applyFilters  => isJa ? 'フィルターを適用'    : 'APPLY FILTERS';
 
+  // ── Default location label shown when no filter is active ──────────────
+  // Matches the web app's home page default which pre-filters to Tokyo.
+  String get defaultLocation => isJa ? '東京' : 'Tokyo';
+
   String get dateSection      => isJa ? '日付'          : 'DATE';
   String get locationSection  => isJa ? '場所'          : 'LOCATION';
   String get eventTypeSection => isJa ? 'イベント種類'   : 'EVENT TYPE';
@@ -199,7 +203,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
   _S get s => _S(ref.watch(appLangProvider));
 
-  // ── FIX: Use 100-day window, NO default location filter (matches web app) ──
   static const int _defaultDays = 100;
 
   @override
@@ -208,7 +211,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     _loadEventsDirectly();
   }
 
-  // ── Mirrors web app query exactly ────────────────────────────────────────
   Future<void> _loadEventsDirectly() async {
     if (!mounted) return;
     setState(() {
@@ -240,7 +242,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
       debugPrint('[EventsScreen] Raw events fetched: ${raw.length}');
 
-      // ── Enrich concurrently, never throw ─────────────────────────────────
       final enriched = await Future.wait(
         raw.map((e) => _enrichEvent(e).catchError((_) => e)),
       );
@@ -262,8 +263,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     }
   }
 
-  // ── Enrich a single event with resolved location fields ──────────────────
-  // Mirrors web app resolveLocation() exactly
   Future<Map<String, dynamic>> _enrichEvent(Map<String, dynamic> event) async {
     final locId = (event['event_loc_id'] ?? event['loc_id'] ?? '').toString().trim();
     Map<String, dynamic> locDoc = {};
@@ -372,17 +371,15 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     };
   }
 
+  // ── CHANGED: show 'Tokyo' / '東京' when no location filter is active ──────
   String get _locationLabel {
     if (_adv.city.isNotEmpty)       return _adv.city;
     if (_adv.prefecture.isNotEmpty) return _adv.prefecture;
     if (_adv.country.isNotEmpty)    return _adv.country;
-    return s.allCountries;
+    return s.defaultLocation; // ← was s.allCountries
   }
 
   bool _matchesLocation(Map<String, dynamic> event) {
-    // ── FIX: No default location filter — show ALL countries by default ──
-    // This matches the web app behaviour (defaultLocationActive only applies
-    // on web first load for Tokyo; mobile shows everything by default)
     if (_adv.country.isEmpty && _adv.prefecture.isEmpty && _adv.city.isEmpty) {
       return true;
     }
@@ -421,7 +418,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     final now        = DateTime.now();
     final today      = DateTime(now.year, now.month, now.day);
     final tomorrow   = today.add(const Duration(days: 1));
-    // ── FIX: Upcoming shows 100 days to match the fetch window ──
     final defaultEnd = today.add(const Duration(days: _defaultDays));
     final daysUntilSat = (DateTime.saturday - now.weekday + 7) % 7;
     final saturday   = today.add(Duration(days: daysUntilSat == 0 ? 7 : daysUntilSat));
@@ -430,7 +426,9 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     final q = _searchController.text.toLowerCase().trim();
 
     return events.where((e) {
-      // ── Search ──────────────────────────────────────────────────────────
+      final locId = (e['event_loc_id'] ?? '').toString().trim();
+      if (locId.isEmpty) return false;
+
       if (q.isNotEmpty) {
         final title   = (e['event_title']    ?? '').toString().toLowerCase();
         final titleJp = (e['event_title_jp'] ?? '').toString().toLowerCase();
@@ -438,10 +436,8 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
         if (!title.contains(q) && !titleJp.contains(q) && !type.contains(q)) return false;
       }
 
-      // ── Location ─────────────────────────────────────────────────────────
       if (!_matchesLocation(e)) return false;
 
-      // ── Date ─────────────────────────────────────────────────────────────
       final raw = e['event_date'];
       DateTime? d;
       if (raw is Timestamp)            d = raw.toDate();
@@ -463,16 +459,13 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
           case 'Weekend':
             if (!_isSameDay(day, saturday) && !_isSameDay(day, sunday)) return false;
           default:
-          // 'Upcoming': events from today within the fetch window
             if (day.isBefore(today) || day.isAfter(defaultEnd)) return false;
         }
       }
 
-      // ── Event type ───────────────────────────────────────────────────────
       if (_adv.type.isNotEmpty &&
           (e['event_type'] ?? '').toString() != _adv.type) return false;
 
-      // ── Skill level ──────────────────────────────────────────────────────
       if (_adv.skillPro || _adv.skillAmateur || _adv.skillBeginner) {
         final match =
             (_adv.skillPro      && e['event_skill_level_pro']      == true) ||
@@ -481,7 +474,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
         if (!match) return false;
       }
 
-      // ── Categories ───────────────────────────────────────────────────────
       if (_adv.catMx || _adv.catMd || _adv.catMs || _adv.catWs ||
           _adv.catWd || _adv.catSe || _adv.catJu || _adv.catCo) {
         final match =
@@ -496,7 +488,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
         if (!match) return false;
       }
 
-      // ── Tourist friendly ─────────────────────────────────────────────────
       if (_adv.tourist && e['event_touristfriendly'] != true) return false;
 
       return true;
