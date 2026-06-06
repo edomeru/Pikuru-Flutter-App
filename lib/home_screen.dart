@@ -861,7 +861,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             final location = _courtLocation(data, lang);
 
             return GestureDetector(
-              onTap: () => widget.onNavigateToTab?.call(1),
+              onTap: () {
+                // Tell the CourtsScreen which court to focus on, then switch tab.
+                final docId = (data['_doc_id'] ?? '').toString();
+                if (docId.isNotEmpty) {
+                  ref.read(focusedCourtIdProvider.notifier).state = docId;
+                }
+                widget.onNavigateToTab?.call(1);
+              },
               child: CourtCard(
                 imageUrl: (data['loc_image'] ?? '').toString(),
                 name: name,

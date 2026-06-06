@@ -637,7 +637,51 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
     }
 
     setState(() => _markers = newMarkers);
-    Future.delayed(const Duration(milliseconds: 800), _moveCameraToMarkers);
+
+    // If a court is queued to be focused (e.g. from the Home screen), focus it.
+    // Otherwise fit all markers in view as usual.
+    final focusId = ref.read(focusedCourtIdProvider);
+    if (focusId != null && focusId.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _tryFocusCourt(focusId);
+      });
+    } else {
+      Future.delayed(const Duration(milliseconds: 800), _moveCameraToMarkers);
+    }
+  }
+
+  void _tryFocusCourt(String docId) {
+    if (!mounted) return;
+    final loc = _lastLocations.firstWhere(
+          (l) => (l['_doc_id']?.toString() ?? '') == docId,
+      orElse: () => <String, dynamic>{},
+    );
+    if (loc.isEmpty) return;
+    final lat = _parseCoordinate(loc['loc_latitude']);
+    final lng = _parseCoordinate(loc['loc_longitude']);
+    if (lat == null || lng == null) return;
+
+    // Wait briefly if the map controller isn't ready yet.
+    if (_mapController == null) {
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (mounted) _tryFocusCourt(docId);
+      });
+      return;
+    }
+
+    _mapController!.animateCamera(
+      CameraUpdate.newLatLngZoom(LatLng(lat, lng), 15),
+    );
+
+    final lang = ref.read(appLangProvider);
+    _showCourtSheet(loc, lang);
+
+    // Clear so the same court isn't re-focused on next rebuild.
+    Future.microtask(() {
+      if (mounted) {
+        ref.read(focusedCourtIdProvider.notifier).state = null;
+      }
+    });
   }
 
   void _applySearchAndFilter() {
@@ -701,6 +745,15 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
     final showAddButton  = ref.watch(showAddCourtButtonProvider);
     final locationsAsync = ref.watch(locationsProvider);
     final allLocations   = locationsAsync.asData?.value ?? [];
+
+    // React when the Home screen (or anywhere else) asks us to focus a court.
+    ref.listen<String?>(focusedCourtIdProvider, (prev, next) {
+      if (next != null && next.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _tryFocusCourt(next);
+        });
+      }
+    });
 
     if (locationsAsync.hasValue && allLocations.isNotEmpty) {
       final newIds = allLocations.map((l) => l['_doc_id']?.toString() ?? '').toSet();
