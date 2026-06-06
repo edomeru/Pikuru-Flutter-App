@@ -13,6 +13,9 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:geolocator/geolocator.dart';
+import 'dart:ui' as ui;
+import 'dart:typed_data';
 
 // ── i18n ──────────────────────────────────────────────────────────────────────
 class _T {
@@ -52,7 +55,6 @@ class _T {
   final String noCoords;
   final String active;
   final String free;
-  // Reviews
   final String writeReview;
   final String addPhotos;
   final String tellExperience;
@@ -359,6 +361,9 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
   Set<Marker> _markers = {};
   bool _mapReady = false;
 
+  // ── User location blue dot ────────────────────────────────────────────────
+  Marker? _userLocationMarker;
+
   CourtFilter _filter = CourtFilter.defaultFilter;
 
   List<Map<String, dynamic>> _lastLocations = [];
@@ -378,6 +383,7 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(showAddCourtButtonProvider.notifier).state = true;
     });
+    _initUserLocation();
   }
 
   @override
@@ -386,6 +392,113 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
     _searchController.dispose();
     _mapController?.dispose();
     super.dispose();
+  }
+
+  // ── Blue dot: request permission and place marker ─────────────────────────
+  Future<void> _initUserLocation() async {
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      final icon = await _buildUserLocationMarker();
+      if (!mounted) return;
+
+      final marker = Marker(
+        markerId: const MarkerId('user_location'),
+        position: LatLng(position.latitude, position.longitude),
+        icon: icon,
+        anchor: const Offset(0.5, 0.5),
+        zIndex: 9999,
+        consumeTapEvents: false,
+      );
+
+      setState(() {
+        _userLocationMarker = marker;
+        _markers = {..._markers, marker};
+      });
+
+      _applySearchAndFilter();
+    } catch (_) {
+      // Permission error or location unavailable — silently skip
+    }
+  }
+
+  // ── Draw the blue dot BitmapDescriptor — LARGE & HIGHLY VISIBLE ──────────
+  Future<BitmapDescriptor> _buildUserLocationMarker() async {
+    // Increased canvas from 56 → 120 so the dot is clearly visible on the map
+    const double size = 120.0;
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+
+    final center = const Offset(size / 2, size / 2);
+
+    // ── Outer translucent pulse ring ─────────────────────────────────────
+    canvas.drawCircle(
+      center,
+      size / 2,
+      Paint()..color = const Color(0x334285F4), // slightly stronger opacity
+    );
+
+    // ── Mid pulse ring ───────────────────────────────────────────────────
+    canvas.drawCircle(
+      center,
+      size / 2 * 0.62,
+      Paint()..color = const Color(0x284285F4),
+    );
+
+    // ── White shadow/glow behind the dot for contrast on dark maps ────────
+    canvas.drawCircle(
+      center,
+      28.0,
+      Paint()
+        ..color = Colors.white.withOpacity(0.90)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+    );
+
+    // ── Solid blue dot — 3× larger than before (was 11 → now 24) ─────────
+    canvas.drawCircle(
+      center,
+      24.0,
+      Paint()..color = const Color(0xFF4285F4),
+    );
+
+    // ── White border ring ─────────────────────────────────────────────────
+    canvas.drawCircle(
+      center,
+      24.0,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 5.0,
+    );
+
+    // ── Accuracy halo ring ────────────────────────────────────────────────
+    canvas.drawCircle(
+      center,
+      30.0,
+      Paint()
+        ..color = const Color(0x664285F4)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5,
+    );
+
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(size.toInt(), size.toInt());
+    final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+    final bytes = byteData!.buffer.asUint8List();
+
+    return BitmapDescriptor.fromBytes(bytes);
   }
 
   double? _parseCoordinate(dynamic value) {
@@ -398,18 +511,21 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
 
   void _moveCameraToMarkers() {
     if (_mapController == null) return;
-    if (_markers.isEmpty) {
+    final courtMarkers = _markers
+        .where((m) => m.markerId.value != 'user_location')
+        .toSet();
+    if (courtMarkers.isEmpty) {
       _mapController!.animateCamera(
           CameraUpdate.newLatLngZoom(const LatLng(35.6762, 139.6503), 10));
       return;
     }
-    if (_markers.length == 1) {
+    if (courtMarkers.length == 1) {
       _mapController!.animateCamera(
-          CameraUpdate.newLatLngZoom(_markers.first.position, 14));
+          CameraUpdate.newLatLngZoom(courtMarkers.first.position, 14));
       return;
     }
     double? minLat, maxLat, minLng, maxLng;
-    for (final m in _markers) {
+    for (final m in courtMarkers) {
       final lat = m.position.latitude;
       final lng = m.position.longitude;
       minLat = minLat == null ? lat : (lat < minLat ? lat : minLat);
@@ -433,6 +549,7 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
 
   void _updateMarkers(List<Map<String, dynamic>> filtered) {
     final newMarkers = <Marker>{};
+
     for (int i = 0; i < filtered.length; i++) {
       final loc = filtered[i];
       final lat = _parseCoordinate(loc['loc_latitude']);
@@ -448,6 +565,11 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
         ));
       }
     }
+
+    if (_userLocationMarker != null) {
+      newMarkers.add(_userLocationMarker!);
+    }
+
     setState(() => _markers = newMarkers);
     Future.delayed(const Duration(milliseconds: 800), _moveCameraToMarkers);
   }
@@ -556,7 +678,7 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
               key: const ValueKey('google_map'),
               initialCameraPosition: _initialPosition,
               markers: _markers,
-              myLocationEnabled: true,
+              myLocationEnabled: false,
               myLocationButtonEnabled: false,
               zoomControlsEnabled: false,
               mapToolbarEnabled: false,
@@ -895,20 +1017,18 @@ class _CourtDetailSheet extends StatefulWidget {
 }
 
 class _CourtDetailSheetState extends State<_CourtDetailSheet> {
-  // ── Light mode palette ─────────────────────────────────────────────────────
   static const Color _sheetBg   = Color(0xFFF5F7F4);
-  static const Color _cardBg    = Colors.white;         // AppColors.background
-  static const Color _primary   = Color(0xFF497C38);    // AppColors.primary
+  static const Color _cardBg    = Colors.white;
+  static const Color _primary   = Color(0xFF497C38);
   static const Color _accent    = Color(0xFF6AAF52);
   static const Color _accentSoft= Color(0xFFDDEDD6);
-  static const Color _textDark  = Color(0xFF222222);    // AppColors.textDark
+  static const Color _textDark  = Color(0xFF222222);
   static const Color _textMid   = Color(0xFF444444);
-  static const Color _textLight = Color(0xFF777777);    // AppColors.textLight
+  static const Color _textLight = Color(0xFF777777);
   static const Color _border    = Color(0xFFCCDEC5);
   static const Color _errorBg   = Color(0xFFFFF0F0);
   static const Color _successBg = Color(0xFFEEF7EA);
 
-  // ── State ──────────────────────────────────────────────────────────────────
   bool _showReviewForm = false;
   bool _showPhotoForm  = false;
   String _reviewText   = '';
@@ -1229,7 +1349,6 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(28),
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          // Drag handle
           Container(
             margin: const EdgeInsets.only(top: 12, bottom: 4),
             width: 40, height: 4,
@@ -1238,7 +1357,6 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
                 borderRadius: BorderRadius.circular(2)),
           ),
 
-          // ── Hero image ────────────────────────────────────────────────────
           if (_image.isNotEmpty)
             Stack(children: [
               SizedBox(
@@ -1250,7 +1368,6 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
                       child: Icon(Icons.sports_tennis_rounded, size: 52, color: _primary.withOpacity(0.4)),
                     )),
               ),
-              // Bottom fade into sheet bg
               Positioned(
                 bottom: 0, left: 0, right: 0,
                 child: Container(
@@ -1263,7 +1380,6 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
                   ),
                 ),
               ),
-              // Active badge
               Positioned(
                 bottom: 12, left: 16,
                 child: Container(
@@ -1277,7 +1393,6 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
                           fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
                 ),
               ),
-              // Type badge
               if (_type.isNotEmpty)
                 Positioned(
                   top: 12, left: 12,
@@ -1293,7 +1408,6 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
                             fontSize: 10, fontWeight: FontWeight.w700, color: _primary)),
                   ),
                 ),
-              // Close button
               Positioned(
                 top: 12, right: 12,
                 child: GestureDetector(
@@ -1334,13 +1448,11 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
               ),
             ]),
 
-          // ── Scrollable body ───────────────────────────────────────────────
           Flexible(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
 
-                // Name
                 Text(_name,
                     style: const TextStyle(
                         fontSize: 20, fontWeight: FontWeight.w800,
@@ -1352,7 +1464,6 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
                 ],
                 const SizedBox(height: 14),
 
-                // Info card
                 Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
@@ -1375,7 +1486,6 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
                   ]),
                 ),
 
-                // Tags
                 if (_isIndoor || _isOutdoor || _courtCount > 0 ||
                     _isTruthy(_loc['loc_amenities_dedicated'])    ||
                     _isTruthy(_loc['loc_amenities_membership'])   ||
@@ -1404,7 +1514,6 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
                           fontSize: 11, color: _textLight, fontStyle: FontStyle.italic)),
                 ],
 
-                // ── Photo Gallery ─────────────────────────────────────────
                 if (_allImages.isNotEmpty) ...[
                   const SizedBox(height: 16),
                   _buildGallery(),
@@ -1412,7 +1521,6 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
 
                 const SizedBox(height: 18),
 
-                // ── Action buttons ────────────────────────────────────────
                 if (_primaryLink.isNotEmpty)
                   SizedBox(
                     width: double.infinity, height: 52,
@@ -1449,7 +1557,6 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
                   ),
                 ],
 
-                // Disclaimer
                 const SizedBox(height: 12),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -1472,7 +1579,6 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
                 Divider(color: _border, height: 1),
                 const SizedBox(height: 16),
 
-                // ── Status/error banners ──────────────────────────────────
                 if (_errorLine.isNotEmpty)
                   Container(
                     margin: const EdgeInsets.only(bottom: 12),
@@ -1503,7 +1609,6 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
                             fontSize: 12, fontWeight: FontWeight.w600)),
                   ),
 
-                // ── Write Review / Add Photos buttons ─────────────────────
                 Row(children: [
                   Expanded(
                     child: GestureDetector(
@@ -1578,19 +1683,16 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
                   ),
                 ]),
 
-                // ── Review form ───────────────────────────────────────────
                 if (_showReviewForm) ...[
                   const SizedBox(height: 14),
                   _buildReviewForm(),
                 ],
 
-                // ── Photo form ────────────────────────────────────────────
                 if (_showPhotoForm) ...[
                   const SizedBox(height: 14),
                   _buildPhotoForm(),
                 ],
 
-                // ── Reviews list ──────────────────────────────────────────
                 const SizedBox(height: 20),
                 Divider(color: _border, height: 1),
 
@@ -1623,7 +1725,6 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
     );
   }
 
-  // ── Gallery ────────────────────────────────────────────────────────────────
   Widget _buildGallery() {
     final imgs = _allImages;
     if (imgs.isEmpty) return const SizedBox.shrink();
@@ -1731,7 +1832,6 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
     ]);
   }
 
-  // ── Review form ────────────────────────────────────────────────────────────
   Widget _buildReviewForm() {
     final remaining = 85 - _reviewText.length;
     return Container(
@@ -1786,7 +1886,6 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
         ]),
         const SizedBox(height: 12),
 
-        // Photo picker
         GestureDetector(
           onTap: _pickImages,
           child: Container(
@@ -1856,7 +1955,6 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
     );
   }
 
-  // ── Photo-only form ────────────────────────────────────────────────────────
   Widget _buildPhotoForm() {
     return Container(
       padding: const EdgeInsets.all(24),
@@ -1928,7 +2026,6 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
     );
   }
 
-  // ── Review item ────────────────────────────────────────────────────────────
   Widget _buildReviewItem(Map<String, dynamic> review) {
     final userName  = (review['user_name'] ?? _t.anonymous).toString();
     final userImage = (review['user_image'] ?? '').toString();
@@ -2051,7 +2148,7 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Filter Modal (unchanged)
+// Filter Modal
 // ─────────────────────────────────────────────────────────────────────────────
 class _CourtFilterModal extends StatefulWidget {
   final CourtFilter currentFilter;
