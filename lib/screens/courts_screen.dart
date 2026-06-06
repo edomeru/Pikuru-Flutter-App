@@ -363,7 +363,6 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
 
   // ── User location blue dot ────────────────────────────────────────────────
   Marker? _userLocationMarker;
-  // Track if we've already attempted location init to avoid duplicates
   bool _locationInitDone = false;
 
   CourtFilter _filter = CourtFilter.defaultFilter;
@@ -396,13 +395,12 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
     super.dispose();
   }
 
-  // ── UPDATED: iOS-compatible location init ─────────────────────────────────
+  // ── iOS-compatible location init ──────────────────────────────────────────
   Future<void> _initUserLocation() async {
     if (_locationInitDone) return;
     _locationInitDone = true;
 
     try {
-      // Check if location services are enabled first
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
         debugPrint('[CourtsScreen] Location services disabled');
@@ -421,13 +419,9 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
         return;
       }
 
-      // iOS-specific: use LocationAccuracy.best for better simulator support
-      // and add a timeout so it doesn't hang forever
       Position? position;
 
       if (Platform.isIOS) {
-        // On iOS (including simulator), use reduced accuracy first for speed
-        // then attempt high accuracy. Add timeout to handle simulator edge cases.
         try {
           position = await Geolocator.getCurrentPosition(
             desiredAccuracy: LocationAccuracy.reduced,
@@ -437,7 +431,6 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
             onTimeout: () => throw TimeoutException('Location timeout'),
           );
         } catch (_) {
-          // Fallback: try with best accuracy
           try {
             position = await Geolocator.getCurrentPosition(
               desiredAccuracy: LocationAccuracy.best,
@@ -449,7 +442,6 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
           }
         }
       } else {
-        // Android
         position = await Geolocator.getCurrentPosition(
           desiredAccuracy: LocationAccuracy.high,
         );
@@ -467,7 +459,6 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
         anchor: const Offset(0.5, 0.5),
         zIndex: 9999,
         consumeTapEvents: false,
-        // No infoWindow so tapping does nothing
         infoWindow: InfoWindow.noText,
       );
 
@@ -486,12 +477,9 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
     }
   }
 
-  // ── UPDATED: Bigger, higher-contrast blue dot that renders well on iOS ────
   Future<BitmapDescriptor> _buildUserLocationMarker() async {
-    // Use device pixel ratio for crisp rendering on high-DPI screens (iPhone 17 Pro Max = 3x)
-    // We render at 3x and let the bitmap descriptor handle scaling
-    const double logicalSize = 80.0;  // logical pixels
-    const double scale = 3.0;         // render at 3x for retina
+    const double logicalSize = 80.0;
+    const double scale = 3.0;
     const double canvasSize = logicalSize * scale;
 
     final recorder = ui.PictureRecorder();
@@ -499,29 +487,24 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
 
     final center = Offset(canvasSize / 2, canvasSize / 2);
 
-    // ── Layer 1: Outermost pulse ring (very subtle) ───────────────────────
     canvas.drawCircle(
       center,
       canvasSize / 2 * 0.95,
       Paint()..color = const Color(0x224285F4),
     );
 
-    // ── Layer 2: Mid pulse ring ───────────────────────────────────────────
     canvas.drawCircle(
       center,
       canvasSize / 2 * 0.70,
       Paint()..color = const Color(0x334285F4),
     );
 
-    // ── Layer 3: Inner pulse ring ─────────────────────────────────────────
     canvas.drawCircle(
       center,
       canvasSize / 2 * 0.52,
       Paint()..color = const Color(0x444285F4),
     );
 
-    // ── Layer 4: White glow/shadow behind the solid dot ───────────────────
-    // This ensures visibility on both light and dark map tiles
     canvas.drawCircle(
       center,
       canvasSize / 2 * 0.30,
@@ -530,14 +513,12 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
     );
 
-    // ── Layer 5: Solid blue dot (the main dot) ────────────────────────────
     canvas.drawCircle(
       center,
       canvasSize / 2 * 0.26,
       Paint()..color = const Color(0xFF4285F4),
     );
 
-    // ── Layer 6: White border ring ────────────────────────────────────────
     canvas.drawCircle(
       center,
       canvasSize / 2 * 0.26,
@@ -547,7 +528,6 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
         ..strokeWidth = canvasSize * 0.055,
     );
 
-    // ── Layer 7: Thin accuracy halo ring ──────────────────────────────────
     canvas.drawCircle(
       center,
       canvasSize / 2 * 0.36,
@@ -562,7 +542,6 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
     final bytes = byteData!.buffer.asUint8List();
 
-    // Pass the pixel ratio so Flutter knows the logical size
     return BitmapDescriptor.fromBytes(bytes, size: Size(logicalSize, logicalSize));
   }
 
@@ -631,15 +610,12 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
       }
     }
 
-    // Always preserve the user location marker
     if (_userLocationMarker != null) {
       newMarkers.add(_userLocationMarker!);
     }
 
     setState(() => _markers = newMarkers);
 
-    // If a court is queued to be focused (e.g. from the Home screen), focus it.
-    // Otherwise fit all markers in view as usual.
     final focusId = ref.read(focusedCourtIdProvider);
     if (focusId != null && focusId.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -661,7 +637,6 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
     final lng = _parseCoordinate(loc['loc_longitude']);
     if (lat == null || lng == null) return;
 
-    // Wait briefly if the map controller isn't ready yet.
     if (_mapController == null) {
       Future.delayed(const Duration(milliseconds: 300), () {
         if (mounted) _tryFocusCourt(docId);
@@ -676,7 +651,6 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
     final lang = ref.read(appLangProvider);
     _showCourtSheet(loc, lang);
 
-    // Clear so the same court isn't re-focused on next rebuild.
     Future.microtask(() {
       if (mounted) {
         ref.read(focusedCourtIdProvider.notifier).state = null;
@@ -746,6 +720,20 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
     final locationsAsync = ref.watch(locationsProvider);
     final allLocations   = locationsAsync.asData?.value ?? [];
 
+    // ── ADDED: Listen for reset signal from Home screen's "See all" ──────────
+    // When triggered, reset filter to Tokyo default and clear search.
+    ref.listen<int>(resetCourtsFilterProvider, (prev, next) {
+      if (next != prev) {
+        setState(() {
+          _filter = CourtFilter.defaultFilter;
+          _searchController.clear();
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _applySearchAndFilter();
+        });
+      }
+    });
+
     // React when the Home screen (or anywhere else) asks us to focus a court.
     ref.listen<String?>(focusedCourtIdProvider, (prev, next) {
       if (next != null && next.isNotEmpty) {
@@ -809,12 +797,10 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
                 Future.delayed(const Duration(milliseconds: 600), () {
                   if (mounted && _markers.isNotEmpty) _moveCameraToMarkers();
                 });
-                // ADDED: Re-try location after map is ready on iOS
-                // This handles cases where the map loads after location was set
                 if (Platform.isIOS && _userLocationMarker == null) {
                   Future.delayed(const Duration(milliseconds: 500), () {
                     if (mounted && _userLocationMarker == null) {
-                      _locationInitDone = false; // allow retry
+                      _locationInitDone = false;
                       _initUserLocation();
                     }
                   });

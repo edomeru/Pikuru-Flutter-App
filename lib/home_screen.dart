@@ -479,9 +479,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               const SizedBox(height: 20),
 
               // ── PICKLEBALL COURTS ────────────────────────────────────────
+              // FIX: Pass a dedicated onSeeAll callback that clears
+              // focusedCourtIdProvider BEFORE incrementing the reset counter.
+              // This prevents the courts screen from re-focusing the last
+              // tapped court when "See all" is pressed a second time.
               _sectionHeader(
                 _t(lang, 'pickleballCourts'),
-                onSeeAll: () => widget.onNavigateToTab?.call(1),
+                onSeeAll: () {
+                  // 1. Clear any pending focused court so the focus listener
+                  //    in CourtsScreen does NOT fire after the reset.
+                  ref.read(focusedCourtIdProvider.notifier).state = null;
+                  // 2. Increment the reset counter — CourtsScreen listens to
+                  //    this and resets filter + search to Tokyo defaults.
+                  ref.read(resetCourtsFilterProvider.notifier).state++;
+                  // 3. Navigate to the courts tab.
+                  widget.onNavigateToTab?.call(1);
+                },
                 lang: lang,
               ),
               const SizedBox(height: 16),
@@ -847,7 +860,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _buildCourtsSection(WidgetRef ref, String lang) {
     final courtsAsync = ref.watch(locationsProvider);
     return courtsAsync.when(
-      data: (courts) {
+      data: (allCourts) {
+        // Mirror web app: only show Tokyo courts on the home carousel.
+        final courts = allCourts.where((d) {
+          final pref = (d['loc_prefecture_en'] ?? d['loc_prefecture'] ?? '')
+              .toString()
+              .trim()
+              .toLowerCase();
+          return pref == 'tokyo' || pref == '東京' || pref.contains('tokyo');
+        }).toList();
         if (courts.isEmpty) {
           return Center(child: Text(_t(lang, 'noCourts')));
         }

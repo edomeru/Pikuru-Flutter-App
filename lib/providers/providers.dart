@@ -237,7 +237,13 @@ FutureProvider.family<String, String>((ref, orgId) async {
 
   return '';
 });
+
 // ── Focused Court Provider ────────────────────────────────────────────────────
 // When set to a Firestore document id, the CourtsScreen will pan/zoom to that
 // court's marker and open its detail sheet, then reset this back to null.
 final focusedCourtIdProvider = StateProvider<String?>((ref) => null);
+
+// ── Reset Courts Filter Provider ──────────────────────────────────────────────
+// When incremented, CourtsScreen resets its filter to CourtFilter.defaultFilter
+// (prefecture: 'Tokyo'). Triggered by the Home screen's "See all" courts button.
+final resetCourtsFilterProvider = StateProvider<int>((ref) => 0);
