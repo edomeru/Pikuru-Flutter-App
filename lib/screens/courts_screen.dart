@@ -363,6 +363,8 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
 
   // ── User location blue dot ────────────────────────────────────────────────
   Marker? _userLocationMarker;
+  // Track if we've already attempted location init to avoid duplicates
+  bool _locationInitDone = false;
 
   CourtFilter _filter = CourtFilter.defaultFilter;
 
@@ -394,21 +396,66 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
     super.dispose();
   }
 
-  // ── Blue dot: request permission and place marker ─────────────────────────
+  // ── UPDATED: iOS-compatible location init ─────────────────────────────────
   Future<void> _initUserLocation() async {
+    if (_locationInitDone) return;
+    _locationInitDone = true;
+
     try {
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
+      // Check if location services are enabled first
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        debugPrint('[CourtsScreen] Location services disabled');
         return;
       }
 
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
+      LocationPermission permission = await Geolocator.checkPermission();
+
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        debugPrint('[CourtsScreen] Location permission denied: $permission');
+        return;
+      }
+
+      // iOS-specific: use LocationAccuracy.best for better simulator support
+      // and add a timeout so it doesn't hang forever
+      Position? position;
+
+      if (Platform.isIOS) {
+        // On iOS (including simulator), use reduced accuracy first for speed
+        // then attempt high accuracy. Add timeout to handle simulator edge cases.
+        try {
+          position = await Geolocator.getCurrentPosition(
+            desiredAccuracy: LocationAccuracy.reduced,
+            timeLimit: const Duration(seconds: 10),
+          ).timeout(
+            const Duration(seconds: 12),
+            onTimeout: () => throw TimeoutException('Location timeout'),
+          );
+        } catch (_) {
+          // Fallback: try with best accuracy
+          try {
+            position = await Geolocator.getCurrentPosition(
+              desiredAccuracy: LocationAccuracy.best,
+              timeLimit: const Duration(seconds: 15),
+            );
+          } catch (e) {
+            debugPrint('[CourtsScreen] iOS location fallback failed: $e');
+            return;
+          }
+        }
+      } else {
+        // Android
+        position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+        );
+      }
+
+      if (position == null) return;
 
       final icon = await _buildUserLocationMarker();
       if (!mounted) return;
@@ -420,6 +467,8 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
         anchor: const Offset(0.5, 0.5),
         zIndex: 9999,
         consumeTapEvents: false,
+        // No infoWindow so tapping does nothing
+        infoWindow: InfoWindow.noText,
       );
 
       setState(() {
@@ -427,78 +476,94 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
         _markers = {..._markers, marker};
       });
 
+      debugPrint('[CourtsScreen] User location set: ${position.latitude}, ${position.longitude}');
+
       _applySearchAndFilter();
-    } catch (_) {
-      // Permission error or location unavailable — silently skip
+    } on TimeoutException catch (e) {
+      debugPrint('[CourtsScreen] Location timed out: $e');
+    } catch (e) {
+      debugPrint('[CourtsScreen] Location error: $e');
     }
   }
 
-  // ── Draw the blue dot BitmapDescriptor — LARGE & HIGHLY VISIBLE ──────────
+  // ── UPDATED: Bigger, higher-contrast blue dot that renders well on iOS ────
   Future<BitmapDescriptor> _buildUserLocationMarker() async {
-    // Increased canvas from 56 → 120 so the dot is clearly visible on the map
-    const double size = 120.0;
+    // Use device pixel ratio for crisp rendering on high-DPI screens (iPhone 17 Pro Max = 3x)
+    // We render at 3x and let the bitmap descriptor handle scaling
+    const double logicalSize = 80.0;  // logical pixels
+    const double scale = 3.0;         // render at 3x for retina
+    const double canvasSize = logicalSize * scale;
 
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
 
-    final center = const Offset(size / 2, size / 2);
+    final center = Offset(canvasSize / 2, canvasSize / 2);
 
-    // ── Outer translucent pulse ring ─────────────────────────────────────
+    // ── Layer 1: Outermost pulse ring (very subtle) ───────────────────────
     canvas.drawCircle(
       center,
-      size / 2,
-      Paint()..color = const Color(0x334285F4), // slightly stronger opacity
+      canvasSize / 2 * 0.95,
+      Paint()..color = const Color(0x224285F4),
     );
 
-    // ── Mid pulse ring ───────────────────────────────────────────────────
+    // ── Layer 2: Mid pulse ring ───────────────────────────────────────────
     canvas.drawCircle(
       center,
-      size / 2 * 0.62,
-      Paint()..color = const Color(0x284285F4),
+      canvasSize / 2 * 0.70,
+      Paint()..color = const Color(0x334285F4),
     );
 
-    // ── White shadow/glow behind the dot for contrast on dark maps ────────
+    // ── Layer 3: Inner pulse ring ─────────────────────────────────────────
     canvas.drawCircle(
       center,
-      28.0,
+      canvasSize / 2 * 0.52,
+      Paint()..color = const Color(0x444285F4),
+    );
+
+    // ── Layer 4: White glow/shadow behind the solid dot ───────────────────
+    // This ensures visibility on both light and dark map tiles
+    canvas.drawCircle(
+      center,
+      canvasSize / 2 * 0.30,
       Paint()
-        ..color = Colors.white.withOpacity(0.90)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+        ..color = Colors.white.withOpacity(0.95)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
     );
 
-    // ── Solid blue dot — 3× larger than before (was 11 → now 24) ─────────
+    // ── Layer 5: Solid blue dot (the main dot) ────────────────────────────
     canvas.drawCircle(
       center,
-      24.0,
+      canvasSize / 2 * 0.26,
       Paint()..color = const Color(0xFF4285F4),
     );
 
-    // ── White border ring ─────────────────────────────────────────────────
+    // ── Layer 6: White border ring ────────────────────────────────────────
     canvas.drawCircle(
       center,
-      24.0,
+      canvasSize / 2 * 0.26,
       Paint()
         ..color = Colors.white
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 5.0,
+        ..strokeWidth = canvasSize * 0.055,
     );
 
-    // ── Accuracy halo ring ────────────────────────────────────────────────
+    // ── Layer 7: Thin accuracy halo ring ──────────────────────────────────
     canvas.drawCircle(
       center,
-      30.0,
+      canvasSize / 2 * 0.36,
       Paint()
-        ..color = const Color(0x664285F4)
+        ..color = const Color(0x884285F4)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5,
+        ..strokeWidth = canvasSize * 0.022,
     );
 
     final picture = recorder.endRecording();
-    final image = await picture.toImage(size.toInt(), size.toInt());
+    final image = await picture.toImage(canvasSize.toInt(), canvasSize.toInt());
     final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
     final bytes = byteData!.buffer.asUint8List();
 
-    return BitmapDescriptor.fromBytes(bytes);
+    // Pass the pixel ratio so Flutter knows the logical size
+    return BitmapDescriptor.fromBytes(bytes, size: Size(logicalSize, logicalSize));
   }
 
   double? _parseCoordinate(dynamic value) {
@@ -566,6 +631,7 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
       }
     }
 
+    // Always preserve the user location marker
     if (_userLocationMarker != null) {
       newMarkers.add(_userLocationMarker!);
     }
@@ -690,6 +756,16 @@ class _CourtsScreenState extends ConsumerState<CourtsScreen>
                 Future.delayed(const Duration(milliseconds: 600), () {
                   if (mounted && _markers.isNotEmpty) _moveCameraToMarkers();
                 });
+                // ADDED: Re-try location after map is ready on iOS
+                // This handles cases where the map loads after location was set
+                if (Platform.isIOS && _userLocationMarker == null) {
+                  Future.delayed(const Duration(milliseconds: 500), () {
+                    if (mounted && _userLocationMarker == null) {
+                      _locationInitDone = false; // allow retry
+                      _initUserLocation();
+                    }
+                  });
+                }
               },
             ),
           ),
