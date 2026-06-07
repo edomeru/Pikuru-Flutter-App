@@ -11,9 +11,6 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:pikuru/modal/share_event_modal.dart';
 import 'package:intl/intl.dart';
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Design tokens (light modern theme)
-// ─────────────────────────────────────────────────────────────────────────────
 const _bg        = Color(0xFFF7F8FA);
 const _surface   = Color(0xFFFFFFFF);
 const _cardBg    = Color(0xFFF4F6F8);
@@ -29,9 +26,6 @@ const _textDark  = Color(0xFF111827);
 const _textMid   = Color(0xFF4B5563);
 const _textLight = Color(0xFF9CA3AF);
 
-// ─────────────────────────────────────────────────────────────────────────────
-// i18n strings
-// ─────────────────────────────────────────────────────────────────────────────
 class _S {
   final String lang;
   const _S(this.lang);
@@ -72,7 +66,6 @@ class _S {
   String get loadingLoc      => isJa ? '読み込み中...'         : 'Loading...';
   String get map             => isJa ? 'マップ'                : 'Map';
 
-  // Tags
   String get tagPro           => isJa ? 'プロ'         : 'PRO';
   String get tagAmateur       => isJa ? 'アマチュア'    : 'AMATEUR';
   String get tagBeginner      => isJa ? '初級者'        : 'BEGINNER';
@@ -85,8 +78,6 @@ class _S {
   String get tagCollegiate    => isJa ? '大学生'        : 'COLLEGIATE';
   String get tagSeniors       => isJa ? 'シニア'        : 'SENIORS';
 
-  // ── Registration ──────────────────────────────────────────────────────────
-  // Mirrors T object in web app events/[id]/page.tsx exactly
   String get registerSection    => isJa ? '登録'                    : 'Registration';
   String get registerBtn        => isJa ? 'このイベントに登録'        : 'Register for this Event';
   String get registering        => isJa ? '登録中…'                  : 'Registering…';
@@ -108,17 +99,13 @@ class _S {
   String get regWaitlist        => isJa ? 'ウェイティングリスト待機中'  : 'On Waitlist';
   String get cancelRegTitle     => isJa ? '登録をキャンセルしますか？' : 'Cancel your registration?';
   String get cancelRegBody      => isJa ? 'このイベントから登録が削除されます。' : 'This will remove your registration from this event.';
-  // Organizer badge — mirrors web app isEventOwner block
   String get isOrganizer        => isJa ? 'あなたが主催するイベント'   : 'You are the organizer';
   String get organizerNote      => isJa ? '自分のイベントへの登録は不要です。' : 'Registration is not required for your own event.';
-  // Capacity / slots
   String get filled             => isJa ? '名参加中'                  : 'filled';
   String get full               => isJa ? '満席'                     : 'Full';
   String slotsLeft(int n)       => isJa ? '残り$n枠' : n == 1 ? '1 spot left' : '$n spots left';
-  // External registration — mirrors web app "external" registration_type
   String get goToRegistrationPage => isJa ? '登録ページへ移動'         : 'Go to Registration Page';
 
-  // Registration form labels (3-step modal)
   String get regFormTitle    => isJa ? 'イベント登録'   : 'Register for this Event';
   String get regFormSubtitle => isJa ? '以下のフォームにご記入の上、登録してください。' : 'Fill in your details to submit your registration.';
   String get stepDetails     => isJa ? '基本情報'       : 'Details';
@@ -149,7 +136,6 @@ class _S {
   String get comingSoon      => isJa ? '近日対応'        : 'Soon';
   String get stripeNote      => isJa ? 'Stripeを利用した安全なアプリ内オンライン決済が間もなく登場します。' : 'Secure on-app online payment via Stripe is coming soon.';
 
-  // Success modal
   String regSuccessTitle(bool waitlist) => waitlist
       ? (isJa ? 'ウェイティングリストに登録されました！' : 'Added to Waitlist!')
       : (isJa ? '登録申請を送信しました！' : 'Registration Request Submitted!');
@@ -181,15 +167,9 @@ class _S {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Save status
-// ─────────────────────────────────────────────────────────────────────────────
 enum _SaveStatus { none, myEvents, interested }
 enum _RegStatus  { none, pending, approved, rejected, waitlist }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Screen
-// ─────────────────────────────────────────────────────────────────────────────
 class EventDetailScreen extends ConsumerStatefulWidget {
   final Map<String, dynamic> event;
   const EventDetailScreen({super.key, required this.event});
@@ -203,7 +183,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
   _SaveStatus _saveStatus  = _SaveStatus.none;
   bool        _saveLoading = true;
 
-  // ── Registration state ────────────────────────────────────────────────────
   _RegStatus _regStatus    = _RegStatus.none;
   String?    _regDocId;
   bool       _regLoading   = false;
@@ -213,20 +192,21 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
 
   String get locId => (widget.event['event_loc_id'] ?? '').toString();
 
-  // ── Event ID: always the Firestore document ID ────────────────────────────
-  // Mirrors web app's use of the route `id` param (Firestore doc ID).
-  // Falls back through 'id' then 'event_id' for compatibility.
+  // ── FIX: also check '_id' which is used when navigating from the
+  //         OrganizerDashboard's Registered tab (the map key is '_id'
+  //         because it's built from event_registrations + events docs).
   String get eventId {
     final docId = (widget.event['_doc_id'] ?? '').toString().trim();
     if (docId.isNotEmpty) return docId;
     final id = (widget.event['id'] ?? '').toString().trim();
     if (id.isNotEmpty) return id;
+    // '_id' is the key used in _RegisteredTab when the event map is assembled
+    // from event_registrations + events Firestore documents.
+    final underscoreId = (widget.event['_id'] ?? '').toString().trim();
+    if (underscoreId.isNotEmpty) return underscoreId;
     return (widget.event['event_id'] ?? '').toString().trim();
   }
 
-  // ── Registration type helpers (mirrors web app registration_type field) ───
-  // 'pikuru'   → in-app 3-step registration form (default)
-  // 'external' → "Go to Registration Page" button → external_registration_link
   String get _registrationType =>
       (widget.event['registration_type'] ?? 'pikuru').toString().trim();
 
@@ -239,7 +219,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
     return raw.startsWith('http') ? raw : 'https://$raw';
   }
 
-  // ── Capacity helpers ──────────────────────────────────────────────────────
   int? get _eventLimit => widget.event['event_limit'] != null
       ? int.tryParse(widget.event['event_limit'].toString())
       : null;
@@ -253,18 +232,12 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
   bool get _regOpen =>
       widget.event['event_registration_open'] != false;
 
-  // ── Organizer check — mirrors web app isEventOwner ────────────────────────
-  // Compares current user's uid with event.submittedBy (the Firestore field
-  // set when the event was created). When this is true the Registration section
-  // shows "You are the organizer" instead of the register button, exactly
-  // matching the web app behaviour shown in screenshot 1.
   bool get _isEventOwner {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     final submittedBy = (widget.event['submittedBy'] ?? '').toString().trim();
     return uid != null && uid.isNotEmpty && submittedBy.isNotEmpty && submittedBy == uid;
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
@@ -273,7 +246,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
     _loadApprovedCount();
   }
 
-  // ── Approved count from event_registrations ───────────────────────────────
   Future<void> _loadApprovedCount() async {
     if (eventId.isEmpty) return;
     try {
@@ -351,8 +323,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
     }
   }
 
-  // ── Register — mirrors web app handleRegister exactly ─────────────────────
-  // Writes event_id (Firestore doc ID), user fields, status='pending'.
   Future<void> _submitRegistration({
     required String name,
     required String email,
@@ -414,7 +384,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
     }
   }
 
-  // ── Date / time helpers ───────────────────────────────────────────────────
   String _formatDate(dynamic raw) {
     DateTime? dt;
     if (raw is Timestamp)            dt = raw.toDate();
@@ -453,7 +422,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
     return null;
   }
 
-  // ── Modals ────────────────────────────────────────────────────────────────
   void _showSaveSheet() {
     showModalBottomSheet(
       context: context,
@@ -557,9 +525,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
   @override
   void dispose() { _mapController?.dispose(); super.dispose(); }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Build
-  // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     ref.watch(appLangProvider);
@@ -583,7 +548,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
       backgroundColor: _bg,
       body: CustomScrollView(
         slivers: [
-          // ── Hero AppBar ────────────────────────────────────────────────
           SliverAppBar(
             expandedHeight: 300,
             pinned: true,
@@ -664,7 +628,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
 
-                // ── Title card ───────────────────────────────────────────
                 _card(child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -672,7 +635,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                         style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800,
                             color: _textDark, height: 1.25, letterSpacing: -0.3)),
 
-                    // ── Date/Time ──
                     if (dateStr.isNotEmpty) ...[
                       const SizedBox(height: 18),
                       _sectionLabel(s.dateTime),
@@ -692,13 +654,11 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                             Text('${s.ends}: $endDateStr',
                                 style: const TextStyle(fontSize: 13, color: _textLight)),
                           ],
-                          // Only show limit & capacity for pikuru registration events
                           if (_isPikuruReg && limitStr.isNotEmpty) ...[
                             const SizedBox(height: 4),
                             Text('${s.limit}: $limitStr',
                                 style: const TextStyle(fontSize: 13, color: _textLight)),
                           ],
-                          // ── Capacity progress bar (pikuru only) ──────
                           if (_isPikuruReg && _eventLimit != null) ...[
                             const SizedBox(height: 12),
                             _CapacityBar(
@@ -716,13 +676,11 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                       ),
                     ],
 
-                    // ── Tags ──
                     const SizedBox(height: 18),
                     _buildTags(),
                   ],
                 )),
 
-                // ── Location card ────────────────────────────────────────
                 FutureBuilder<Map<String, dynamic>?>(
                   future: _fetchLocation(),
                   builder: (context, snap) {
@@ -816,7 +774,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                   },
                 ),
 
-                // ── Description ──────────────────────────────────────────
                 if (desc.isNotEmpty)
                   _card(child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -828,7 +785,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                     ],
                   )),
 
-                // ── Organizer ────────────────────────────────────────────
                 FutureBuilder<Map<String, dynamic>?>(
                   future: _fetchOrganizer(),
                   builder: (context, snap) {
@@ -864,7 +820,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                   },
                 ),
 
-                // ── Fee card ─────────────────────────────────────────────
                 _card(child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -877,7 +832,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                   ],
                 )),
 
-                // ── Save card ────────────────────────────────────────────
                 _card(child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -896,7 +850,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                   ],
                 )),
 
-                // ── Registration card ────────────────────────────────────
+                // ── Registration card ──────────────────────────────────────
                 _card(child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -906,7 +860,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                   ],
                 )),
 
-                // ── Disclaimer ───────────────────────────────────────────
                 Container(
                   margin: const EdgeInsets.only(top: 10),
                   padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
@@ -927,7 +880,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
     );
   }
 
-  // ── Save widget ───────────────────────────────────────────────────────────
   Widget _buildSaveWidget() {
     return Column(children: [
       _SaveTile(
@@ -965,20 +917,20 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
   }
 
   // ── Registration widget ───────────────────────────────────────────────────
-  // Mirrors the web app's _buildRegistrationWidget / registerEventSection block.
-  // Priority order (same as web app):
-  //   1. Organizer viewing own event → "You are the organizer" banner
-  //   2. Not logged in              → login prompt
-  //   3. External registration_type → "Go to Registration Page" button
-  //   4. Registration closed        → closed banner
-  //   5. Already registered         → status banner + cancel
-  //   6. Full + pikuru              → capacity banner + Join Waitlist
-  //   7. Normal                     → Register button
+  // Priority order mirrors the web app exactly:
+  //   1. Organizer viewing own event  → organizer banner
+  //   2. Not logged in                → login prompt
+  //   3. External registration_type   → "Go to Registration Page" button
+  //   4. Registration closed          → closed banner
+  //   5a. Approved                    → ✅ green approved banner ONLY (no cancel)
+  //   5b. Pending / Rejected          → status banner + cancel button
+  //   5c. Waitlist                    → status banner + cancel button
+  //   6. Full + pikuru                → capacity banner + Join Waitlist
+  //   7. Normal                       → Register button
   Widget _buildRegistrationWidget() {
     final uid = FirebaseAuth.instance.currentUser?.uid;
 
-    // ── 1. Organizer viewing own event ───────────────────────────────────────
-    // Mirrors web app isEventOwner check. submittedBy must equal current uid.
+    // ── 1. Organizer ─────────────────────────────────────────────────────────
     if (_isEventOwner) {
       return Container(
         padding: const EdgeInsets.all(16),
@@ -1006,15 +958,13 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
       );
     }
 
-    // ── 2. Not logged in ─────────────────────────────────────────────────────
+    // ── 2. Not logged in ──────────────────────────────────────────────────────
     if (uid == null) {
       return Text(s.loginToRegister,
           style: const TextStyle(fontSize: 13, color: _textLight));
     }
 
-    // ── 3. External registration_type ────────────────────────────────────────
-    // Mirrors web app: when registration_type == 'external' show a single
-    // "Go to Registration Page" button that opens external_registration_link.
+    // ── 3. External registration ──────────────────────────────────────────────
     if (_isExternalReg) {
       final extLink = _externalRegistrationLink;
       return GestureDetector(
@@ -1053,7 +1003,15 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
       );
     }
 
-    // ── 5. Already has a registration ─────────────────────────────────────────
+    // ── 5a. APPROVED — show prominent green banner, no cancel button ──────────
+    // Mirrors web app: approved status shows the checkmark banner with
+    // "Registration Approved / Your registration has been approved!" and
+    // NO cancel button (approved registrations cannot be self-cancelled).
+    if (_regStatus == _RegStatus.approved) {
+      return _ApprovedBanner(s: s);
+    }
+
+    // ── 5b/c. Pending / Rejected / Waitlist ───────────────────────────────────
     if (_regStatus != _RegStatus.none) {
       return Column(children: [
         _regStatusBanner(),
@@ -1137,7 +1095,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
     );
   }
 
-  // ── Tags ──────────────────────────────────────────────────────────────────
   Widget _buildTags() {
     final e = widget.event;
     final tags = <String>[];
@@ -1176,7 +1133,6 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
     ]);
   }
 
-  // ── Layout helpers ────────────────────────────────────────────────────────
   Widget _card({required Widget child}) => Container(
     width: double.infinity, color: _surface,
     margin: const EdgeInsets.only(top: 10),
@@ -1200,7 +1156,79 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Capacity bar — mirrors web app capacity progress bar
+// Approved banner — mirrors web app "Registration Approved" green card exactly
+// ═════════════════════════════════════════════════════════════════════════════
+class _ApprovedBanner extends StatelessWidget {
+  final _S s;
+  const _ApprovedBanner({required this.s});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+      decoration: BoxDecoration(
+        color: _greenLt,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _green.withOpacity(0.35), width: 1.5),
+        boxShadow: [
+          BoxShadow(
+            color: _green.withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: _green.withOpacity(0.15),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.check_circle_rounded,
+              color: _green,
+              size: 26,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  s.regApproved,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: _green,
+                    letterSpacing: -0.1,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  s.regApprovedMsg,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: _textMid,
+                    fontWeight: FontWeight.w500,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// Capacity bar
 // ═════════════════════════════════════════════════════════════════════════════
 class _CapacityBar extends StatelessWidget {
   final _S s;
@@ -1535,7 +1563,6 @@ class _SuccessDialog extends StatelessWidget {
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Registration form — 3-step bottom sheet
-// Mirrors web app RegistrationFormModal exactly (Details → Payment → Confirm)
 // ═════════════════════════════════════════════════════════════════════════════
 class _RegistrationFormSheet extends StatefulWidget {
   final _S s;
@@ -1552,7 +1579,7 @@ class _RegistrationFormSheet extends StatefulWidget {
 }
 
 class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
-  int _step = 1; // 1 = Details, 2 = Payment, 3 = Confirm
+  int _step = 1;
   late final TextEditingController _nameCtrl;
   late final TextEditingController _emailCtrl;
   final _phoneCtrl = TextEditingController();
@@ -1586,13 +1613,11 @@ class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: Column(children: [
-          // Handle
           Container(
             margin: const EdgeInsets.only(top: 12, bottom: 4),
             width: 36, height: 4,
             decoration: BoxDecoration(color: _border, borderRadius: BorderRadius.circular(2)),
           ),
-          // Header
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 8, 16, 8),
             child: Row(children: [
@@ -1619,11 +1644,8 @@ class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
               ),
             ]),
           ),
-          // Step progress
           _StepBar(step: _step, s: s),
           const Divider(height: 1, color: _border),
-
-          // Content
           Expanded(
             child: SingleChildScrollView(
               controller: controller,
@@ -1641,7 +1663,6 @@ class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
     );
   }
 
-  // ── Step 1: Details ───────────────────────────────────────────────────────
   Widget _buildStep1(_S s) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
@@ -1672,8 +1693,6 @@ class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
     ],
   );
 
-  // ── Step 2: Payment ───────────────────────────────────────────────────────
-  // Mirrors web app payment step: direct payment (active) + credit card (coming soon)
   Widget _buildStep2(_S s) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
@@ -1683,7 +1702,6 @@ class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
           style: const TextStyle(fontSize: 13, color: _textMid)),
       const SizedBox(height: 16),
 
-      // Direct payment (active)
       Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -1723,7 +1741,6 @@ class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
 
       const SizedBox(height: 10),
 
-      // Credit card (coming soon)
       Opacity(
         opacity: 0.45,
         child: Container(
@@ -1764,7 +1781,6 @@ class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
 
       const SizedBox(height: 16),
 
-      // Important note
       Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
@@ -1797,7 +1813,6 @@ class _RegistrationFormSheetState extends State<_RegistrationFormSheet> {
     ],
   );
 
-  // ── Step 3: Confirm ───────────────────────────────────────────────────────
   Widget _buildStep3(_S s) {
     final rows = <({String label, String value})>[
       (label: s.nameLbl,      value: _nameCtrl.text.trim().isEmpty  ? s.notProvided : _nameCtrl.text.trim()),
@@ -1969,7 +1984,7 @@ class _FormField extends StatelessWidget {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Form action buttons (cancel / next)
+// Form action buttons
 // ═════════════════════════════════════════════════════════════════════════════
 class _FormActions extends StatelessWidget {
   final String cancelLabel, nextLabel;
@@ -2023,7 +2038,7 @@ class _FormActions extends StatelessWidget {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// Save bottom sheet (unchanged from original)
+// Save bottom sheet
 // ═════════════════════════════════════════════════════════════════════════════
 class _SaveBottomSheet extends StatelessWidget {
   final _S s;
