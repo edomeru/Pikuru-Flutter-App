@@ -31,8 +31,6 @@ class _S {
   String get clearAll      => isJa ? 'クリア'             : 'Clear All';
   String get applyFilters  => isJa ? 'フィルターを適用'    : 'APPLY FILTERS';
 
-  // ── Default location label shown when no filter is active ──────────────
-  // Matches the web app's home page default which pre-filters to Tokyo.
   String get defaultLocation => isJa ? '東京' : 'Tokyo';
 
   String get dateSection      => isJa ? '日付'          : 'DATE';
@@ -371,12 +369,11 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     };
   }
 
-  // ── CHANGED: show 'Tokyo' / '東京' when no location filter is active ──────
   String get _locationLabel {
     if (_adv.city.isNotEmpty)       return _adv.city;
     if (_adv.prefecture.isNotEmpty) return _adv.prefecture;
     if (_adv.country.isNotEmpty)    return _adv.country;
-    return s.defaultLocation; // ← was s.allCountries
+    return s.defaultLocation;
   }
 
   bool _matchesLocation(Map<String, dynamic> event) {
@@ -1236,39 +1233,53 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     );
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // EVENTS LIST
+  // ─────────────────────────────────────────────────────────────────────────
   Widget _buildEventsList() {
     final isJa = ref.watch(appLangProvider) == kLangJa;
 
     if (_loadingEvents) {
-      return Center(
+      return const Center(
         child: CircularProgressIndicator(color: _green, strokeWidth: 2.5),
       );
     }
 
     if (_loadError != null) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text('Something went wrong.\n$_loadError',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: _textLight, fontSize: 14)),
-              const SizedBox(height: 16),
-              GestureDetector(
-                onTap: _loadEventsDirectly,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: _greenLight,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Text('Retry',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _green)),
+      return RefreshIndicator(
+        onRefresh: _loadEventsDirectly,
+        color: _green,
+        backgroundColor: Colors.white,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: SizedBox(
+            height: 400,
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Something went wrong.\n$_loadError',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: _textLight, fontSize: 14)),
+                    const SizedBox(height: 16),
+                    GestureDetector(
+                      onTap: _loadEventsDirectly,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: _greenLight,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Text('Retry',
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _green)),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
         ),
       );
@@ -1279,47 +1290,64 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     debugPrint('[EventsScreen] Filtered events: ${filtered.length} / total: ${_events.length}');
 
     if (filtered.isEmpty) {
-      return Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.event_busy_rounded, size: 56, color: _textLight),
-          const SizedBox(height: 14),
-          Text(
-            s.noEvents(_locationLabel),
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 16, color: _textLight,
-                fontWeight: FontWeight.w500),
-          ),
-          if (_adv.isActive) ...[
-            const SizedBox(height: 12),
-            GestureDetector(
-              onTap: () => setState(() => _adv = _AdvFilter()),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: _greenLight,
-                  borderRadius: BorderRadius.circular(20),
+      return RefreshIndicator(
+        onRefresh: _loadEventsDirectly,
+        color: _green,
+        backgroundColor: Colors.white,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: SizedBox(
+            height: 400,
+            child: Center(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.event_busy_rounded, size: 56, color: _textLight),
+                const SizedBox(height: 14),
+                Text(
+                  s.noEvents(_locationLabel),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 16, color: _textLight,
+                      fontWeight: FontWeight.w500),
                 ),
-                child: Text(s.clearFilters, style: const TextStyle(
-                  fontSize: 13, fontWeight: FontWeight.w600, color: _green,
-                )),
-              ),
+                if (_adv.isActive) ...[
+                  const SizedBox(height: 12),
+                  GestureDetector(
+                    onTap: () => setState(() => _adv = _AdvFilter()),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: _greenLight,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(s.clearFilters, style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w600, color: _green,
+                      )),
+                    ),
+                  ),
+                ],
+              ]),
             ),
-          ],
-        ]),
+          ),
+        ),
       );
     }
 
-    return ListView.builder(
-      controller: _scrollController,
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 110),
-      itemCount: filtered.length,
-      itemBuilder: (context, index) {
-        final event = filtered[index];
-        return EventCardFull(
-          event: event,
-          lang: isJa ? 'ja' : 'en',
-        );
-      },
+    return RefreshIndicator(
+      onRefresh: _loadEventsDirectly,
+      color: _green,
+      backgroundColor: Colors.white,
+      child: ListView.builder(
+        controller: _scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 110),
+        itemCount: filtered.length,
+        itemBuilder: (context, index) {
+          final event = filtered[index];
+          return EventCardFull(
+            event: event,
+            lang: isJa ? 'ja' : 'en',
+          );
+        },
+      ),
     );
   }
 

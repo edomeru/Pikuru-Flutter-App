@@ -131,6 +131,160 @@ class _T {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Custom pull-to-refresh widget
+// Indicator styled to match EventsScreen's RefreshIndicator:
+// white circular card background + AppColors.primary spinner
+// ─────────────────────────────────────────────────────────────────────────────
+class _PickleballRefresh extends StatefulWidget {
+  final Widget child;
+  final Future<void> Function() onRefresh;
+
+  const _PickleballRefresh({
+    required this.child,
+    required this.onRefresh,
+  });
+
+  @override
+  State<_PickleballRefresh> createState() => _PickleballRefreshState();
+}
+
+class _PickleballRefreshState extends State<_PickleballRefresh>
+    with SingleTickerProviderStateMixin {
+  static const double _triggerDistance = 80.0;
+  // spinner size inside the white circle (matches Material RefreshIndicator)
+  static const double _spinnerSize     = 22.0;
+  // white circle diameter (matches Material RefreshIndicator pill size)
+  static const double _circleSize      = 40.0;
+
+  late AnimationController _spinController;
+
+  double  _dragOffset   = 0.0;
+  bool    _isRefreshing = false;
+  bool    _triggered    = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _spinController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+  }
+
+  @override
+  void dispose() {
+    _spinController.dispose();
+    super.dispose();
+  }
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    if (_isRefreshing) return false;
+
+    if (notification is OverscrollNotification && notification.overscroll < 0) {
+      setState(() {
+        _dragOffset = (_dragOffset - notification.overscroll)
+            .clamp(0.0, _triggerDistance * 1.4);
+        _triggered = _dragOffset >= _triggerDistance;
+      });
+      if (_triggered && !_spinController.isAnimating) {
+        _spinController.repeat();
+      }
+    }
+
+    if (notification is ScrollEndNotification) {
+      if (_triggered && !_isRefreshing) {
+        _startRefresh();
+      } else {
+        _resetDrag();
+      }
+    }
+
+    return false;
+  }
+
+  Future<void> _startRefresh() async {
+    setState(() {
+      _isRefreshing = true;
+      _dragOffset   = _triggerDistance;
+    });
+    if (!_spinController.isAnimating) _spinController.repeat();
+    await widget.onRefresh();
+    if (mounted) _resetDrag();
+  }
+
+  void _resetDrag() {
+    _spinController.stop();
+    setState(() {
+      _dragOffset   = 0.0;
+      _isRefreshing = false;
+      _triggered    = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final progress         = (_dragOffset / _triggerDistance).clamp(0.0, 1.0);
+    final indicatorVisible = _dragOffset > 4.0;
+
+    return NotificationListener<ScrollNotification>(
+      onNotification: _handleScrollNotification,
+      child: Stack(
+        children: [
+          AnimatedPadding(
+            duration: _isRefreshing
+                ? const Duration(milliseconds: 200)
+                : Duration.zero,
+            padding: EdgeInsets.only(top: _dragOffset.clamp(0.0, _triggerDistance)),
+            child: widget.child,
+          ),
+          if (indicatorVisible)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SizedBox(
+                height: _dragOffset.clamp(0.0, _triggerDistance),
+                child: Center(
+                  child: Opacity(
+                    opacity: progress.clamp(0.2, 1.0),
+                    // ── White circle card — identical to RefreshIndicator's pill ──
+                    child: Container(
+                      width:  _circleSize,
+                      height: _circleSize,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.15),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Center(
+                        child: SizedBox(
+                          width:  _spinnerSize,
+                          height: _spinnerSize,
+                          child: CircularProgressIndicator(
+                            color: AppColors.primary,
+                            strokeWidth: 2.5,
+                            value: _isRefreshing || _triggered ? null : progress,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GroupsScreen
 // ─────────────────────────────────────────────────────────────────────────────
 class GroupsScreen extends ConsumerStatefulWidget {
@@ -159,6 +313,17 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  // ── Refresh: invalidate both providers so Riverpod re-fetches ────────────
+  Future<void> _refresh() async {
+    ref.invalidate(organizationsProvider);
+    ref.invalidate(locationsProvider);
+    // Wait until both providers have completed loading
+    await Future.wait([
+      ref.read(organizationsProvider.future),
+      ref.read(locationsProvider.future),
+    ]);
   }
 
   bool get _hasActiveFilter => !_filter.isDefault;
@@ -228,7 +393,6 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
   Widget build(BuildContext context) {
     super.build(context);
 
-    // ✅ Read lang from global provider — no local _lang state
     final lang          = ref.watch(appLangProvider);
     final t             = _T.of(lang);
     final showAddButton = ref.watch(showAddGroupButtonProvider);
@@ -315,7 +479,6 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
               ]),
             ),
             const SizedBox(width: 10),
-            // ✅ EN/JP pill now toggles the global provider
             Container(
               decoration: BoxDecoration(
                 color: AppColors.primary.withOpacity(0.10),
@@ -383,13 +546,28 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
     );
   }
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // GROUPS LIST — wrapped in _PickleballRefresh for all states
+  // ─────────────────────────────────────────────────────────────────────────
   Widget _buildGroupsList(
       _T t, AsyncValue<List<Map<String, dynamic>>> groupsAsync,
       List<Map<String, dynamic>> validGroups,
       Map<String, Map<String, dynamic>> locMap, Lang lang) {
     return groupsAsync.when(
       data: (_) {
-        if (validGroups.isEmpty) return _empty(Icons.group_off_rounded, t.noResults);
+        if (validGroups.isEmpty) {
+          return _PickleballRefresh(
+            onRefresh: _refresh,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: SizedBox(
+                height: 400,
+                child: _empty(Icons.group_off_rounded, t.noResults),
+              ),
+            ),
+          );
+        }
+
         final query = _searchController.text.toLowerCase().trim();
         var filtered = query.isEmpty ? validGroups : validGroups.where((g) {
           final nameEn = (g['org_name']    ?? '').toString().toLowerCase();
@@ -397,27 +575,60 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
           return nameEn.contains(query) || nameJp.contains(query);
         }).toList();
         filtered = filtered.where((g) => _filter.matches(g, locMap)).toList();
+
         if (filtered.isEmpty) {
-          return _empty(Icons.search_off_rounded,
-              query.isNotEmpty ? 'No groups match "$query".' : t.noMatch, sub: t.noMatchSub);
+          return _PickleballRefresh(
+            onRefresh: _refresh,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: SizedBox(
+                height: 400,
+                child: _empty(Icons.search_off_rounded,
+                    query.isNotEmpty ? 'No groups match "$query".' : t.noMatch,
+                    sub: t.noMatchSub),
+              ),
+            ),
+          );
         }
+
         final enriched = filtered.map((g) => {
           ...g,
           '_resolved_name':     resolveGroupName(g, lang),
           '_resolved_location': resolveLocation(g, locMap, lang),
           '_lang':              lang,
         }).toList();
-        return ListView.builder(
-          key: ValueKey(lang),
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 110),
-          itemCount: enriched.length,
-          itemBuilder: (context, i) => GroupCardList(group: enriched[i]),
+
+        return _PickleballRefresh(
+          onRefresh: _refresh,
+          child: ListView.builder(
+            key: ValueKey(lang),
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 110),
+            itemCount: enriched.length,
+            itemBuilder: (context, i) => GroupCardList(group: enriched[i]),
+          ),
         );
       },
-      loading: () => Center(child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2.5)),
-      error: (e, _) => Center(child: Padding(padding: const EdgeInsets.all(24),
-          child: Text('Something went wrong.\n$e', textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.black45, fontSize: 14)))),
+      loading: () => Center(
+        child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2.5),
+      ),
+      error: (e, _) => _PickleballRefresh(
+        onRefresh: _refresh,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: SizedBox(
+            height: 400,
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text('Something went wrong.\n$e',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.black45, fontSize: 14)),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 

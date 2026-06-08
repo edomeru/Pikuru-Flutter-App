@@ -35,6 +35,9 @@ class _D {
   static const tabSelBdr   = Color(0xFFB7DFC2);
   static const tabUnselBg  = Color(0xFFF3F4F6);
   static const tabUnselBdr = Color(0xFFE5E7EB);
+
+  // Matching events_screen refresh colors
+  static const refreshGreen = Color(0xFF3A7D44);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -147,8 +150,6 @@ String _t(String lang, String key) =>
 // ─────────────────────────────────────────────────────────────────────────────
 // Date helpers
 // ─────────────────────────────────────────────────────────────────────────────
-
-/// Format a Firestore Timestamp for card chips (compact: yyyy/MM/dd)
 String _fmtDate(dynamic ts, {bool compact = false}) {
   if (ts == null || ts is! Timestamp) return '—';
   final d = ts.toDate();
@@ -160,8 +161,6 @@ String _fmtDate(dynamic ts, {bool compact = false}) {
   return '${mo[d.month - 1]} ${d.day}, ${d.year}';
 }
 
-/// Format a registration date with full locale awareness.
-/// EN → "May 27, 2026"   JA → "2026年5月27日"
 String _fmtRegDate(dynamic ts, String lang) {
   if (ts == null || ts is! Timestamp) return '';
   final d = ts.toDate();
@@ -189,6 +188,9 @@ class _OrganizerDashboardScreenState
     with SingleTickerProviderStateMixin {
   late TabController _tabs;
 
+  // Shared refresh key — incrementing this triggers all tabs to re-init
+  int _globalRefreshKey = 0;
+
   @override
   void initState() {
     super.initState();
@@ -200,6 +202,13 @@ class _OrganizerDashboardScreenState
   void dispose() {
     _tabs.dispose();
     super.dispose();
+  }
+
+  // Refresh all 4 tabs by bumping the shared key
+  Future<void> _refreshAll() async {
+    setState(() => _globalRefreshKey++);
+    // Small delay so tabs pick up the new key and start their fetches
+    await Future.delayed(const Duration(milliseconds: 600));
   }
 
   @override
@@ -262,10 +271,10 @@ class _OrganizerDashboardScreenState
       body: TabBarView(
         controller: _tabs,
         children: [
-          _MyEventsTab(uid: uid, lang: lang),
-          _MyGroupsTab(uid: uid, lang: lang),
-          _RegisteredTab(uid: uid, lang: lang),
-          _AuditLogTab(uid: uid, lang: lang),
+          _MyEventsTab(uid: uid, lang: lang, refreshKey: _globalRefreshKey, onRefreshAll: _refreshAll),
+          _MyGroupsTab(uid: uid, lang: lang, refreshKey: _globalRefreshKey, onRefreshAll: _refreshAll),
+          _RegisteredTab(uid: uid, lang: lang, refreshKey: _globalRefreshKey, onRefreshAll: _refreshAll),
+          _AuditLogTab(uid: uid, lang: lang, refreshKey: _globalRefreshKey, onRefreshAll: _refreshAll),
         ],
       ),
     );
@@ -273,11 +282,18 @@ class _OrganizerDashboardScreenState
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// TAB 1 — MY EVENTS  (+ search bar)
+// TAB 1 — MY EVENTS
 // ═════════════════════════════════════════════════════════════════════════════
 class _MyEventsTab extends StatefulWidget {
   final String uid, lang;
-  const _MyEventsTab({required this.uid, required this.lang});
+  final int refreshKey;
+  final Future<void> Function() onRefreshAll;
+  const _MyEventsTab({
+    required this.uid,
+    required this.lang,
+    required this.refreshKey,
+    required this.onRefreshAll,
+  });
 
   @override
   State<_MyEventsTab> createState() => _MyEventsTabState();
@@ -286,9 +302,11 @@ class _MyEventsTab extends StatefulWidget {
 class _MyEventsTabState extends State<_MyEventsTab> {
   final Map<String, Map<String, int>> _metrics = {};
 
-  // ── Search ────────────────────────────────────────────────────────────────
   final TextEditingController _searchCtrl = TextEditingController();
   String _query = '';
+
+  // Key to force StreamBuilder rebuild on refresh
+  int _streamKey = 0;
 
   @override
   void initState() {
@@ -296,6 +314,18 @@ class _MyEventsTabState extends State<_MyEventsTab> {
     _searchCtrl.addListener(() {
       setState(() => _query = _searchCtrl.text.trim().toLowerCase());
     });
+  }
+
+  @override
+  void didUpdateWidget(_MyEventsTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // When the parent bumps refreshKey, force a stream rebuild
+    if (oldWidget.refreshKey != widget.refreshKey) {
+      setState(() {
+        _streamKey++;
+        _metrics.clear();
+      });
+    }
   }
 
   @override
@@ -345,7 +375,6 @@ class _MyEventsTabState extends State<_MyEventsTab> {
     }
   }
 
-  /// Returns true if the event matches the current search query.
   bool _matchesQuery(Map<String, dynamic> data) {
     if (_query.isEmpty) return true;
     final titleEn = (data['event_title']    ?? '').toString().toLowerCase();
@@ -357,6 +386,7 @@ class _MyEventsTabState extends State<_MyEventsTab> {
   Widget build(BuildContext context) {
     if (widget.uid.isEmpty) return const SizedBox.shrink();
     return StreamBuilder<QuerySnapshot>(
+      key: ValueKey(_streamKey),
       stream: FirebaseFirestore.instance
           .collection('events')
           .where('submittedBy', isEqualTo: widget.uid)
@@ -375,13 +405,12 @@ class _MyEventsTabState extends State<_MyEventsTab> {
         });
         Future.microtask(() => _loadMetrics(docs));
 
-        // ── Apply search filter ──────────────────────────────────────────
         final filtered = docs.where((d) =>
             _matchesQuery(d.data() as Map<String, dynamic>)).toList();
 
         return Column(
           children: [
-            // ── Search bar ───────────────────────────────────────────────
+            // Search bar
             Container(
               color: _D.white,
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
@@ -418,38 +447,64 @@ class _MyEventsTabState extends State<_MyEventsTab> {
                     )
                         : null,
                     border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(
-                        vertical: 11),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 11),
                   ),
                 ),
               ),
             ),
 
-            // ── List ─────────────────────────────────────────────────────
             Expanded(
               child: () {
                 if (docs.isEmpty) {
-                  return _EmptyState(
-                      icon: Icons.event_note_rounded,
-                      message: _t(widget.lang, 'noEvents'));
+                  return RefreshIndicator(
+                    onRefresh: widget.onRefreshAll,
+                    color: _D.refreshGreen,
+                    backgroundColor: Colors.white,
+                    child: SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: SizedBox(
+                        height: 400,
+                        child: _EmptyState(
+                            icon: Icons.event_note_rounded,
+                            message: _t(widget.lang, 'noEvents')),
+                      ),
+                    ),
+                  );
                 }
                 if (filtered.isEmpty) {
-                  return _EmptyState(
-                      icon: Icons.search_off_rounded,
-                      message: _t(widget.lang, 'noResults'));
+                  return RefreshIndicator(
+                    onRefresh: widget.onRefreshAll,
+                    color: _D.refreshGreen,
+                    backgroundColor: Colors.white,
+                    child: SingleChildScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      child: SizedBox(
+                        height: 400,
+                        child: _EmptyState(
+                            icon: Icons.search_off_rounded,
+                            message: _t(widget.lang, 'noResults')),
+                      ),
+                    ),
+                  );
                 }
-                return ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: filtered.length,
-                  itemBuilder: (ctx, i) {
-                    final data = filtered[i].data() as Map<String, dynamic>;
-                    return _EventCard(
-                      eventId: filtered[i].id,
-                      data:    data,
-                      lang:    widget.lang,
-                      metrics: _metrics[filtered[i].id],
-                    );
-                  },
+                return RefreshIndicator(
+                  onRefresh: widget.onRefreshAll,
+                  color: _D.refreshGreen,
+                  backgroundColor: Colors.white,
+                  child: ListView.builder(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(16),
+                    itemCount: filtered.length,
+                    itemBuilder: (ctx, i) {
+                      final data = filtered[i].data() as Map<String, dynamic>;
+                      return _EventCard(
+                        eventId: filtered[i].id,
+                        data:    data,
+                        lang:    widget.lang,
+                        metrics: _metrics[filtered[i].id],
+                      );
+                    },
+                  ),
                 );
               }(),
             ),
@@ -533,7 +588,6 @@ class _EventCard extends StatelessWidget {
         ],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // Cover image
         ClipRRect(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           child: Stack(children: [
@@ -553,8 +607,7 @@ class _EventCard extends StatelessWidget {
                 top: 12,
                 right: 12,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 5),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                       color: Colors.black.withOpacity(0.55),
                       borderRadius: BorderRadius.circular(20)),
@@ -568,7 +621,6 @@ class _EventCard extends StatelessWidget {
           ]),
         ),
 
-        // Body
         Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -600,7 +652,6 @@ class _EventCard extends StatelessWidget {
                         label: '${data['event_limit']}'),
                 ]),
 
-                // Metrics strip
                 if (metrics != null) ...[
                   const SizedBox(height: 12),
                   Container(
@@ -638,7 +689,6 @@ class _EventCard extends StatelessWidget {
 
                 const SizedBox(height: 14),
 
-                // Action buttons
                 if (isPending)
                   _ActionButton(
                       icon: Icons.edit_rounded,
@@ -703,7 +753,7 @@ class _EventCard extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Registrants Modal — shows max 5 rows, "See more" opens detail screen
+// Registrants Modal
 // ─────────────────────────────────────────────────────────────────────────────
 void _showRegistrantsModal(BuildContext context, String eventId,
     Map<String, dynamic> eventData, String lang) {
@@ -832,19 +882,16 @@ class _RegistrantsSheetState extends State<_RegistrantsSheet> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
         child: Column(children: [
-          // Drag handle
           Padding(
             padding: const EdgeInsets.only(top: 12, bottom: 4),
             child: Container(
-              width: 40,
-              height: 4,
+              width: 40, height: 4,
               decoration: BoxDecoration(
                   color: Colors.grey.shade300,
                   borderRadius: BorderRadius.circular(2)),
             ),
           ),
 
-          // Header
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 12, 16, 0),
             child: Row(children: [
@@ -871,8 +918,7 @@ class _RegistrantsSheetState extends State<_RegistrantsSheet> {
               GestureDetector(
                 onTap: () => Navigator.pop(context),
                 child: Container(
-                  width: 34,
-                  height: 34,
+                  width: 34, height: 34,
                   decoration: BoxDecoration(
                       color: _D.rowBg,
                       shape: BoxShape.circle,
@@ -886,7 +932,6 @@ class _RegistrantsSheetState extends State<_RegistrantsSheet> {
 
           const SizedBox(height: 14),
 
-          // Stat pills
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: SingleChildScrollView(
@@ -894,9 +939,7 @@ class _RegistrantsSheetState extends State<_RegistrantsSheet> {
               child: Row(children: [
                 _StatBadge(
                     '${_t('regTotal')}: $_total${_hasMore ? '+' : ''}',
-                    _D.textMuted,
-                    _D.rowBg,
-                    _D.border),
+                    _D.textMuted, _D.rowBg, _D.border),
                 const SizedBox(width: 8),
                 if (_appCnt > 0) ...[
                   _StatBadge('$_appCnt ${_t('regApproved')}',
@@ -917,34 +960,24 @@ class _RegistrantsSheetState extends State<_RegistrantsSheet> {
 
           const SizedBox(height: 12),
 
-          // Filter tabs
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(children: [
-                _FilterTab(
-                    label: _t('regAll'),
-                    value: 'all',
-                    current: _filter,
+                _FilterTab(label: _t('regAll'), value: 'all',
+                    current: _filter, onTap: (v) => setState(() => _filter = v)),
+                const SizedBox(width: 6),
+                _FilterTab(label: '${_t('regPending')} ($_pendCnt)',
+                    value: 'pending', current: _filter,
                     onTap: (v) => setState(() => _filter = v)),
                 const SizedBox(width: 6),
-                _FilterTab(
-                    label: '${_t('regPending')} ($_pendCnt)',
-                    value: 'pending',
-                    current: _filter,
+                _FilterTab(label: '${_t('regApproved')} ($_appCnt)',
+                    value: 'approved', current: _filter,
                     onTap: (v) => setState(() => _filter = v)),
                 const SizedBox(width: 6),
-                _FilterTab(
-                    label: '${_t('regApproved')} ($_appCnt)',
-                    value: 'approved',
-                    current: _filter,
-                    onTap: (v) => setState(() => _filter = v)),
-                const SizedBox(width: 6),
-                _FilterTab(
-                    label: '${_t('regRejected')} ($_rejCnt)',
-                    value: 'rejected',
-                    current: _filter,
+                _FilterTab(label: '${_t('regRejected')} ($_rejCnt)',
+                    value: 'rejected', current: _filter,
                     onTap: (v) => setState(() => _filter = v)),
               ]),
             ),
@@ -953,94 +986,72 @@ class _RegistrantsSheetState extends State<_RegistrantsSheet> {
           const SizedBox(height: 4),
           const Divider(height: 1, color: _D.border),
 
-          // List
           Expanded(
             child: _loading
-                ? Center(
-                child:
-                CircularProgressIndicator(color: _D.accent))
+                ? Center(child: CircularProgressIndicator(color: _D.accent))
                 : _filtered.isEmpty
                 ? Center(
-              child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 60,
-                      height: 60,
-                      decoration: BoxDecoration(
-                          color: _D.accentLt,
-                          shape: BoxShape.circle),
-                      child: Icon(Icons.people_outline_rounded,
-                          size: 28,
-                          color: _D.accent.withOpacity(0.5)),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(_t('noRegs'),
-                        style: const TextStyle(
-                            fontSize: 13,
-                            color: _D.textMuted,
-                            fontWeight: FontWeight.w500)),
-                  ]),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Container(
+                  width: 60, height: 60,
+                  decoration: BoxDecoration(
+                      color: _D.accentLt, shape: BoxShape.circle),
+                  child: Icon(Icons.people_outline_rounded,
+                      size: 28, color: _D.accent.withOpacity(0.5)),
+                ),
+                const SizedBox(height: 12),
+                Text(_t('noRegs'),
+                    style: const TextStyle(
+                        fontSize: 13,
+                        color: _D.textMuted,
+                        fontWeight: FontWeight.w500)),
+              ]),
             )
                 : ListView.builder(
               controller: scroll,
-              padding:
-              const EdgeInsets.fromLTRB(16, 12, 16, 24),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
               itemCount: _filtered.length +
                   (_hasMore && _filter == 'all' ? 1 : 0),
               itemBuilder: (_, i) {
-                // "See more" button
                 if (i == _filtered.length) {
                   return Padding(
                     padding: const EdgeInsets.only(top: 6),
                     child: GestureDetector(
                       onTap: () => _openFullList(context),
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            vertical: 14),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                         decoration: BoxDecoration(
                           color: _D.accentLt,
-                          borderRadius:
-                          BorderRadius.circular(14),
-                          border:
-                          Border.all(color: _D.accentBdr),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: _D.accentBdr),
                         ),
                         alignment: Alignment.center,
                         child: Row(
-                            mainAxisAlignment:
-                            MainAxisAlignment.center,
+                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
                               Icon(Icons.people_rounded,
                                   size: 15, color: _D.accent),
                               const SizedBox(width: 6),
-                              Text(
-                                _t('seeMore'),
-                                style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                    color: _D.accent),
-                              ),
+                              Text(_t('seeMore'),
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: _D.accent)),
                               const SizedBox(width: 4),
-                              Icon(
-                                  Icons
-                                      .arrow_forward_ios_rounded,
-                                  size: 12,
-                                  color: _D.accent),
+                              Icon(Icons.arrow_forward_ios_rounded,
+                                  size: 12, color: _D.accent),
                             ]),
                       ),
                     ),
                   );
                 }
-
                 final r = _filtered[i];
                 return _RegRow(
                   reg:        r,
                   lang:       widget.lang,
                   isUpdating: _updatingId == r['_id'],
-                  onApprove:  () => _updateStatus(
-                      r['_id'] as String, 'approved'),
-                  onReject:   () => _updateStatus(
-                      r['_id'] as String, 'rejected'),
+                  onApprove:  () => _updateStatus(r['_id'] as String, 'approved'),
+                  onReject:   () => _updateStatus(r['_id'] as String, 'rejected'),
                 );
               },
             ),
@@ -1052,7 +1063,7 @@ class _RegistrantsSheetState extends State<_RegistrantsSheet> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// _RegRow — single registrant row with locale-aware date
+// _RegRow
 // ─────────────────────────────────────────────────────────────────────────────
 class _RegRow extends StatelessWidget {
   final Map<String, dynamic> reg;
@@ -1076,18 +1087,14 @@ class _RegRow extends StatelessWidget {
     final name    = (reg['user_name'] ?? reg['user_id'] ?? '?').toString();
     final email   = (reg['user_email'] ?? '').toString();
     final avatar  = (reg['user_avatar'] ?? '').toString();
-
-    // ── Locale-aware registration date ───────────────────────────────────
     final dateStr = _fmtRegDate(reg['registered_at'], lang);
 
     Color sc; Color sb; String sl;
     switch (status) {
       case 'approved':
-        sc = _D.apprvClr; sb = _D.apprvBg; sl = _t('regApproved');
-        break;
+        sc = _D.apprvClr; sb = _D.apprvBg; sl = _t('regApproved'); break;
       case 'rejected':
-        sc = _D.rejClr; sb = _D.rejBg; sl = _t('regRejected');
-        break;
+        sc = _D.rejClr; sb = _D.rejBg; sl = _t('regRejected'); break;
       default:
         sc = _D.pendClr; sb = _D.pendBg; sl = _t('regPending');
     }
@@ -1101,15 +1108,12 @@ class _RegRow extends StatelessWidget {
         border: Border.all(color: _D.border),
       ),
       child: Row(children: [
-        // Avatar
         CircleAvatar(
           radius: 22,
           backgroundColor: _D.accentLt,
-          backgroundImage:
-          avatar.isNotEmpty ? NetworkImage(avatar) : null,
+          backgroundImage: avatar.isNotEmpty ? NetworkImage(avatar) : null,
           child: avatar.isEmpty
-              ? Text(
-              name.isNotEmpty ? name[0].toUpperCase() : '?',
+              ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
               style: TextStyle(
                   color: _D.accent,
                   fontWeight: FontWeight.w800,
@@ -1117,75 +1121,47 @@ class _RegRow extends StatelessWidget {
               : null,
         ),
         const SizedBox(width: 12),
-
-        // Info
         Expanded(
-          child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(name,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(name,
+                style: const TextStyle(
+                    fontSize: 14, fontWeight: FontWeight.w700, color: _D.textPri),
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+            if (email.isNotEmpty)
+              Text(email,
+                  style: const TextStyle(fontSize: 12, color: _D.textMuted),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 5),
+            Row(children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                    color: sb, borderRadius: BorderRadius.circular(20)),
+                child: Text(sl,
+                    style: TextStyle(
+                        fontSize: 10, fontWeight: FontWeight.w800, color: sc)),
+              ),
+              if (dateStr.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Text(dateStr,
                     style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: _D.textPri),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
-                if (email.isNotEmpty)
-                  Text(email,
-                      style: const TextStyle(
-                          fontSize: 12, color: _D.textMuted),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 5),
-                Row(children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                        color: sb,
-                        borderRadius: BorderRadius.circular(20)),
-                    child: Text(sl,
-                        style: TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            color: sc)),
-                  ),
-                  if (dateStr.isNotEmpty) ...[
-                    const SizedBox(width: 8),
-                    Text(dateStr,
-                        style: const TextStyle(
-                            fontSize: 11,
-                            color: _D.textDim,
-                            fontWeight: FontWeight.w500)),
-                  ],
-                ]),
-              ]),
+                        fontSize: 11, color: _D.textDim, fontWeight: FontWeight.w500)),
+              ],
+            ]),
+          ]),
         ),
-
         const SizedBox(width: 10),
-
-        // Approve / Reject buttons
         if (isUpdating)
           SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(
-                  color: _D.accent, strokeWidth: 2.5))
+              width: 22, height: 22,
+              child: CircularProgressIndicator(color: _D.accent, strokeWidth: 2.5))
         else
           Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
             if (status != 'approved')
-              _ABtn(
-                  label: _t('approve'),
-                  color: _D.apprvClr,
-                  bg: _D.apprvBg,
-                  onTap: onApprove),
+              _ABtn(label: _t('approve'), color: _D.apprvClr, bg: _D.apprvBg, onTap: onApprove),
             if (status != 'rejected') ...[
               if (status != 'approved') const SizedBox(height: 6),
-              _ABtn(
-                  label: _t('reject'),
-                  color: _D.rejClr,
-                  bg: _D.rejBg,
-                  onTap: onReject),
+              _ABtn(label: _t('reject'), color: _D.rejClr, bg: _D.rejBg, onTap: onReject),
             ],
           ]),
       ]),
@@ -1194,7 +1170,7 @@ class _RegRow extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Edit dialog (pending events only)
+// Edit dialog
 // ─────────────────────────────────────────────────────────────────────────────
 void _showEditDialog(BuildContext context, String eventId,
     Map<String, dynamic> data, String lang) {
@@ -1212,12 +1188,10 @@ void _showEditDialog(BuildContext context, String eventId,
     backgroundColor: Colors.transparent,
     builder: (_) => StatefulBuilder(builder: (ctx, setS) {
       return Container(
-        padding:
-        EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
         decoration: const BoxDecoration(
             color: Colors.white,
-            borderRadius:
-            BorderRadius.vertical(top: Radius.circular(28))),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(24, 20, 24, 32),
           child: Column(
@@ -1226,8 +1200,7 @@ void _showEditDialog(BuildContext context, String eventId,
               children: [
                 Center(
                     child: Container(
-                        width: 40,
-                        height: 4,
+                        width: 40, height: 4,
                         decoration: BoxDecoration(
                             color: Colors.grey.shade300,
                             borderRadius: BorderRadius.circular(2)))),
@@ -1267,11 +1240,9 @@ void _showEditDialog(BuildContext context, String eventId,
                             .collection('events')
                             .doc(eventId)
                             .update({
-                          'event_title':
-                          titleCtrl.text.trim(),
-                          'event_description_en':
-                          descCtrl.text.trim(),
-                          'event_fee': feeCtrl.text.trim(),
+                          'event_title':          titleCtrl.text.trim(),
+                          'event_description_en': descCtrl.text.trim(),
+                          'event_fee':            feeCtrl.text.trim(),
                         });
                         if (ctx.mounted) Navigator.pop(ctx);
                       } catch (_) {
@@ -1296,11 +1267,18 @@ void _showEditDialog(BuildContext context, String eventId,
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// TAB 2 — MY GROUPS  (cursor-based pagination, 10 per page + search)
+// TAB 2 — MY GROUPS
 // ═════════════════════════════════════════════════════════════════════════════
 class _MyGroupsTab extends StatefulWidget {
   final String uid, lang;
-  const _MyGroupsTab({required this.uid, required this.lang});
+  final int refreshKey;
+  final Future<void> Function() onRefreshAll;
+  const _MyGroupsTab({
+    required this.uid,
+    required this.lang,
+    required this.refreshKey,
+    required this.onRefreshAll,
+  });
 
   @override
   State<_MyGroupsTab> createState() => _MyGroupsTabState();
@@ -1309,14 +1287,13 @@ class _MyGroupsTab extends StatefulWidget {
 class _MyGroupsTabState extends State<_MyGroupsTab> {
   static const int _pageSize = 10;
 
-  final List<Map<String, dynamic>> _groups = [];
+  List<Map<String, dynamic>> _groups = [];
   DocumentSnapshot? _lastDoc;
 
   bool _loading  = false;
   bool _hasMore  = true;
   bool _initDone = false;
 
-  // ── Search ────────────────────────────────────────────────────────────────
   final TextEditingController _searchCtrl = TextEditingController();
   String _query = '';
 
@@ -1330,22 +1307,38 @@ class _MyGroupsTabState extends State<_MyGroupsTab> {
   }
 
   @override
+  void didUpdateWidget(_MyGroupsTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshKey != widget.refreshKey) {
+      _resetAndFetch();
+    }
+  }
+
+  @override
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
   }
 
-  /// Returns true if the group matches the current search query.
+  Future<void> _resetAndFetch() async {
+    setState(() {
+      _groups   = [];
+      _lastDoc  = null;
+      _hasMore  = true;
+      _initDone = false;
+      _loading  = false;
+    });
+    await _fetchNextPage();
+  }
+
   bool _matchesQuery(Map<String, dynamic> data) {
     if (_query.isEmpty) return true;
     final nameEn = (data['org_name']    ?? '').toString().toLowerCase();
     final nameJp = (data['org_name_jp'] ?? '').toString().toLowerCase();
     final descEn = (data['org_description']    ?? '').toString().toLowerCase();
     final descJp = (data['org_description_jp'] ?? '').toString().toLowerCase();
-    return nameEn.contains(_query) ||
-        nameJp.contains(_query) ||
-        descEn.contains(_query) ||
-        descJp.contains(_query);
+    return nameEn.contains(_query) || nameJp.contains(_query) ||
+        descEn.contains(_query) || descJp.contains(_query);
   }
 
   Future<void> _fetchNextPage() async {
@@ -1358,9 +1351,7 @@ class _MyGroupsTabState extends State<_MyGroupsTab> {
           .where('submittedBy', isEqualTo: widget.uid)
           .limit(_pageSize);
 
-      if (_lastDoc != null) {
-        query = query.startAfterDocument(_lastDoc!);
-      }
+      if (_lastDoc != null) query = query.startAfterDocument(_lastDoc!);
 
       final snap = await query.get();
 
@@ -1402,92 +1393,108 @@ class _MyGroupsTabState extends State<_MyGroupsTab> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    // ── Apply search filter ────────────────────────────────────────────────
     final filtered = _groups.where(_matchesQuery).toList();
+    final showLoadMore = _hasMore || _loading;
+    final itemCount = filtered.length + (showLoadMore && _query.isEmpty ? 1 : 0);
 
     if (_initDone && _groups.isEmpty) {
       return Column(
         children: [
           _buildSearchBar(),
           Expanded(
-            child: _EmptyState(
-              icon:    Icons.group_rounded,
-              message: _t(widget.lang, 'noGroups'),
+            child: RefreshIndicator(
+              onRefresh: widget.onRefreshAll,
+              color: _D.refreshGreen,
+              backgroundColor: Colors.white,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: SizedBox(
+                  height: 400,
+                  child: _EmptyState(
+                      icon: Icons.group_rounded,
+                      message: _t(widget.lang, 'noGroups')),
+                ),
+              ),
             ),
           ),
         ],
       );
     }
 
-    final showLoadMore = _hasMore || _loading;
-    final itemCount = filtered.length + (showLoadMore && _query.isEmpty ? 1 : 0);
-
     return Column(
       children: [
-        // ── Search bar ─────────────────────────────────────────────────────
         _buildSearchBar(),
-
-        // ── List ───────────────────────────────────────────────────────────
         Expanded(
           child: () {
             if (filtered.isEmpty) {
-              return _EmptyState(
-                icon:    Icons.search_off_rounded,
-                message: _t(widget.lang, 'noGroupResults'),
+              return RefreshIndicator(
+                onRefresh: widget.onRefreshAll,
+                color: _D.refreshGreen,
+                backgroundColor: Colors.white,
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  child: SizedBox(
+                    height: 400,
+                    child: _EmptyState(
+                        icon: Icons.search_off_rounded,
+                        message: _t(widget.lang, 'noGroupResults')),
+                  ),
+                ),
               );
             }
-            return ListView.builder(
-              padding:   const EdgeInsets.all(16),
-              itemCount: itemCount,
-              itemBuilder: (_, i) {
-                // ── Footer ────────────────────────────────────────────────
-                if (i == filtered.length) {
-                  if (_loading) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 20),
-                      child: Center(child: CircularProgressIndicator()),
-                    );
-                  }
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: GestureDetector(
-                      onTap: _fetchNextPage,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        decoration: BoxDecoration(
-                          color:        _D.accentLt,
-                          borderRadius: BorderRadius.circular(14),
-                          border:       Border.all(color: _D.accentBdr),
-                        ),
-                        alignment: Alignment.center,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.expand_more_rounded, size: 18, color: _D.accent),
-                            const SizedBox(width: 6),
-                            Text(
-                              _t(widget.lang, 'loadMore'),
-                              style: TextStyle(
-                                fontSize:   13,
-                                fontWeight: FontWeight.w700,
-                                color:      _D.accent,
-                              ),
-                            ),
-                          ],
+            return RefreshIndicator(
+              onRefresh: widget.onRefreshAll,
+              color: _D.refreshGreen,
+              backgroundColor: Colors.white,
+              child: ListView.builder(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16),
+                itemCount: itemCount,
+                itemBuilder: (_, i) {
+                  if (i == filtered.length) {
+                    if (_loading) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 20),
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: GestureDetector(
+                        onTap: _fetchNextPage,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          decoration: BoxDecoration(
+                            color: _D.accentLt,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: _D.accentBdr),
+                          ),
+                          alignment: Alignment.center,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.expand_more_rounded, size: 18, color: _D.accent),
+                              const SizedBox(width: 6),
+                              Text(_t(widget.lang, 'loadMore'),
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: _D.accent)),
+                            ],
+                          ),
                         ),
                       ),
-                    ),
+                    );
+                  }
+                  final g = filtered[i];
+                  return _GroupCard(
+                    groupId:   g['_docId'] as String,
+                    data:      g,
+                    lang:      widget.lang,
+                    onPatched: (patch) => _patchGroup(g['_docId'] as String, patch),
                   );
-                }
-
-                final g = filtered[i];
-                return _GroupCard(
-                  groupId:    g['_docId'] as String,
-                  data:       g,
-                  lang:       widget.lang,
-                  onPatched:  (patch) => _patchGroup(g['_docId'] as String, patch),
-                );
-              },
+                },
+              ),
             );
           }(),
         ),
@@ -1507,28 +1514,15 @@ class _MyGroupsTabState extends State<_MyGroupsTab> {
       ),
       child: TextField(
         controller: _searchCtrl,
-        style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: _D.textPri),
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: _D.textPri),
         decoration: InputDecoration(
           hintText: _t(widget.lang, 'searchGroups'),
-          hintStyle: const TextStyle(
-              fontSize: 14,
-              color: _D.textDim,
-              fontWeight: FontWeight.w400),
-          prefixIcon: const Icon(
-              Icons.search_rounded,
-              size: 20,
-              color: _D.textMuted),
+          hintStyle: const TextStyle(fontSize: 14, color: _D.textDim, fontWeight: FontWeight.w400),
+          prefixIcon: const Icon(Icons.search_rounded, size: 20, color: _D.textMuted),
           suffixIcon: _query.isNotEmpty
               ? GestureDetector(
-            onTap: () => _searchCtrl.clear(),
-            child: const Icon(
-                Icons.close_rounded,
-                size: 18,
-                color: _D.textMuted),
-          )
+              onTap: () => _searchCtrl.clear(),
+              child: const Icon(Icons.close_rounded, size: 18, color: _D.textMuted))
               : null,
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(vertical: 11),
@@ -1539,7 +1533,7 @@ class _MyGroupsTabState extends State<_MyGroupsTab> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Group Card — stateless visually, but toggles patch the parent cache
+// Group Card
 // ─────────────────────────────────────────────────────────────────────────────
 class _GroupCard extends StatelessWidget {
   final String groupId, lang;
@@ -1587,161 +1581,133 @@ class _GroupCard extends StatelessWidget {
         color: _D.white,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
-          BoxShadow(
-            color:      Colors.black.withOpacity(0.06),
-            blurRadius: 16,
-            offset:     const Offset(0, 4),
-          ),
+          BoxShadow(color: Colors.black.withOpacity(0.06),
+              blurRadius: 16, offset: const Offset(0, 4)),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-
-          // ── Cover image with status badges ───────────────────────────
-          ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-            child: Stack(children: [
-              imgUrl.isNotEmpty
-                  ? Image.network(imgUrl,
-                  height: 130,
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _grpPlaceholder())
-                  : _grpPlaceholder(),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          child: Stack(children: [
+            imgUrl.isNotEmpty
+                ? Image.network(imgUrl,
+                height: 130, width: double.infinity, fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _grpPlaceholder())
+                : _grpPlaceholder(),
+            Positioned(top: 12, left: 12,
+                child: _Badge(label: sl, icon: si, color: sc, bg: sb)),
+            if (isApproved)
               Positioned(
-                top:  12,
-                left: 12,
-                child: _Badge(label: sl, icon: si, color: sc, bg: sb),
-              ),
-              if (isApproved)
-                Positioned(
-                  top:   12,
-                  right: 12,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      _Badge(
-                        label: isActive ? _t(lang, 'active') : _t(lang, 'inactive'),
-                        icon:  isActive ? Icons.check_rounded : Icons.close_rounded,
-                        color: isActive ? _D.apprvClr : _D.rejClr,
-                        bg:    isActive ? _D.apprvBg  : _D.rejBg,
-                      ),
-                      const SizedBox(height: 4),
-                      _Badge(
-                        label: isPublic ? _t(lang, 'public') : _t(lang, 'private'),
-                        icon:  isPublic ? Icons.public_rounded : Icons.lock_rounded,
-                        color: const Color(0xFF1565C0),
-                        bg:    const Color(0xFFE3F2FD),
-                      ),
-                    ],
+                top: 12, right: 12,
+                child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                  _Badge(
+                    label: isActive ? _t(lang, 'active') : _t(lang, 'inactive'),
+                    icon:  isActive ? Icons.check_rounded : Icons.close_rounded,
+                    color: isActive ? _D.apprvClr : _D.rejClr,
+                    bg:    isActive ? _D.apprvBg  : _D.rejBg,
                   ),
-                ),
-            ]),
-          ),
-
-          // ── Body ─────────────────────────────────────────────────────
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(name,
-                    style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.w800),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
-                if (desc.isNotEmpty) ...[
                   const SizedBox(height: 4),
-                  Text(desc,
-                      style: TextStyle(
-                          fontSize: 13,
-                          color:    Colors.grey.shade600,
-                          height:   1.4),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis),
-                ],
+                  _Badge(
+                    label: isPublic ? _t(lang, 'public') : _t(lang, 'private'),
+                    icon:  isPublic ? Icons.public_rounded : Icons.lock_rounded,
+                    color: const Color(0xFF1565C0),
+                    bg:    const Color(0xFFE3F2FD),
+                  ),
+                ]),
+              ),
+          ]),
+        ),
 
-                const SizedBox(height: 14),
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(name,
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+            if (desc.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(desc,
+                  style: TextStyle(fontSize: 13, color: Colors.grey.shade600, height: 1.4),
+                  maxLines: 2, overflow: TextOverflow.ellipsis),
+            ],
 
-                // Edit Settings — always visible
-                _ActionButton(
-                  icon:  Icons.edit_rounded,
-                  label: lang == 'ja' ? 'グループ設定を編集' : 'Edit Settings',
-                  color: AppColors.primary,
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => OrganizerGroupSettingsScreen(
-                        groupId:     groupId,
-                        initialData: data,
-                      ),
-                    ),
+            const SizedBox(height: 14),
+
+            _ActionButton(
+              icon:  Icons.edit_rounded,
+              label: lang == 'ja' ? 'グループ設定を編集' : 'Edit Settings',
+              color: AppColors.primary,
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => OrganizerGroupSettingsScreen(
+                      groupId: groupId, initialData: data),
+                ),
+              ),
+            ),
+
+            if (isApproved) ...[
+              const SizedBox(height: 8),
+              Row(children: [
+                Expanded(
+                  child: _OutlineBtn(
+                    label: isActive
+                        ? (lang == 'ja' ? '非アクティブにする' : 'Deactivate')
+                        : (lang == 'ja' ? 'アクティブにする'   : 'Activate'),
+                    color: isActive ? _D.rejClr : _D.apprvClr,
+                    onTap: () async {
+                      final newVal = !isActive;
+                      await FirebaseFirestore.instance
+                          .collection('organizations').doc(groupId)
+                          .update({'org_active': newVal});
+                      onPatched({'org_active': newVal});
+                    },
                   ),
                 ),
-
-                // Deactivate / Make Private — approved only
-                if (isApproved) ...[
-                  const SizedBox(height: 8),
-                  Row(children: [
-                    Expanded(
-                      child: _OutlineBtn(
-                        label: isActive
-                            ? (lang == 'ja' ? '非アクティブにする' : 'Deactivate')
-                            : (lang == 'ja' ? 'アクティブにする'   : 'Activate'),
-                        color: isActive ? _D.rejClr : _D.apprvClr,
-                        onTap: () async {
-                          final newVal = !isActive;
-                          await FirebaseFirestore.instance
-                              .collection('organizations')
-                              .doc(groupId)
-                              .update({'org_active': newVal});
-                          onPatched({'org_active': newVal});
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _OutlineBtn(
-                        label: isPublic
-                            ? (lang == 'ja' ? '非公開にする' : 'Make Private')
-                            : (lang == 'ja' ? '公開する'    : 'Make Public'),
-                        color: const Color(0xFF1565C0),
-                        onTap: () async {
-                          final newVal = !isPublic;
-                          await FirebaseFirestore.instance
-                              .collection('organizations')
-                              .doc(groupId)
-                              .update({'org_public': newVal});
-                          onPatched({'org_public': newVal});
-                        },
-                      ),
-                    ),
-                  ]),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _OutlineBtn(
+                    label: isPublic
+                        ? (lang == 'ja' ? '非公開にする' : 'Make Private')
+                        : (lang == 'ja' ? '公開する'    : 'Make Public'),
+                    color: const Color(0xFF1565C0),
+                    onTap: () async {
+                      final newVal = !isPublic;
+                      await FirebaseFirestore.instance
+                          .collection('organizations').doc(groupId)
+                          .update({'org_public': newVal});
+                      onPatched({'org_public': newVal});
+                    },
+                  ),
+                ),
+              ]),
+            ],
+          ]),
+        ),
+      ]),
     );
   }
 
   Widget _grpPlaceholder() => Container(
-    height: 130,
-    width:  double.infinity,
-    color:  Colors.grey.shade100,
-    child:  Icon(Icons.group_rounded,
-        size: 48, color: Colors.grey.shade300),
+    height: 130, width: double.infinity,
+    color: Colors.grey.shade100,
+    child: Icon(Icons.group_rounded, size: 48, color: Colors.grey.shade300),
   );
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// TAB 3 — REGISTERED EVENTS  (cursor-based pagination, 10 per page + search)
+// TAB 3 — REGISTERED EVENTS
 // ═════════════════════════════════════════════════════════════════════════════
 class _RegisteredTab extends StatefulWidget {
   final String uid, lang;
-  const _RegisteredTab({required this.uid, required this.lang});
+  final int refreshKey;
+  final Future<void> Function() onRefreshAll;
+  const _RegisteredTab({
+    required this.uid,
+    required this.lang,
+    required this.refreshKey,
+    required this.onRefreshAll,
+  });
 
   @override
   State<_RegisteredTab> createState() => _RegisteredTabState();
@@ -1750,14 +1716,13 @@ class _RegisteredTab extends StatefulWidget {
 class _RegisteredTabState extends State<_RegisteredTab> {
   static const int _pageSize = 10;
 
-  final List<Map<String, dynamic>> _events = [];
+  List<Map<String, dynamic>> _events = [];
   DocumentSnapshot? _lastRegDoc;
 
-  bool _loading    = false;
-  bool _hasMore    = true;
-  bool _initDone   = false;
+  bool _loading  = false;
+  bool _hasMore  = true;
+  bool _initDone = false;
 
-  // ── Search ────────────────────────────────────────────────────────────────
   final TextEditingController _searchCtrl = TextEditingController();
   String _query = '';
 
@@ -1771,12 +1736,30 @@ class _RegisteredTabState extends State<_RegisteredTab> {
   }
 
   @override
+  void didUpdateWidget(_RegisteredTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshKey != widget.refreshKey) {
+      _resetAndFetch();
+    }
+  }
+
+  @override
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
   }
 
-  /// Returns true if the registered event matches the current search query.
+  Future<void> _resetAndFetch() async {
+    setState(() {
+      _events     = [];
+      _lastRegDoc = null;
+      _hasMore    = true;
+      _initDone   = false;
+      _loading    = false;
+    });
+    await _fetchNextPage();
+  }
+
   bool _matchesQuery(Map<String, dynamic> ev) {
     if (_query.isEmpty) return true;
     final titleEn = (ev['event_title']    ?? '').toString().toLowerCase();
@@ -1794,18 +1777,12 @@ class _RegisteredTabState extends State<_RegisteredTab> {
           .where('user_id', isEqualTo: widget.uid)
           .limit(_pageSize);
 
-      if (_lastRegDoc != null) {
-        query = query.startAfterDocument(_lastRegDoc!);
-      }
+      if (_lastRegDoc != null) query = query.startAfterDocument(_lastRegDoc!);
 
       final regSnap = await query.get();
 
-      if (regSnap.docs.length < _pageSize) {
-        _hasMore = false;
-      }
-      if (regSnap.docs.isNotEmpty) {
-        _lastRegDoc = regSnap.docs.last;
-      }
+      if (regSnap.docs.length < _pageSize) _hasMore = false;
+      if (regSnap.docs.isNotEmpty) _lastRegDoc = regSnap.docs.last;
 
       final resolved = await Future.wait(
         regSnap.docs.map((regDoc) async {
@@ -1814,9 +1791,7 @@ class _RegisteredTabState extends State<_RegisteredTab> {
           if (evId.isEmpty) return null;
           try {
             final evSnap = await FirebaseFirestore.instance
-                .collection('events')
-                .doc(evId)
-                .get();
+                .collection('events').doc(evId).get();
             if (!evSnap.exists) return null;
             return <String, dynamic>{
               ...evSnap.data()!,
@@ -1825,9 +1800,7 @@ class _RegisteredTabState extends State<_RegisteredTab> {
               '_regDocId':     regDoc.id,
               '_registeredAt': rd['registered_at'],
             };
-          } catch (_) {
-            return null;
-          }
+          } catch (_) { return null; }
         }),
       );
 
@@ -1857,124 +1830,132 @@ class _RegisteredTabState extends State<_RegisteredTab> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    // ── Apply search filter ────────────────────────────────────────────────
-    final filtered = _events.where(_matchesQuery).toList();
+    final filtered     = _events.where(_matchesQuery).toList();
+    final showLoadMore = _hasMore || _loading;
+    final itemCount    = filtered.length + (showLoadMore && _query.isEmpty ? 1 : 0);
 
     if (_initDone && _events.isEmpty) {
       return Column(
         children: [
           _buildSearchBar(),
           Expanded(
-            child: _EmptyState(
-              icon:    Icons.event_available_rounded,
-              message: _t(widget.lang, 'noRegistered'),
+            child: RefreshIndicator(
+              onRefresh: widget.onRefreshAll,
+              color: _D.refreshGreen,
+              backgroundColor: Colors.white,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: SizedBox(
+                  height: 400,
+                  child: _EmptyState(
+                      icon: Icons.event_available_rounded,
+                      message: _t(widget.lang, 'noRegistered')),
+                ),
+              ),
             ),
           ),
         ],
       );
     }
 
-    final showLoadMore = _hasMore || _loading;
-    final itemCount = filtered.length + (showLoadMore && _query.isEmpty ? 1 : 0);
-
     return Column(
       children: [
-        // ── Search bar ─────────────────────────────────────────────────────
         _buildSearchBar(),
-
-        // ── List ───────────────────────────────────────────────────────────
         Expanded(
           child: () {
             if (filtered.isEmpty) {
-              return _EmptyState(
-                icon:    Icons.search_off_rounded,
-                message: _t(widget.lang, 'noRegisteredResults'),
+              return RefreshIndicator(
+                onRefresh: widget.onRefreshAll,
+                color: _D.refreshGreen,
+                backgroundColor: Colors.white,
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  child: SizedBox(
+                    height: 400,
+                    child: _EmptyState(
+                        icon: Icons.search_off_rounded,
+                        message: _t(widget.lang, 'noRegisteredResults')),
+                  ),
+                ),
               );
             }
-            return ListView.builder(
-              padding:   const EdgeInsets.all(16),
-              itemCount: itemCount,
-              itemBuilder: (_, i) {
-                // ── Footer ────────────────────────────────────────────────
-                if (i == filtered.length) {
-                  if (_loading) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 20),
-                      child: Center(child: CircularProgressIndicator()),
+            return RefreshIndicator(
+              onRefresh: widget.onRefreshAll,
+              color: _D.refreshGreen,
+              backgroundColor: Colors.white,
+              child: ListView.builder(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16),
+                itemCount: itemCount,
+                itemBuilder: (_, i) {
+                  if (i == filtered.length) {
+                    if (_loading) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 20),
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: GestureDetector(
+                        onTap: _fetchNextPage,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          decoration: BoxDecoration(
+                            color: _D.accentLt,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: _D.accentBdr),
+                          ),
+                          alignment: Alignment.center,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.expand_more_rounded, size: 18, color: _D.accent),
+                              const SizedBox(width: 6),
+                              Text(_t(widget.lang, 'loadMore'),
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: _D.accent)),
+                            ],
+                          ),
+                        ),
+                      ),
                     );
                   }
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: GestureDetector(
-                      onTap: _fetchNextPage,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        decoration: BoxDecoration(
-                          color:        _D.accentLt,
-                          borderRadius: BorderRadius.circular(14),
-                          border:       Border.all(color: _D.accentBdr),
-                        ),
-                        alignment: Alignment.center,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.expand_more_rounded,
-                                size: 18, color: _D.accent),
-                            const SizedBox(width: 6),
-                            Text(
-                              _t(widget.lang, 'loadMore'),
-                              style: TextStyle(
-                                fontSize:   13,
-                                fontWeight: FontWeight.w700,
-                                color:      _D.accent,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+
+                  final ev     = filtered[i];
+                  final status = (ev['_regStatus'] ?? 'pending').toString();
+                  final title  = widget.lang == 'ja'
+                      ? (ev['event_title_jp'] ?? ev['event_title'] ?? 'Untitled').toString()
+                      : (ev['event_title'] ?? 'Untitled').toString();
+                  final imgUrl = (ev['event_pic'] ?? '').toString();
+                  final date   = _fmtDate(ev['event_date'], compact: true);
+
+                  Color sc; String sl; IconData si;
+                  if (status == 'approved') {
+                    sc = _D.apprvClr; sl = _t(widget.lang, 'regApproved'); si = Icons.check_circle_rounded;
+                  } else if (status == 'rejected') {
+                    sc = _D.rejClr;   sl = _t(widget.lang, 'regRejected'); si = Icons.cancel_rounded;
+                  } else {
+                    sc = _D.pendClr;  sl = _t(widget.lang, 'regPending');  si = Icons.schedule_rounded;
+                  }
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 14),
+                    decoration: BoxDecoration(
+                      color: _D.white,
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: [
+                        BoxShadow(color: Colors.black.withOpacity(0.05),
+                            blurRadius: 14, offset: const Offset(0, 3)),
+                      ],
                     ),
-                  );
-                }
-
-                // ── Event card ─────────────────────────────────────────────
-                final ev     = filtered[i];
-                final status = (ev['_regStatus'] ?? 'pending').toString();
-                final title  = widget.lang == 'ja'
-                    ? (ev['event_title_jp'] ?? ev['event_title'] ?? 'Untitled').toString()
-                    : (ev['event_title'] ?? 'Untitled').toString();
-                final imgUrl = (ev['event_pic'] ?? '').toString();
-                final date   = _fmtDate(ev['event_date'], compact: true);
-
-                Color sc; String sl; IconData si;
-                if (status == 'approved') {
-                  sc = _D.apprvClr; sl = _t(widget.lang, 'regApproved'); si = Icons.check_circle_rounded;
-                } else if (status == 'rejected') {
-                  sc = _D.rejClr;   sl = _t(widget.lang, 'regRejected'); si = Icons.cancel_rounded;
-                } else {
-                  sc = _D.pendClr;  sl = _t(widget.lang, 'regPending');  si = Icons.schedule_rounded;
-                }
-
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 14),
-                  decoration: BoxDecoration(
-                    color:        _D.white,
-                    borderRadius: BorderRadius.circular(18),
-                    boxShadow: [
-                      BoxShadow(
-                        color:      Colors.black.withOpacity(0.05),
-                        blurRadius: 14,
-                        offset:     const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                       Row(children: [
                         ClipRRect(
                           borderRadius: const BorderRadius.only(
-                            topLeft: Radius.circular(18),
-                          ),
+                              topLeft: Radius.circular(18)),
                           child: imgUrl.isNotEmpty
                               ? Image.network(imgUrl,
                               width: 100, height: 90, fit: BoxFit.cover,
@@ -1986,47 +1967,43 @@ class _RegisteredTabState extends State<_RegisteredTab> {
                           child: Padding(
                             padding: const EdgeInsets.symmetric(vertical: 12),
                             child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(title,
-                                    style: const TextStyle(
-                                        fontSize: 14, fontWeight: FontWeight.w700),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis),
-                                const SizedBox(height: 5),
-                                Row(children: [
-                                  Icon(Icons.calendar_today_rounded,
-                                      size: 12, color: Colors.grey.shade400),
-                                  const SizedBox(width: 4),
-                                  Text(date,
-                                      style: TextStyle(
-                                          fontSize: 12, color: Colors.grey.shade500)),
-                                ]),
-                                const SizedBox(height: 6),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color:        sc.withOpacity(0.1),
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                    Icon(si, size: 11, color: sc),
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(title,
+                                      style: const TextStyle(
+                                          fontSize: 14, fontWeight: FontWeight.w700),
+                                      maxLines: 2, overflow: TextOverflow.ellipsis),
+                                  const SizedBox(height: 5),
+                                  Row(children: [
+                                    Icon(Icons.calendar_today_rounded,
+                                        size: 12, color: Colors.grey.shade400),
                                     const SizedBox(width: 4),
-                                    Text(sl,
+                                    Text(date,
                                         style: TextStyle(
-                                            fontSize: 10,
-                                            fontWeight: FontWeight.w700,
-                                            color: sc)),
+                                            fontSize: 12, color: Colors.grey.shade500)),
                                   ]),
-                                ),
-                              ],
-                            ),
+                                  const SizedBox(height: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                        color: sc.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(8)),
+                                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                      Icon(si, size: 11, color: sc),
+                                      const SizedBox(width: 4),
+                                      Text(sl,
+                                          style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w700,
+                                              color: sc)),
+                                    ]),
+                                  ),
+                                ]),
                           ),
                         ),
                         const SizedBox(width: 12),
                       ]),
-
                       Padding(
                         padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
                         child: SizedBox(
@@ -2034,31 +2011,27 @@ class _RegisteredTabState extends State<_RegisteredTab> {
                           child: OutlinedButton.icon(
                             onPressed: () => Navigator.of(context).push(
                               MaterialPageRoute(
-                                builder: (_) => EventDetailScreen(event: ev),
-                              ),
+                                  builder: (_) => EventDetailScreen(event: ev)),
                             ),
                             style: OutlinedButton.styleFrom(
                               foregroundColor: _D.accent,
-                              side:            const BorderSide(color: _D.accentBdr),
+                              side: const BorderSide(color: _D.accentBdr),
                               backgroundColor: _D.accentLt,
-                              padding:         const EdgeInsets.symmetric(vertical: 10),
+                              padding: const EdgeInsets.symmetric(vertical: 10),
                               shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
+                                  borderRadius: BorderRadius.circular(12)),
                             ),
-                            icon:  const Icon(Icons.visibility_outlined, size: 16),
-                            label: Text(
-                              _t(widget.lang, 'viewDetails'),
-                              style: const TextStyle(
-                                  fontSize: 13, fontWeight: FontWeight.w700),
-                            ),
+                            icon: const Icon(Icons.visibility_outlined, size: 16),
+                            label: Text(_t(widget.lang, 'viewDetails'),
+                                style: const TextStyle(
+                                    fontSize: 13, fontWeight: FontWeight.w700)),
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                );
-              },
+                    ]),
+                  );
+                },
+              ),
             );
           }(),
         ),
@@ -2072,34 +2045,18 @@ class _RegisteredTabState extends State<_RegisteredTab> {
     child: Container(
       height: 42,
       decoration: BoxDecoration(
-        color: _D.rowBg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _D.border),
-      ),
+          color: _D.rowBg, borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _D.border)),
       child: TextField(
         controller: _searchCtrl,
-        style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: _D.textPri),
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: _D.textPri),
         decoration: InputDecoration(
           hintText: _t(widget.lang, 'searchRegistered'),
-          hintStyle: const TextStyle(
-              fontSize: 14,
-              color: _D.textDim,
-              fontWeight: FontWeight.w400),
-          prefixIcon: const Icon(
-              Icons.search_rounded,
-              size: 20,
-              color: _D.textMuted),
+          hintStyle: const TextStyle(fontSize: 14, color: _D.textDim, fontWeight: FontWeight.w400),
+          prefixIcon: const Icon(Icons.search_rounded, size: 20, color: _D.textMuted),
           suffixIcon: _query.isNotEmpty
-              ? GestureDetector(
-            onTap: () => _searchCtrl.clear(),
-            child: const Icon(
-                Icons.close_rounded,
-                size: 18,
-                color: _D.textMuted),
-          )
+              ? GestureDetector(onTap: () => _searchCtrl.clear(),
+              child: const Icon(Icons.close_rounded, size: 18, color: _D.textMuted))
               : null,
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(vertical: 11),
@@ -2109,20 +2066,24 @@ class _RegisteredTabState extends State<_RegisteredTab> {
   );
 
   Widget _thumbPh() => Container(
-    width:  100,
-    height: 90,
-    color:  Colors.grey.shade100,
-    child:  Icon(Icons.event_rounded,
-        size: 32, color: Colors.grey.shade300),
+    width: 100, height: 90, color: Colors.grey.shade100,
+    child: Icon(Icons.event_rounded, size: 32, color: Colors.grey.shade300),
   );
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// TAB 4 — AUDIT LOG  (cursor-based pagination, 20 per page + search)
+// TAB 4 — AUDIT LOG
 // ═════════════════════════════════════════════════════════════════════════════
 class _AuditLogTab extends StatefulWidget {
   final String uid, lang;
-  const _AuditLogTab({required this.uid, required this.lang});
+  final int refreshKey;
+  final Future<void> Function() onRefreshAll;
+  const _AuditLogTab({
+    required this.uid,
+    required this.lang,
+    required this.refreshKey,
+    required this.onRefreshAll,
+  });
 
   @override
   State<_AuditLogTab> createState() => _AuditLogTabState();
@@ -2131,14 +2092,13 @@ class _AuditLogTab extends StatefulWidget {
 class _AuditLogTabState extends State<_AuditLogTab> {
   static const int _pageSize = 20;
 
-  final List<Map<String, dynamic>> _logs = [];
+  List<Map<String, dynamic>> _logs = [];
   DocumentSnapshot? _lastDoc;
 
   bool _loading  = false;
   bool _hasMore  = true;
   bool _initDone = false;
 
-  // ── Search ────────────────────────────────────────────────────────────────
   final TextEditingController _searchCtrl = TextEditingController();
   String _query = '';
 
@@ -2152,20 +2112,36 @@ class _AuditLogTabState extends State<_AuditLogTab> {
   }
 
   @override
+  void didUpdateWidget(_AuditLogTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshKey != widget.refreshKey) {
+      _resetAndFetch();
+    }
+  }
+
+  @override
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
   }
 
-  /// Returns true if the audit log entry matches the current search query.
+  Future<void> _resetAndFetch() async {
+    setState(() {
+      _logs     = [];
+      _lastDoc  = null;
+      _hasMore  = true;
+      _initDone = false;
+      _loading  = false;
+    });
+    await _fetchNextPage();
+  }
+
   bool _matchesQuery(Map<String, dynamic> log) {
     if (_query.isEmpty) return true;
     final targetName = (log['target_name'] ?? '').toString().toLowerCase();
     final action     = (log['action']      ?? '').toString().toLowerCase();
     final details    = (log['details']     ?? '').toString().toLowerCase();
-    return targetName.contains(_query) ||
-        action.contains(_query) ||
-        details.contains(_query);
+    return targetName.contains(_query) || action.contains(_query) || details.contains(_query);
   }
 
   Future<void> _fetchNextPage() async {
@@ -2178,9 +2154,7 @@ class _AuditLogTabState extends State<_AuditLogTab> {
           .where('actor_id', isEqualTo: widget.uid)
           .limit(_pageSize);
 
-      if (_lastDoc != null) {
-        query = query.startAfterDocument(_lastDoc!);
-      }
+      if (_lastDoc != null) query = query.startAfterDocument(_lastDoc!);
 
       final snap = await query.get();
 
@@ -2217,145 +2191,149 @@ class _AuditLogTabState extends State<_AuditLogTab> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    // ── Apply search filter ────────────────────────────────────────────────
-    final filtered = _logs.where(_matchesQuery).toList();
+    final filtered     = _logs.where(_matchesQuery).toList();
+    final showLoadMore = _hasMore || _loading;
+    final itemCount    = filtered.length + (showLoadMore && _query.isEmpty ? 1 : 0);
 
     if (_initDone && _logs.isEmpty) {
       return Column(
         children: [
           _buildSearchBar(),
           Expanded(
-            child: _EmptyState(
-              icon:    Icons.history_rounded,
-              message: _t(widget.lang, 'noAudit'),
+            child: RefreshIndicator(
+              onRefresh: widget.onRefreshAll,
+              color: _D.refreshGreen,
+              backgroundColor: Colors.white,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: SizedBox(
+                  height: 400,
+                  child: _EmptyState(
+                      icon: Icons.history_rounded,
+                      message: _t(widget.lang, 'noAudit')),
+                ),
+              ),
             ),
           ),
         ],
       );
     }
 
-    final showLoadMore = _hasMore || _loading;
-    final itemCount = filtered.length + (showLoadMore && _query.isEmpty ? 1 : 0);
-
     return Column(
       children: [
-        // ── Search bar ─────────────────────────────────────────────────────
         _buildSearchBar(),
-
-        // ── List ───────────────────────────────────────────────────────────
         Expanded(
           child: () {
             if (filtered.isEmpty) {
-              return _EmptyState(
-                icon:    Icons.search_off_rounded,
-                message: _t(widget.lang, 'noAuditResults'),
+              return RefreshIndicator(
+                onRefresh: widget.onRefreshAll,
+                color: _D.refreshGreen,
+                backgroundColor: Colors.white,
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  child: SizedBox(
+                    height: 400,
+                    child: _EmptyState(
+                        icon: Icons.search_off_rounded,
+                        message: _t(widget.lang, 'noAuditResults')),
+                  ),
+                ),
               );
             }
-            return ListView.builder(
-              padding:   const EdgeInsets.all(16),
-              itemCount: itemCount,
-              itemBuilder: (_, i) {
-                // ── Footer ────────────────────────────────────────────────
-                if (i == filtered.length) {
-                  if (_loading) {
-                    return const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 20),
-                      child: Center(child: CircularProgressIndicator()),
+            return RefreshIndicator(
+              onRefresh: widget.onRefreshAll,
+              color: _D.refreshGreen,
+              backgroundColor: Colors.white,
+              child: ListView.builder(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16),
+                itemCount: itemCount,
+                itemBuilder: (_, i) {
+                  if (i == filtered.length) {
+                    if (_loading) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 20),
+                        child: Center(child: CircularProgressIndicator()),
+                      );
+                    }
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: GestureDetector(
+                        onTap: _fetchNextPage,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          decoration: BoxDecoration(
+                            color: _D.accentLt,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: _D.accentBdr),
+                          ),
+                          alignment: Alignment.center,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.expand_more_rounded, size: 18, color: _D.accent),
+                              const SizedBox(width: 6),
+                              Text(_t(widget.lang, 'loadMore'),
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: _D.accent)),
+                            ],
+                          ),
+                        ),
+                      ),
                     );
                   }
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: GestureDetector(
-                      onTap: _fetchNextPage,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 14),
+
+                  final d    = filtered[i];
+                  final meta = _auditMeta((d['action'] ?? '').toString(), widget.lang);
+                  final date = _fmtDate(d['timestamp'], compact: true);
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: _D.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(color: Colors.black.withOpacity(0.04),
+                            blurRadius: 10, offset: const Offset(0, 3)),
+                      ],
+                    ),
+                    child: Row(children: [
+                      Container(
+                        width: 38, height: 38,
                         decoration: BoxDecoration(
-                          color:        _D.accentLt,
-                          borderRadius: BorderRadius.circular(14),
-                          border:       Border.all(color: _D.accentBdr),
+                          color: (meta['color'] as Color).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        alignment: Alignment.center,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.expand_more_rounded, size: 18, color: _D.accent),
-                            const SizedBox(width: 6),
-                            Text(
-                              _t(widget.lang, 'loadMore'),
-                              style: TextStyle(
-                                fontSize:   13,
-                                fontWeight: FontWeight.w700,
-                                color:      _D.accent,
-                              ),
-                            ),
-                          ],
-                        ),
+                        child: Icon(meta['icon'] as IconData,
+                            size: 18, color: meta['color'] as Color),
                       ),
-                    ),
-                  );
-                }
-
-                // ── Log row ───────────────────────────────────────────────
-                final d    = filtered[i];
-                final meta = _auditMeta((d['action'] ?? '').toString(), widget.lang);
-                final date = _fmtDate(d['timestamp'], compact: true);
-
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: _D.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color:      Colors.black.withOpacity(0.04),
-                        blurRadius: 10,
-                        offset:     const Offset(0, 3),
-                      ),
-                    ],
-                  ),
-                  child: Row(children: [
-                    Container(
-                      width:  38,
-                      height: 38,
-                      decoration: BoxDecoration(
-                        color:        (meta['color'] as Color).withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(meta['icon'] as IconData,
-                          size: 18, color: meta['color'] as Color),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           Text(meta['label'] as String,
                               style: TextStyle(
-                                  fontSize:      11,
-                                  fontWeight:    FontWeight.w700,
-                                  color:         meta['color'] as Color,
-                                  letterSpacing: 0.3)),
+                                  fontSize: 11, fontWeight: FontWeight.w700,
+                                  color: meta['color'] as Color, letterSpacing: 0.3)),
                           Text((d['target_name'] ?? '').toString(),
                               style: const TextStyle(
                                   fontSize: 13, fontWeight: FontWeight.w700),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis),
+                              maxLines: 1, overflow: TextOverflow.ellipsis),
                           if ((d['details'] ?? '').toString().isNotEmpty)
                             Text((d['details'] ?? '').toString(),
-                                style: TextStyle(
-                                    fontSize: 12, color: Colors.grey.shade500),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis),
-                        ],
+                                style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                                maxLines: 2, overflow: TextOverflow.ellipsis),
+                        ]),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(date,
-                        style: TextStyle(fontSize: 11, color: Colors.grey.shade400)),
-                  ]),
-                );
-              },
+                      const SizedBox(width: 8),
+                      Text(date,
+                          style: TextStyle(fontSize: 11, color: Colors.grey.shade400)),
+                    ]),
+                  );
+                },
+              ),
             );
           }(),
         ),
@@ -2369,34 +2347,18 @@ class _AuditLogTabState extends State<_AuditLogTab> {
     child: Container(
       height: 42,
       decoration: BoxDecoration(
-        color: _D.rowBg,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _D.border),
-      ),
+          color: _D.rowBg, borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _D.border)),
       child: TextField(
         controller: _searchCtrl,
-        style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: _D.textPri),
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: _D.textPri),
         decoration: InputDecoration(
           hintText: _t(widget.lang, 'searchAudit'),
-          hintStyle: const TextStyle(
-              fontSize: 14,
-              color: _D.textDim,
-              fontWeight: FontWeight.w400),
-          prefixIcon: const Icon(
-              Icons.search_rounded,
-              size: 20,
-              color: _D.textMuted),
+          hintStyle: const TextStyle(fontSize: 14, color: _D.textDim, fontWeight: FontWeight.w400),
+          prefixIcon: const Icon(Icons.search_rounded, size: 20, color: _D.textMuted),
           suffixIcon: _query.isNotEmpty
-              ? GestureDetector(
-            onTap: () => _searchCtrl.clear(),
-            child: const Icon(
-                Icons.close_rounded,
-                size: 18,
-                color: _D.textMuted),
-          )
+              ? GestureDetector(onTap: () => _searchCtrl.clear(),
+              child: const Icon(Icons.close_rounded, size: 18, color: _D.textMuted))
               : null,
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(vertical: 11),
@@ -2456,16 +2418,14 @@ class _EmptyState extends StatelessWidget {
       padding: const EdgeInsets.all(40),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Container(
-            width: 72,
-            height: 72,
+            width: 72, height: 72,
             decoration: BoxDecoration(
                 color: Colors.grey.shade100, shape: BoxShape.circle),
             child: Icon(icon, size: 36, color: Colors.grey.shade400)),
         const SizedBox(height: 16),
         Text(message,
             style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
+                fontSize: 15, fontWeight: FontWeight.w600,
                 color: Colors.grey.shade500),
             textAlign: TextAlign.center),
       ]),
@@ -2477,25 +2437,20 @@ class _Badge extends StatelessWidget {
   final String label;
   final IconData icon;
   final Color color, bg;
-  const _Badge(
-      {required this.label,
-        required this.icon,
-        required this.color,
-        required this.bg});
+  const _Badge({required this.label, required this.icon,
+    required this.color, required this.bg});
 
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
     decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(20),
+        color: bg, borderRadius: BorderRadius.circular(20),
         border: Border.all(color: color.withOpacity(0.25))),
     child: Row(mainAxisSize: MainAxisSize.min, children: [
       Icon(icon, size: 11, color: color),
       const SizedBox(width: 4),
-      Text(label,
-          style: TextStyle(
-              fontSize: 10, fontWeight: FontWeight.w700, color: color)),
+      Text(label, style: TextStyle(
+          fontSize: 10, fontWeight: FontWeight.w700, color: color)),
     ]),
   );
 }
@@ -2509,17 +2464,13 @@ class _MetaChip extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
     decoration: BoxDecoration(
-        color: _D.rowBg,
-        borderRadius: BorderRadius.circular(8),
+        color: _D.rowBg, borderRadius: BorderRadius.circular(8),
         border: Border.all(color: _D.border)),
     child: Row(mainAxisSize: MainAxisSize.min, children: [
       Icon(icon, size: 13, color: Colors.grey.shade500),
       const SizedBox(width: 5),
-      Text(label,
-          style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey.shade700)),
+      Text(label, style: TextStyle(
+          fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey.shade700)),
     ]),
   );
 }
@@ -2529,11 +2480,8 @@ class _MetricPill extends StatelessWidget {
   final int value;
   final String label;
   final Color color;
-  const _MetricPill(
-      {required this.icon,
-        required this.value,
-        required this.label,
-        required this.color});
+  const _MetricPill({required this.icon, required this.value,
+    required this.label, required this.color});
 
   @override
   Widget build(BuildContext context) => Expanded(
@@ -2541,16 +2489,11 @@ class _MetricPill extends StatelessWidget {
       Icon(icon, size: 14, color: color),
       const SizedBox(width: 6),
       Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('$value',
-            style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-                color: color)),
-        Text(label,
-            style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: color.withOpacity(0.7))),
+        Text('$value', style: TextStyle(
+            fontSize: 15, fontWeight: FontWeight.w800, color: color)),
+        Text(label, style: TextStyle(
+            fontSize: 10, fontWeight: FontWeight.w600,
+            color: color.withOpacity(0.7))),
       ]),
     ]),
   );
@@ -2562,12 +2505,8 @@ class _ActionButton extends StatelessWidget {
   final Color color;
   final bool outlined;
   final VoidCallback onTap;
-  const _ActionButton(
-      {required this.icon,
-        required this.label,
-        required this.color,
-        required this.onTap,
-        this.outlined = false});
+  const _ActionButton({required this.icon, required this.label,
+    required this.color, required this.onTap, this.outlined = false});
 
   @override
   Widget build(BuildContext context) => GestureDetector(
@@ -2584,11 +2523,9 @@ class _ActionButton extends StatelessWidget {
       child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
         Icon(icon, size: 16, color: outlined ? color : Colors.white),
         const SizedBox(width: 7),
-        Text(label,
-            style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: outlined ? color : Colors.white)),
+        Text(label, style: TextStyle(
+            fontSize: 13, fontWeight: FontWeight.w700,
+            color: outlined ? color : Colors.white)),
       ]),
     ),
   );
@@ -2598,8 +2535,7 @@ class _OutlineBtn extends StatelessWidget {
   final String label;
   final Color color;
   final VoidCallback onTap;
-  const _OutlineBtn(
-      {required this.label, required this.color, required this.onTap});
+  const _OutlineBtn({required this.label, required this.color, required this.onTap});
 
   @override
   Widget build(BuildContext context) => GestureDetector(
@@ -2610,9 +2546,8 @@ class _OutlineBtn extends StatelessWidget {
           border: Border.all(color: color, width: 1.5),
           borderRadius: BorderRadius.circular(10)),
       alignment: Alignment.center,
-      child: Text(label,
-          style: TextStyle(
-              fontSize: 12, fontWeight: FontWeight.w700, color: color)),
+      child: Text(label, style: TextStyle(
+          fontSize: 12, fontWeight: FontWeight.w700, color: color)),
     ),
   );
 }
@@ -2626,23 +2561,18 @@ class _StatBadge extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
     decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(20),
+        color: bg, borderRadius: BorderRadius.circular(20),
         border: Border.all(color: border.withOpacity(0.4))),
-    child: Text(label,
-        style: TextStyle(
-            fontSize: 11, fontWeight: FontWeight.w800, color: color)),
+    child: Text(label, style: TextStyle(
+        fontSize: 11, fontWeight: FontWeight.w800, color: color)),
   );
 }
 
 class _FilterTab extends StatelessWidget {
   final String label, value, current;
   final ValueChanged<String> onTap;
-  const _FilterTab(
-      {required this.label,
-        required this.value,
-        required this.current,
-        required this.onTap});
+  const _FilterTab({required this.label, required this.value,
+    required this.current, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -2655,14 +2585,12 @@ class _FilterTab extends StatelessWidget {
         decoration: BoxDecoration(
           color: selected ? _D.tabSelBg : _D.tabUnselBg,
           borderRadius: BorderRadius.circular(10),
-          border:
-          Border.all(color: selected ? _D.tabSelBdr : _D.tabUnselBdr),
+          border: Border.all(
+              color: selected ? _D.tabSelBdr : _D.tabUnselBdr),
         ),
-        child: Text(label,
-            style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: selected ? _D.accent : _D.textMuted)),
+        child: Text(label, style: TextStyle(
+            fontSize: 11, fontWeight: FontWeight.w700,
+            color: selected ? _D.accent : _D.textMuted)),
       ),
     );
   }
@@ -2672,11 +2600,8 @@ class _ABtn extends StatelessWidget {
   final String label;
   final Color color, bg;
   final VoidCallback onTap;
-  const _ABtn(
-      {required this.label,
-        required this.color,
-        required this.bg,
-        required this.onTap});
+  const _ABtn({required this.label, required this.color,
+    required this.bg, required this.onTap});
 
   @override
   Widget build(BuildContext context) => GestureDetector(
@@ -2684,13 +2609,11 @@ class _ABtn extends StatelessWidget {
     child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(8),
+        color: bg, borderRadius: BorderRadius.circular(8),
         border: Border.all(color: color.withOpacity(0.4)),
       ),
-      child: Text(label,
-          style: TextStyle(
-              fontSize: 11, fontWeight: FontWeight.w800, color: color)),
+      child: Text(label, style: TextStyle(
+          fontSize: 11, fontWeight: FontWeight.w800, color: color)),
     ),
   );
 }
@@ -2700,21 +2623,16 @@ class _SheetField extends StatelessWidget {
   final TextEditingController ctrl;
   final int maxLines;
   final TextInputType keyboardType;
-  const _SheetField(
-      {required this.label,
-        required this.ctrl,
-        this.maxLines = 1,
-        this.keyboardType = TextInputType.text});
+  const _SheetField({required this.label, required this.ctrl,
+    this.maxLines = 1, this.keyboardType = TextInputType.text});
 
   @override
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      Text(label,
-          style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: Colors.grey.shade600)),
+      Text(label, style: TextStyle(
+          fontSize: 12, fontWeight: FontWeight.w600,
+          color: Colors.grey.shade600)),
       const SizedBox(height: 6),
       TextField(
         controller: ctrl,
@@ -2729,8 +2647,7 @@ class _SheetField extends StatelessWidget {
               borderSide: BorderSide.none),
           focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide:
-              BorderSide(color: AppColors.primary, width: 1.5)),
+              borderSide: BorderSide(color: AppColors.primary, width: 1.5)),
           contentPadding: const EdgeInsets.symmetric(
               horizontal: 14, vertical: 12),
         ),

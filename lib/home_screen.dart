@@ -66,15 +66,6 @@ String _t(String lang, String key) =>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Direct Firestore provider for home screen events
-// Mirrors web app's HomePage load() exactly:
-//   event_active == true
-//   event_checked == true          ← web uses event_checked, NOT event_status
-//   event_pending_review == false
-//   event_date >= today
-//   event_date <= today + 30 days
-//   orderBy event_date
-//   limit 50
-//   then filter: prefecture contains 'tokyo'
 // ─────────────────────────────────────────────────────────────────────────────
 final _homeEventsProvider =
 FutureProvider<List<Map<String, dynamic>>>((ref) async {
@@ -85,7 +76,7 @@ FutureProvider<List<Map<String, dynamic>>>((ref) async {
   final snap = await FirebaseFirestore.instance
       .collection('events')
       .where('event_active',         isEqualTo: true)
-      .where('event_checked',        isEqualTo: true)   // ← matches web app
+      .where('event_checked',        isEqualTo: true)
       .where('event_pending_review', isEqualTo: false)
       .where('event_date', isGreaterThanOrEqualTo: Timestamp.fromDate(today))
       .where('event_date', isLessThanOrEqualTo:    Timestamp.fromDate(in30))
@@ -97,11 +88,8 @@ FutureProvider<List<Map<String, dynamic>>>((ref) async {
       .map((d) => <String, dynamic>{...d.data(), '_doc_id': d.id})
       .toList();
 
-  // Enrich with resolved location (mirrors web resolveLocation)
   final enriched = await Future.wait(raw.map(_resolveEventLocation));
 
-  // Mirror web app's Tokyo filter on home screen:
-  // .filter(e => pref.includes('tokyo') || pref.includes('東京'))
   return enriched.where((e) {
     final pref = (e['_pref'] ?? '').toString().toLowerCase();
     return pref.contains('tokyo') || pref.contains('東京');
@@ -165,6 +153,138 @@ Future<Map<String, dynamic>> _resolveEventLocation(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Custom pickleball pull-to-refresh widget
+// ─────────────────────────────────────────────────────────────────────────────
+class _PickleballRefresh extends StatefulWidget {
+  final Widget child;
+  final Future<void> Function() onRefresh;
+
+  const _PickleballRefresh({
+    required this.child,
+    required this.onRefresh,
+  });
+
+  @override
+  State<_PickleballRefresh> createState() => _PickleballRefreshState();
+}
+
+class _PickleballRefreshState extends State<_PickleballRefresh>
+    with SingleTickerProviderStateMixin {
+  static const double _triggerDistance = 80.0;
+  static const double _ballSize        = 44.0;
+
+  late AnimationController _spinController;
+
+  double _dragOffset   = 0.0;
+  bool   _isRefreshing = false;
+  bool   _triggered    = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _spinController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
+  }
+
+  @override
+  void dispose() {
+    _spinController.dispose();
+    super.dispose();
+  }
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    if (_isRefreshing) return false;
+
+    if (notification is OverscrollNotification && notification.overscroll < 0) {
+      setState(() {
+        _dragOffset = (_dragOffset - notification.overscroll)
+            .clamp(0.0, _triggerDistance * 1.4);
+        _triggered = _dragOffset >= _triggerDistance;
+      });
+      if (_triggered && !_spinController.isAnimating) {
+        _spinController.repeat();
+      }
+    }
+
+    if (notification is ScrollEndNotification) {
+      if (_triggered && !_isRefreshing) {
+        _startRefresh();
+      } else {
+        _resetDrag();
+      }
+    }
+
+    return false;
+  }
+
+  Future<void> _startRefresh() async {
+    setState(() {
+      _isRefreshing = true;
+      _dragOffset   = _triggerDistance;
+    });
+    if (!_spinController.isAnimating) _spinController.repeat();
+    await widget.onRefresh();
+    if (mounted) _resetDrag();
+  }
+
+  void _resetDrag() {
+    _spinController.stop();
+    setState(() {
+      _dragOffset   = 0.0;
+      _isRefreshing = false;
+      _triggered    = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final progress         = (_dragOffset / _triggerDistance).clamp(0.0, 1.0);
+    final indicatorVisible = _dragOffset > 4.0;
+
+    return NotificationListener<ScrollNotification>(
+      onNotification: _handleScrollNotification,
+      child: Stack(
+        children: [
+          AnimatedPadding(
+            duration: _isRefreshing
+                ? const Duration(milliseconds: 200)
+                : Duration.zero,
+            padding: EdgeInsets.only(top: _dragOffset.clamp(0.0, _triggerDistance)),
+            child: widget.child,
+          ),
+          if (indicatorVisible)
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SizedBox(
+                height: _dragOffset.clamp(0.0, _triggerDistance),
+                child: Center(
+                  child: Opacity(
+                    opacity: progress.clamp(0.2, 1.0),
+                    child: RotationTransition(
+                      turns: _isRefreshing || _triggered
+                          ? _spinController
+                          : AlwaysStoppedAnimation(progress * 1.5),
+                      child: Image.asset(
+                        'assets/pickleball_ball_no_bg_1.png',
+                        width:  _ballSize * (0.6 + 0.4 * progress),
+                        height: _ballSize * (0.6 + 0.4 * progress),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // HomeScreen
 // ─────────────────────────────────────────────────────────────────────────────
 class HomeScreen extends ConsumerStatefulWidget {
@@ -178,9 +298,9 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   // ── Unread count streams ───────────────────────────────────────────────────
-  int _unreadCount     = 0;
+  int _unreadCount      = 0;
   int _individualUnread = 0;
-  int _groupUnread     = 0;
+  int _groupUnread      = 0;
 
   @override
   void initState() {
@@ -258,6 +378,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         });
       }
     });
+  }
+
+  // ── Refresh: invalidate all three home-screen providers ──────────────────
+  Future<void> _refresh() async {
+    ref.invalidate(_homeEventsProvider);
+    ref.invalidate(organizationsProvider);
+    ref.invalidate(locationsProvider);
+    // Wait for the primary events provider to settle before hiding the ball
+    await ref.read(_homeEventsProvider.future).catchError((_) => <Map<String, dynamic>>[]);
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -444,69 +573,65 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const SizedBox(height: 10),
+      // ── Body: _PickleballRefresh wraps the entire ScrollView ────────────
+      body: _PickleballRefresh(
+        onRefresh: _refresh,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 10),
 
-              // ── UPCOMING EVENTS ──────────────────────────────────────────
-              _sectionHeader(
-                _t(lang, 'upcomingEvents'),
-                onSeeAll: () => widget.onNavigateToTab?.call(2),
-                lang: lang,
-              ),
-              const SizedBox(height: 16),
-              SizedBox(height: 265, child: _buildEventsSection(ref, lang)),
+                // ── UPCOMING EVENTS ────────────────────────────────────────
+                _sectionHeader(
+                  _t(lang, 'upcomingEvents'),
+                  onSeeAll: () => widget.onNavigateToTab?.call(2),
+                  lang: lang,
+                ),
+                const SizedBox(height: 16),
+                SizedBox(height: 265, child: _buildEventsSection(ref, lang)),
 
-              const SizedBox(height: 30),
-              _divider(),
-              const SizedBox(height: 20),
+                const SizedBox(height: 30),
+                _divider(),
+                const SizedBox(height: 20),
 
-              // ── LOCAL GROUPS ─────────────────────────────────────────────
-              _sectionHeader(
-                _t(lang, 'localGroups'),
-                onSeeAll: () => widget.onNavigateToTab?.call(3),
-                lang: lang,
-              ),
-              const SizedBox(height: 16),
-              SizedBox(height: 235, child: _buildGroupsSection(ref, lang)),
+                // ── LOCAL GROUPS ───────────────────────────────────────────
+                _sectionHeader(
+                  _t(lang, 'localGroups'),
+                  onSeeAll: () => widget.onNavigateToTab?.call(3),
+                  lang: lang,
+                ),
+                const SizedBox(height: 16),
+                SizedBox(height: 235, child: _buildGroupsSection(ref, lang)),
 
-              const SizedBox(height: 30),
-              _divider(),
-              const SizedBox(height: 20),
+                const SizedBox(height: 30),
+                _divider(),
+                const SizedBox(height: 20),
 
-              // ── PICKLEBALL COURTS ────────────────────────────────────────
-              // FIX: Pass a dedicated onSeeAll callback that clears
-              // focusedCourtIdProvider BEFORE incrementing the reset counter.
-              // This prevents the courts screen from re-focusing the last
-              // tapped court when "See all" is pressed a second time.
-              _sectionHeader(
-                _t(lang, 'pickleballCourts'),
-                onSeeAll: () {
-                  // 1. Clear any pending focused court so the focus listener
-                  //    in CourtsScreen does NOT fire after the reset.
-                  ref.read(focusedCourtIdProvider.notifier).state = null;
-                  // 2. Increment the reset counter — CourtsScreen listens to
-                  //    this and resets filter + search to Tokyo defaults.
-                  ref.read(resetCourtsFilterProvider.notifier).state++;
-                  // 3. Navigate to the courts tab.
-                  widget.onNavigateToTab?.call(1);
-                },
-                lang: lang,
-              ),
-              const SizedBox(height: 16),
-              SizedBox(height: 240, child: _buildCourtsSection(ref, lang)),
+                // ── PICKLEBALL COURTS ──────────────────────────────────────
+                _sectionHeader(
+                  _t(lang, 'pickleballCourts'),
+                  onSeeAll: () {
+                    ref.read(focusedCourtIdProvider.notifier).state = null;
+                    ref.read(resetCourtsFilterProvider.notifier).state++;
+                    widget.onNavigateToTab?.call(1);
+                  },
+                  lang: lang,
+                ),
+                const SizedBox(height: 16),
+                SizedBox(height: 240, child: _buildCourtsSection(ref, lang)),
 
-              const SizedBox(height: 30),
+                const SizedBox(height: 30),
 
-              // ── WELCOME CARD ─────────────────────────────────────────────
-              _buildWelcomeCard(context, lang),
+                // ── WELCOME CARD ───────────────────────────────────────────
+                _buildWelcomeCard(context, lang),
 
-              const SizedBox(height: 10),
-            ],
+                const SizedBox(height: 10),
+              ],
+            ),
           ),
         ),
       ),
@@ -568,7 +693,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Badge
                 Container(
                   padding:
                   const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
@@ -608,7 +732,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
                 const SizedBox(height: 24),
 
-                // Quick-action strips
                 _quickActionStrip(
                   icon: Icons.location_on_rounded,
                   label: _t(lang, 'findCourts'),
@@ -622,7 +745,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
                 const SizedBox(height: 20),
 
-                // Action buttons
                 Row(
                   children: [
                     Expanded(
@@ -738,10 +860,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Events section — uses _homeEventsProvider (event_checked == true)
+  // Events section
   // ─────────────────────────────────────────────────────────────────────────
   Widget _buildEventsSection(WidgetRef ref, String lang) {
-    // Use the dedicated home provider that mirrors the web app query exactly
     final eventsAsync = ref.watch(_homeEventsProvider);
     return eventsAsync.when(
       data: (events) {
@@ -761,8 +882,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 .toString();
             final title             = _eventTitle(data, lang);
             final formattedDateTime = _formatEventDateTime(data, lang);
-
-            // Location already resolved and attached by _homeEventsProvider
             final location = lang == kLangJa
                 ? (data['location_jp'] ?? data['location'] ?? '').toString()
                 : (data['location'] ?? '').toString();
@@ -792,7 +911,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Groups section (unchanged — uses existing organizationsProvider)
+  // Groups section
   // ─────────────────────────────────────────────────────────────────────────
   Widget _buildGroupsSection(WidgetRef ref, String lang) {
     final orgsAsync = ref.watch(organizationsProvider);
@@ -855,13 +974,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // Courts section (unchanged)
+  // Courts section
   // ─────────────────────────────────────────────────────────────────────────
   Widget _buildCourtsSection(WidgetRef ref, String lang) {
     final courtsAsync = ref.watch(locationsProvider);
     return courtsAsync.when(
       data: (allCourts) {
-        // Mirror web app: only show Tokyo courts on the home carousel.
         final courts = allCourts.where((d) {
           final pref = (d['loc_prefecture_en'] ?? d['loc_prefecture'] ?? '')
               .toString()
@@ -883,7 +1001,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
             return GestureDetector(
               onTap: () {
-                // Tell the CourtsScreen which court to focus on, then switch tab.
                 final docId = (data['_doc_id'] ?? '').toString();
                 if (docId.isNotEmpty) {
                   ref.read(focusedCourtIdProvider.notifier).state = docId;

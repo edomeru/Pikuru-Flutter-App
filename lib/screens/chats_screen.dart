@@ -125,6 +125,34 @@ class _ChatsScreenState extends State<ChatsScreen> {
     super.dispose();
   }
 
+  // ── Pull-to-refresh: cancel all subs, clear state, re-subscribe ───────
+  Future<void> _onRefresh() async {
+    setState(() {
+      _loading = true;
+      _groupItems = [];
+      _individualItems = [];
+      _eventItems = [];
+    });
+
+    // Cancel existing subscriptions
+    await _groupSub?.cancel();
+    await _individualSub?.cancel();
+    await _eventSub?.cancel();
+    for (final sub in _profileSubs.values) {
+      await sub.cancel();
+    }
+    _profileSubs.clear();
+    _profileCache.clear();
+
+    // Re-subscribe all streams
+    _subscribeGroupChats();
+    _subscribeIndividualChats();
+    _subscribeEventChannels();
+
+    // Wait briefly for first snapshot to arrive
+    await Future.delayed(const Duration(milliseconds: 900));
+  }
+
   // ── Profile subscription ───────────────────────────────────────────────
   void _ensureProfileSub(String userId) {
     if (_profileSubs.containsKey(userId)) return;
@@ -395,9 +423,22 @@ class _ChatsScreenState extends State<ChatsScreen> {
           const SizedBox(height: 12),
           _buildFilterTabs(),
           const SizedBox(height: 4),
-          Expanded(child: _buildBody()),
+          Expanded(child: _buildRefreshableBody()),
         ]),
       ),
+    );
+  }
+
+  // ── Refresh wrapper ───────────────────────────────────────────────────
+  Widget _buildRefreshableBody() {
+    return RefreshIndicator(
+      onRefresh: _onRefresh,
+      color: AppColors.primary,
+      backgroundColor: Colors.white,
+      displacement: 20,
+      notificationPredicate: (notification) => notification.depth == 0,
+      triggerMode: RefreshIndicatorTriggerMode.onEdge,
+      child: _buildBody(),
     );
   }
 
@@ -549,7 +590,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
     if (_filter == 'Events') {
       final evs = _filteredEventItems;
       if (evs.isEmpty) {
-        return _buildEmpty('No event channels yet');
+        return _buildScrollableEmpty('No event channels yet');
       }
       return ListView.builder(
         itemCount: evs.length,
@@ -567,7 +608,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
     final evs = _filteredEventItems;
 
     if (items.isEmpty && (_filter == 'Events' || evs.isEmpty)) {
-      return _buildEmpty(_filter == 'Unread'
+      return _buildScrollableEmpty(_filter == 'Unread'
           ? 'No unread messages'
           : _filter == 'Groups'
           ? 'No group chats yet'
@@ -599,6 +640,30 @@ class _ChatsScreenState extends State<ChatsScreen> {
         ]);
       }),
     ]);
+  }
+
+  // ── Scrollable empty state (needed so RefreshIndicator triggers on empty lists) ──
+  Widget _buildScrollableEmpty(String message) {
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        child: SizedBox(
+          height: constraints.maxHeight,
+          child: Center(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.chat_bubble_outline,
+                  size: 52, color: Colors.black.withOpacity(0.12)),
+              const SizedBox(height: 14),
+              Text(message,
+                  style: TextStyle(
+                      color: Colors.black.withOpacity(0.35),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500)),
+            ]),
+          ),
+        ),
+      ),
+    );
   }
 
   // ── Event Channels Section Header ─────────────────────────────────────
