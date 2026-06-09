@@ -11,6 +11,7 @@ import 'package:pikuru/screens/what_is_pikuru_screen.dart';
 import 'package:pikuru/screens/about_pikuru_screen.dart';
 import 'package:pikuru/screens/event_detail_screen.dart';
 import 'package:pikuru/screens/group_detail_screen.dart';
+import 'package:pikuru/screens/search_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
@@ -38,6 +39,7 @@ const _L = {
     'dateTbd':           'Date TBD',
     'langEn':            'EN',
     'langJa':            '日本語',
+    'searchHint':        'Search courts, events, groups…',
   },
   kLangJa: {
     'upcomingEvents':    '開催予定のイベント',
@@ -58,6 +60,7 @@ const _L = {
     'dateTbd':           '日時未定',
     'langEn':            'EN',
     'langJa':            '日本語',
+    'searchHint':        'コート、イベント、グループを検索…',
   },
 };
 
@@ -385,8 +388,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ref.invalidate(_homeEventsProvider);
     ref.invalidate(organizationsProvider);
     ref.invalidate(locationsProvider);
-    // Wait for the primary events provider to settle before hiding the ball
     await ref.read(_homeEventsProvider.future).catchError((_) => <Map<String, dynamic>>[]);
+  }
+
+  // ── Open search screen ────────────────────────────────────────────────────
+  void _openSearch(String lang) async {
+    final result = await Navigator.push<Map<String, dynamic>?>(
+      context,
+      MaterialPageRoute(builder: (_) => SearchScreen(lang: lang)),
+    );
+    // If a court was tapped from search results, navigate to courts tab and focus it
+    if (result != null && result['type'] == 'court' && mounted) {
+      final docId = result['docId']?.toString() ?? '';
+      if (docId.isNotEmpty) {
+        ref.read(focusedCourtIdProvider.notifier).state = docId;
+      }
+      widget.onNavigateToTab?.call(1);
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -573,7 +591,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ],
       ),
-      // ── Body: _PickleballRefresh wraps the entire ScrollView ────────────
       body: _PickleballRefresh(
         onRefresh: _refresh,
         child: Padding(
@@ -584,6 +601,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 10),
+
+                // ── SEARCH BAR (tap-only, opens SearchScreen) ──────────────
+                _buildSearchBar(lang),
+
+                const SizedBox(height: 20),
 
                 // ── UPCOMING EVENTS ────────────────────────────────────────
                 _sectionHeader(
@@ -634,6 +656,63 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Search bar (tap opens SearchScreen)
+  // ─────────────────────────────────────────────────────────────────────────
+  Widget _buildSearchBar(String lang) {
+    return GestureDetector(
+      onTap: () => _openSearch(lang),
+      child: Container(
+        height: 50,
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAF8),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFE0EBE0)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(children: [
+          const SizedBox(width: 14),
+          Icon(Icons.search_rounded, size: 20,
+              color: AppColors.primary.withOpacity(0.6)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _t(lang, 'searchHint'),
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w400,
+                color: Colors.black.withOpacity(0.35),
+              ),
+            ),
+          ),
+          Container(
+            margin: const EdgeInsets.only(right: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: AppColors.primary.withOpacity(0.15)),
+            ),
+            child: Text(
+              lang == kLangJa ? '検索' : '⌘K',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
+                color: AppColors.primary.withOpacity(0.7),
+              ),
+            ),
+          ),
+        ]),
       ),
     );
   }
