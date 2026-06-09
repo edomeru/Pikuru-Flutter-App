@@ -95,32 +95,36 @@ StreamProvider<List<Map<String, dynamic>>>((ref) {
 });
 
 // ── Locations (Courts) Provider ───────────────────────────────────────────────
+// Mirrors the web app's CourtsPage load() query exactly:
+//   • loc_checked        == true   ← only fully approved courts
+//   • loc_active         == true   ← only active courts
+//   • loc_pending_review == false  ← exclude courts awaiting re-review
+//
+// This means when the admin clicks "Set to pending" on an approved court,
+// Firestore sets { loc_pending_review: true, loc_checked: false }, and this
+// stream will immediately drop that court — keeping Flutter in sync with web.
+//
+// Required Firestore composite index:
+//   Collection : locations
+//   Fields     : loc_checked ASC, loc_active ASC, loc_pending_review ASC
 final locationsProvider =
 StreamProvider<List<Map<String, dynamic>>>((ref) {
   return FirebaseFirestore.instance
       .collection('locations')
+      .where('loc_checked',        isEqualTo: true)
+      .where('loc_active',         isEqualTo: true)
+      .where('loc_pending_review', isEqualTo: false)
       .snapshots()
       .map((s) {
-    final all = s.docs.map((d) {
+    final docs = s.docs.map((d) {
       final data = d.data();
       data['_doc_id'] = d.id;
       return data;
     }).toList();
 
-    debugPrint('[locationsProvider] Total docs: ${all.length}');
-    for (final d in all) {
-      debugPrint(
-          '  ${d["_doc_id"]}: active=${d["loc_active"]} (${d["loc_active"]?.runtimeType}), '
-              'lat=${d["loc_latitude"]}, lng=${d["loc_longitude"]}');
-    }
+    debugPrint('[locationsProvider] Total docs fetched: ${docs.length}');
 
-    final active = all.where((d) {
-      final v = d['loc_active'];
-      return v == true || v?.toString().toLowerCase() == 'true';
-    }).toList();
-
-    debugPrint('[locationsProvider] Active after filter: ${active.length}');
-    return active;
+    return docs;
   });
 });
 

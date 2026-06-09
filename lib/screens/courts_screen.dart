@@ -1315,9 +1315,13 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
           .where('loc_id', isEqualTo: _locId)
           .get();
 
+      // ── Mirror web app filter exactly:
+      //   review_pending_review == false AND rejected != true
       final reviews = reviewsSnap.docs
           .map((d) => {'id': d.id, ...d.data()})
-          .where((r) => r['review_pending_review'] == false)
+          .where((r) =>
+      r['review_pending_review'] == false &&
+          r['rejected'] != true)
           .toList();
       reviews.sort((a, b) {
         final tA = (a['created_at'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
