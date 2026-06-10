@@ -4,6 +4,7 @@ import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:pikuru/screens/event_detail_screen.dart';
 import 'package:pikuru/screens/group_detail_screen.dart';
+import 'package:pikuru/screens/user_profile_screen.dart';
 import 'package:intl/intl.dart';
 import 'dart:async';
 
@@ -801,8 +802,21 @@ class _SearchScreenState extends State<SearchScreen>
           if (_activeTab == _Tab.all)
             _sectionHeader(_t(_lang, 'users'), _users.length,
                 _users.length > 3 ? () => setState(() { _activeTab = _Tab.users; _tabController.animateTo(4); }) : null),
+          // ── CHANGED: pass onTap to navigate to UserProfileScreen ──────────
           ...(_activeTab == _Tab.all ? _users.take(3) : _users)
-              .map((u) => _UserTile(result: u)),
+              .map((u) => _UserTile(
+            result: u,
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => UserProfileScreen(
+                  userId:        u.docId,
+                  initialName:   u.displayName,
+                  initialAvatar: u.avatarUrl,
+                ),
+              ),
+            ),
+          )),
           const SizedBox(height: 16),
         ],
       ],
@@ -1047,13 +1061,16 @@ class _GroupTile extends StatelessWidget {
 }
 
 // ── User tile ─────────────────────────────────────────────────────────────────
+// ── CHANGED: added required onTap parameter — routes to UserProfileScreen ───
 class _UserTile extends StatelessWidget {
   final _UserResult result;
-  const _UserTile({required this.result});
+  final VoidCallback onTap;
+  const _UserTile({required this.result, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return _ResultTileShell(
+      onTap: onTap,
       leading: ClipRRect(
         borderRadius: BorderRadius.circular(10),
         child: SizedBox(

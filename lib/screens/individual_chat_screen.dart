@@ -10,7 +10,7 @@ import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:pikuru/services/individual_chat_service.dart';
 import 'package:pikuru/screens/group_detail_screen.dart';
 import 'package:pikuru/screens/event_detail_screen.dart';
-import 'package:pikuru/modal/user_profile_modal.dart';
+import 'package:pikuru/screens/user_profile_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Localised strings
@@ -78,6 +78,11 @@ class _IndividualChatScreenState extends ConsumerState<IndividualChatScreen>
   String _liveOtherName   = '';
   String _liveOtherAvatar = '';
 
+  // ── Decoded avatar bytes cache — avoids re-decoding base64 on every build ──
+  // Key: the normalised avatar string; Value: decoded bytes (null = use NetworkImage)
+  Uint8List? _cachedAvatarBytes;
+  String     _cachedAvatarSrc = '';
+
   StreamSubscription? _profileSub;
 
   String? _chatId;
@@ -86,39 +91,92 @@ class _IndividualChatScreenState extends ConsumerState<IndividualChatScreen>
 
   late final AnimationController _sendBtnController;
 
-  // ── Avatar normalisation ─────────────────────────────────────────────────
+  // ── Avatar normalisation — mirrors web app's toImgSrc() exactly ──────────
+  // Handles: http URLs, data: URIs, raw base64 strings
   String _toImgSrc(String raw) {
-    if (raw.isEmpty)              return '';
-    if (raw.startsWith('data:'))  return raw;
-    if (raw.startsWith('http'))   return raw;
+    if (raw.isEmpty)             return '';
+    if (raw.startsWith('data:')) return raw;
+    if (raw.startsWith('http'))  return raw;
     return 'data:image/jpeg;base64,$raw';
   }
 
-  // ── Decode any avatar string → ImageProvider ─────────────────────────────
-  ImageProvider? _resolveImage(String av) {
-    if (av.isEmpty) return null;
+  // ── Extract raw base64 bytes from a normalised avatar string ─────────────
+  // Returns null if the source is a plain http URL (use NetworkImage instead).
+  Uint8List? _extractBytes(String src) {
+    if (src.isEmpty) return null;
     try {
-      if (av.startsWith('http')) return NetworkImage(av);
-      if (av.startsWith('data:')) {
-        final comma = av.indexOf(',');
+      if (src.startsWith('data:')) {
+        final comma = src.indexOf(',');
         if (comma != -1) {
-          return MemoryImage(base64Decode(av.substring(comma + 1)));
+          final bytes = base64Decode(src.substring(comma + 1));
+          if (bytes.isNotEmpty) return bytes;
         }
+        return null;
       }
-      // Raw base64 without data: prefix
-      return MemoryImage(base64Decode(av));
+      // Raw base64 (shouldn't reach here after _toImgSrc, but guard anyway)
+      if (!src.startsWith('http')) {
+        final bytes = base64Decode(src);
+        if (bytes.isNotEmpty) return bytes;
+      }
     } catch (_) {
+      // Silently fall through
+    }
+    return null;
+  }
+
+  // ── Update avatar cache whenever _liveOtherAvatar changes ────────────────
+  void _updateAvatarCache(String newSrc) {
+    if (newSrc == _cachedAvatarSrc) return; // nothing changed
+    _cachedAvatarSrc = newSrc;
+    if (newSrc.isEmpty) {
+      _cachedAvatarBytes = null;
+      return;
+    }
+    if (newSrc.startsWith('http')) {
+      // HTTP URL — no bytes to cache; NetworkImage handles it
+      _cachedAvatarBytes = null;
+      return;
+    }
+    // base64 / data: URI — decode once and cache
+    _cachedAvatarBytes = _extractBytes(newSrc);
+  }
+
+  // ── Resolve cached avatar → ImageProvider ────────────────────────────────
+  // Uses the pre-decoded bytes when available; falls back to NetworkImage.
+  ImageProvider? _resolveImage(String src) {
+    if (src.isEmpty) return null;
+    // Prefer cached bytes for base64 avatars
+    if (src == _cachedAvatarSrc) {
+      if (_cachedAvatarBytes != null) return MemoryImage(_cachedAvatarBytes!);
+      if (src.startsWith('http'))     return NetworkImage(src);
       return null;
     }
+    // Fallback (e.g. a bubble avatar that differs from the cached value)
+    try {
+      if (src.startsWith('http')) return NetworkImage(src);
+      if (src.startsWith('data:')) {
+        final comma = src.indexOf(',');
+        if (comma != -1) {
+          final bytes = base64Decode(src.substring(comma + 1));
+          if (bytes.isNotEmpty) return MemoryImage(bytes);
+        }
+      }
+      final bytes = base64Decode(src);
+      if (bytes.isNotEmpty) return MemoryImage(bytes);
+    } catch (_) {}
+    return null;
   }
 
   @override
   void initState() {
     super.initState();
 
-    // Seed with passed-in values (may be stale — live listener will update)
+    // Seed with passed-in values, normalising through _toImgSrc so that a raw
+    // base64 or http URL passed by the caller is immediately usable.
     _liveOtherName   = widget.otherUserName;
-    _liveOtherAvatar = widget.otherUserAvatar;
+    final initialSrc  = _toImgSrc(widget.otherUserAvatar);
+    _liveOtherAvatar = initialSrc;
+    _updateAvatarCache(initialSrc);
 
     _sendBtnController = AnimationController(
       vsync: this,
@@ -138,6 +196,10 @@ class _IndividualChatScreenState extends ConsumerState<IndividualChatScreen>
     });
 
     _focusNode.addListener(() => setState(() {}));
+
+    // Do a one-shot fetch first (same pattern as web app's init()) so the
+    // avatar is populated before the stream's first event arrives.
+    _fetchOtherProfileOnce();
     _subscribeOtherProfile();
     _initChat();
   }
@@ -152,6 +214,49 @@ class _IndividualChatScreenState extends ConsumerState<IndividualChatScreen>
     super.dispose();
   }
 
+  // ── Parse name + avatar from a registration document map ─────────────────
+  // Mirrors the web app's onSnapshot handler logic exactly.
+  ({String name, String avatar}) _parseProfile(
+      Map<String, dynamic> d, String fallbackName) {
+    final rawImg = (d['profile_img'] ?? '').toString();
+    final nick   = (d['nickname']   ?? '').toString().trim();
+    final first  = (d['firstName']  ?? '').toString().trim();
+    final last   = (d['lastName']   ?? '').toString().trim();
+    final name   = nick.isNotEmpty
+        ? nick
+        : (first.isNotEmpty && last.isNotEmpty)
+        ? '$first $last'
+        : first.isNotEmpty
+        ? first
+        : fallbackName;
+    return (name: name, avatar: _toImgSrc(rawImg));
+  }
+
+  // ── One-shot fetch from registration/{otherUserId} ────────────────────────
+  // Mirrors the web app's getDoc(doc(db, 'registration', otherUserId)) call
+  // inside init(). Ensures avatar is shown even before the stream fires.
+  Future<void> _fetchOtherProfileOnce() async {
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('registration')
+          .doc(widget.otherUserId)
+          .get();
+      if (!snap.exists || !mounted) return;
+      final p = _parseProfile(snap.data()!, _liveOtherName);
+      if (mounted) {
+        setState(() {
+          if (p.name.isNotEmpty)   _liveOtherName   = p.name;
+          if (p.avatar.isNotEmpty) {
+            _liveOtherAvatar = p.avatar;
+            _updateAvatarCache(p.avatar);
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('[IndividualChatScreen] one-shot profile fetch error: $e');
+    }
+  }
+
   // ── Real-time listener on registration/{otherUserId} ─────────────────────
   void _subscribeOtherProfile() {
     _profileSub = FirebaseFirestore.instance
@@ -160,22 +265,11 @@ class _IndividualChatScreenState extends ConsumerState<IndividualChatScreen>
         .snapshots()
         .listen((snap) {
       if (!snap.exists || !mounted) return;
-      final d      = snap.data()!;
-      final rawImg = (d['profile_img'] ?? '').toString();
-      final nick   = (d['nickname']   ?? '').toString().trim();
-      final first  = (d['firstName']  ?? '').toString().trim();
-      final last   = (d['lastName']   ?? '').toString().trim();
-      final name   = nick.isNotEmpty
-          ? nick
-          : (first.isNotEmpty && last.isNotEmpty)
-          ? '$first $last'
-          : first.isNotEmpty
-          ? first
-          : _liveOtherName;
-
+      final p = _parseProfile(snap.data()!, _liveOtherName);
       setState(() {
-        _liveOtherName   = name;
-        _liveOtherAvatar = _toImgSrc(rawImg);
+        _liveOtherName   = p.name;
+        _liveOtherAvatar = p.avatar;
+        _updateAvatarCache(p.avatar);
       });
     }, onError: (e) {
       debugPrint('[IndividualChatScreen] profile sub error: $e');
@@ -218,29 +312,16 @@ class _IndividualChatScreenState extends ConsumerState<IndividualChatScreen>
     });
   }
 
+  // ── Navigate to full UserProfileScreen (replaces modal) ──────────────────
   void _openProfile() {
     HapticFeedback.lightImpact();
     Navigator.of(context).push(
-      UserProfileModal.route(
-        userId:    widget.otherUserId,
-        userName:  _liveOtherName,
-        avatarUrl: _liveOtherAvatar,
-        onChat:    () {},
-        onGroupTap: (group) {
-          final mapped = {
-            ...group,
-            'org_name':        group['group_name']  ?? group['org_name']  ?? '',
-            'org_image':       group['group_image'] ?? group['org_image'] ?? '',
-            'org_id':          group['group_id']    ?? group['org_id']    ?? '',
-            'org_description': group['org_description'] ?? '',
-          };
-          Navigator.pop(context);
-          Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => GroupDetailScreen(group: mapped),
-            ),
-          );
-        },
+      MaterialPageRoute(
+        builder: (_) => UserProfileScreen(
+          userId:        widget.otherUserId,
+          initialName:   _liveOtherName,
+          initialAvatar: _liveOtherAvatar,
+        ),
       ),
     );
   }
@@ -315,32 +396,14 @@ class _IndividualChatScreenState extends ConsumerState<IndividualChatScreen>
                 ),
                 const SizedBox(width: 2),
 
-                // Avatar + name (tappable)
+                // Avatar + name (tappable) → opens UserProfileScreen
                 Expanded(
                   child: GestureDetector(
                     onTap: _openProfile,
                     behavior: HitTestBehavior.opaque,
                     child: Row(
                       children: [
-                        // ── Live avatar — handles http, data:base64, raw base64
-                        CircleAvatar(
-                          radius: 21,
-                          backgroundColor:
-                          AppColors.primary.withOpacity(0.12),
-                          backgroundImage: avatarImage,
-                          child: avatarImage == null
-                              ? Text(
-                            _liveOtherName.isNotEmpty
-                                ? _liveOtherName[0].toUpperCase()
-                                : '?',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.primary,
-                            ),
-                          )
-                              : null,
-                        ),
+                        _buildAvatar(avatarImage, radius: 21, fontSize: 15),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
@@ -405,6 +468,28 @@ class _IndividualChatScreenState extends ConsumerState<IndividualChatScreen>
           ),
         ],
       ),
+    );
+  }
+
+  // ── Reusable avatar widget ────────────────────────────────────────────────
+  Widget _buildAvatar(ImageProvider? image,
+      {required double radius, required double fontSize}) {
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: AppColors.primary.withOpacity(0.12),
+      backgroundImage: image,
+      child: image == null
+          ? Text(
+        _liveOtherName.isNotEmpty
+            ? _liveOtherName[0].toUpperCase()
+            : '?',
+        style: TextStyle(
+          fontSize: fontSize,
+          fontWeight: FontWeight.bold,
+          color: AppColors.primary,
+        ),
+      )
+          : null,
     );
   }
 
@@ -526,7 +611,6 @@ class _IndividualChatScreenState extends ConsumerState<IndividualChatScreen>
       bottomRight: Radius.circular(isMe  && !isLastInGroup  ? 5 : 22),
     );
 
-    // Resolve the other user's live avatar for the bubble avatar
     final bubbleAvatarImage = _resolveImage(_liveOtherAvatar);
 
     return Padding(
@@ -536,31 +620,14 @@ class _IndividualChatScreenState extends ConsumerState<IndividualChatScreen>
         isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          // ── Other user avatar beside bubble ──
           if (!isMe) ...[
             SizedBox(
               width: 32,
               child: isLastInGroup
                   ? GestureDetector(
                 onTap: _openProfile,
-                child: CircleAvatar(
-                  radius: 16,
-                  backgroundColor:
-                  AppColors.primary.withOpacity(0.12),
-                  backgroundImage: bubbleAvatarImage,
-                  child: bubbleAvatarImage == null
-                      ? Text(
-                    _liveOtherName.isNotEmpty
-                        ? _liveOtherName[0].toUpperCase()
-                        : '?',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primary,
-                    ),
-                  )
-                      : null,
-                ),
+                child: _buildAvatar(bubbleAvatarImage,
+                    radius: 16, fontSize: 12),
               )
                   : null,
             ),
