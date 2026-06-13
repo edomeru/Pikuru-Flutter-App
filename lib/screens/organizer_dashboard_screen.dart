@@ -51,6 +51,7 @@ const _L = {
     'myGroups':     'My Groups',
     'registered':   'Registered',
     'auditLog':     'Audit Log',
+    'analytics':    'Analytics',
     'noEvents':     'You have not created any events yet.',
     'noGroups':     'You have not created any groups yet.',
     'noRegistered': 'You have not registered for any events yet.',
@@ -92,6 +93,30 @@ const _L = {
     'noGroupResults': 'No groups match your search.',
     'noRegisteredResults': 'No registered events match your search.',
     'noAuditResults': 'No audit entries match your search.',
+    // Analytics
+    'analyticsTitle':       'Performance Analytics',
+    'analyticsSub':         'Track views, registrations, and conversions for your events.',
+    'totalViews':           'Total Impressions',
+    'totalRegistrations':   'Total Registrations',
+    'avgViews':             'Avg. Event Views',
+    'conversionRate':       'Conversion Rate',
+    'searchEventsAnalytics':'Search events…',
+    'sortBy':               'Sort By',
+    'sortMostViewed':       'Most Viewed',
+    'sortMostRegistered':   'Most Registered',
+    'sortConversion':       'Conversion Rate',
+    'sortNewest':           'Newest',
+    'viewsLabel':           'views',
+    'registrationsLabel':   'registrations',
+    'conversionLabel':      'conversion',
+    'noEventsAnalytics':    'No events found to analyze.',
+    'viewEvent':            'View Details',
+    'slotsFilled':          'slots filled',
+    'page':                 'Page',
+    'of':                   'of',
+    'prev':                 'Prev',
+    'next':                 'Next',
+    'approved2':            'approved',
   },
   kLangJa: {
     'title':        'オーガナイザーダッシュボード',
@@ -100,6 +125,7 @@ const _L = {
     'myGroups':     'マイグループ',
     'registered':   '登録済み',
     'auditLog':     '監査ログ',
+    'analytics':    '分析・統計',
     'noEvents':     'まだイベントを作成していません。',
     'noGroups':     'まだグループを作成していません。',
     'noRegistered': 'まだイベントに登録していません。',
@@ -141,6 +167,30 @@ const _L = {
     'noGroupResults': '検索結果がありません。',
     'noRegisteredResults': '検索結果がありません。',
     'noAuditResults': '検索結果がありません。',
+    // Analytics
+    'analyticsTitle':       'パフォーマンス分析',
+    'analyticsSub':         'イベントの閲覧数、登録者数、転換率を追跡します。',
+    'totalViews':           '総インプレッション数',
+    'totalRegistrations':   '総登録数',
+    'avgViews':             '平均イベント閲覧数',
+    'conversionRate':       '転換率',
+    'searchEventsAnalytics':'イベントを検索…',
+    'sortBy':               '並び替え',
+    'sortMostViewed':       '閲覧数順',
+    'sortMostRegistered':   '登録数順',
+    'sortConversion':       '転換率順',
+    'sortNewest':           '新着順',
+    'viewsLabel':           '回閲覧',
+    'registrationsLabel':   '登録数',
+    'conversionLabel':      '転換率',
+    'noEventsAnalytics':    '分析対象のイベントが見つかりません。',
+    'viewEvent':            '詳細を見る',
+    'slotsFilled':          '枠埋まり',
+    'page':                 'ページ',
+    'of':                   '/',
+    'prev':                 '前へ',
+    'next':                 '次へ',
+    'approved2':            '承認済み',
   },
 };
 
@@ -173,6 +223,11 @@ String _fmtRegDate(dynamic ts, String lang) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Sort enum for analytics
+// ─────────────────────────────────────────────────────────────────────────────
+enum _AnalyticsSort { views, registrations, conversion, newest }
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Screen
 // ─────────────────────────────────────────────────────────────────────────────
 class OrganizerDashboardScreen extends ConsumerStatefulWidget {
@@ -194,7 +249,7 @@ class _OrganizerDashboardScreenState
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 4, vsync: this);
+    _tabs = TabController(length: 5, vsync: this);
     _tabs.addListener(() => setState(() {}));
   }
 
@@ -204,10 +259,9 @@ class _OrganizerDashboardScreenState
     super.dispose();
   }
 
-  // Refresh all 4 tabs by bumping the shared key
+  // Refresh all tabs by bumping the shared key
   Future<void> _refreshAll() async {
     setState(() => _globalRefreshKey++);
-    // Small delay so tabs pick up the new key and start their fetches
     await Future.delayed(const Duration(milliseconds: 600));
   }
 
@@ -262,6 +316,7 @@ class _OrganizerDashboardScreenState
                 Tab(text: _t(lang, 'myEvents')),
                 Tab(text: _t(lang, 'myGroups')),
                 Tab(text: _t(lang, 'registered')),
+                Tab(text: _t(lang, 'analytics')),
                 Tab(text: _t(lang, 'auditLog')),
               ],
             ),
@@ -274,6 +329,7 @@ class _OrganizerDashboardScreenState
           _MyEventsTab(uid: uid, lang: lang, refreshKey: _globalRefreshKey, onRefreshAll: _refreshAll),
           _MyGroupsTab(uid: uid, lang: lang, refreshKey: _globalRefreshKey, onRefreshAll: _refreshAll),
           _RegisteredTab(uid: uid, lang: lang, refreshKey: _globalRefreshKey, onRefreshAll: _refreshAll),
+          _AnalyticsTab(uid: uid, lang: lang, refreshKey: _globalRefreshKey, onRefreshAll: _refreshAll),
           _AuditLogTab(uid: uid, lang: lang, refreshKey: _globalRefreshKey, onRefreshAll: _refreshAll),
         ],
       ),
@@ -319,7 +375,6 @@ class _MyEventsTabState extends State<_MyEventsTab> {
   @override
   void didUpdateWidget(_MyEventsTab oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // When the parent bumps refreshKey, force a stream rebuild
     if (oldWidget.refreshKey != widget.refreshKey) {
       setState(() {
         _streamKey++;
@@ -2072,7 +2127,960 @@ class _RegisteredTabState extends State<_RegisteredTab> {
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
-// TAB 4 — AUDIT LOG
+// TAB 4 — ANALYTICS
+// ═════════════════════════════════════════════════════════════════════════════
+class _AnalyticsTab extends StatefulWidget {
+  final String uid, lang;
+  final int refreshKey;
+  final Future<void> Function() onRefreshAll;
+
+  const _AnalyticsTab({
+    required this.uid,
+    required this.lang,
+    required this.refreshKey,
+    required this.onRefreshAll,
+  });
+
+  @override
+  State<_AnalyticsTab> createState() => _AnalyticsTabState();
+}
+
+class _AnalyticsTabState extends State<_AnalyticsTab> {
+  // All organizer events (raw, from Firestore)
+  List<Map<String, dynamic>> _events = [];
+  bool _eventsLoading = true;
+  int _streamKey = 0;
+
+  // Per-event registration metrics: eventId -> {regs, approved, pending}
+  final Map<String, Map<String, int>> _metrics = {};
+
+  // UI state
+  final TextEditingController _searchCtrl = TextEditingController();
+  String _query = '';
+  _AnalyticsSort _sort = _AnalyticsSort.views;
+  int _page = 1;
+  static const int _pageSize = 4;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchCtrl.addListener(() {
+      setState(() {
+        _query = _searchCtrl.text.trim().toLowerCase();
+        _page  = 1;
+      });
+    });
+  }
+
+  @override
+  void didUpdateWidget(_AnalyticsTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshKey != widget.refreshKey) {
+      setState(() {
+        _streamKey++;
+        _metrics.clear();
+        _page = 1;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  // Load registration metrics for all events (matches web: views from
+  // event_view_count field; regs/approved from event_registrations collection)
+  Future<void> _loadMetrics(List<Map<String, dynamic>> events) async {
+    for (final ev in events) {
+      final id = ev['_docId'] as String;
+      if (_metrics.containsKey(id)) continue;
+      try {
+        final allSnap  = await FirebaseFirestore.instance
+            .collection('event_registrations')
+            .where('event_id', isEqualTo: id)
+            .count()
+            .get();
+        final apprSnap = await FirebaseFirestore.instance
+            .collection('event_registrations')
+            .where('event_id', isEqualTo: id)
+            .where('status', isEqualTo: 'approved')
+            .count()
+            .get();
+        final pendSnap = await FirebaseFirestore.instance
+            .collection('event_registrations')
+            .where('event_id', isEqualTo: id)
+            .where('status', isEqualTo: 'pending')
+            .count()
+            .get();
+        if (mounted) {
+          setState(() {
+            _metrics[id] = {
+              'regs':     allSnap.count  ?? 0,
+              'approved': apprSnap.count ?? 0,
+              'pending':  pendSnap.count ?? 0,
+            };
+          });
+        }
+      } catch (_) {
+        if (mounted) {
+          setState(() => _metrics[id] = {'regs': 0, 'approved': 0, 'pending': 0});
+        }
+      }
+    }
+  }
+
+  // ── Computed aggregate stats (mirror web app exactly) ──────────────────────
+  int get _totalViews =>
+      _events.fold(0, (s, ev) => s + ((ev['event_view_count'] ?? 0) as int));
+
+  int get _totalRegistrations =>
+      _metrics.values.fold(0, (s, m) => s + (m['regs'] ?? 0));
+
+  int get _totalApproved =>
+      _metrics.values.fold(0, (s, m) => s + (m['approved'] ?? 0));
+
+  int get _avgViews =>
+      _events.isEmpty ? 0 : (_totalViews / _events.length).round();
+
+  String get _conversionRate {
+    if (_totalViews == 0) return '0.0';
+    return ((_totalApproved / _totalViews) * 100).toStringAsFixed(1);
+  }
+
+  // ── Filtering & sorting (mirrors web app logic exactly) ───────────────────
+  List<Map<String, dynamic>> get _filtered {
+    if (_query.isEmpty) return List.from(_events);
+    return _events.where((ev) {
+      final titleEn = (ev['event_title']    ?? '').toString().toLowerCase();
+      final titleJp = (ev['event_title_jp'] ?? '').toString().toLowerCase();
+      return titleEn.contains(_query) || titleJp.contains(_query);
+    }).toList();
+  }
+
+  List<Map<String, dynamic>> get _sorted {
+    final list = _filtered;
+    list.sort((a, b) {
+      final idA = a['_docId'] as String;
+      final idB = b['_docId'] as String;
+      final mA  = _metrics[idA] ?? {'regs': 0, 'approved': 0};
+      final mB  = _metrics[idB] ?? {'regs': 0, 'approved': 0};
+
+      switch (_sort) {
+        case _AnalyticsSort.views:
+          return ((b['event_view_count'] ?? 0) as int)
+              .compareTo((a['event_view_count'] ?? 0) as int);
+        case _AnalyticsSort.registrations:
+          return (mB['regs'] ?? 0).compareTo(mA['regs'] ?? 0);
+        case _AnalyticsSort.conversion:
+          final vA  = (a['event_view_count'] ?? 0) as int;
+          final vB  = (b['event_view_count'] ?? 0) as int;
+          final cA  = vA > 0 ? (mA['approved']! / vA) : 0.0;
+          final cB  = vB > 0 ? (mB['approved']! / vB) : 0.0;
+          return cB.compareTo(cA);
+        case _AnalyticsSort.newest:
+          final tA = a['event_added'];
+          final tB = b['event_added'];
+          final msA = tA is Timestamp ? tA.millisecondsSinceEpoch : 0;
+          final msB = tB is Timestamp ? tB.millisecondsSinceEpoch : 0;
+          return msB.compareTo(msA);
+      }
+    });
+    return list;
+  }
+
+  // ── Rank badge color (gold / silver / bronze / grey) ──────────────────────
+  Color _rankColor(int rank) {
+    if (rank == 1) return const Color(0xFFFFD700);
+    if (rank == 2) return const Color(0xFFB0C4DE);
+    if (rank == 3) return const Color(0xFFCD7F32);
+    return Colors.grey.shade400;
+  }
+
+  // ── Capacity bar color ────────────────────────────────────────────────────
+  Color _fillColor(int pct) {
+    if (pct >= 90) return _D.rejClr;
+    if (pct >= 70) return _D.pendClr;
+    return _D.apprvClr;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.uid.isEmpty) return const SizedBox.shrink();
+
+    return StreamBuilder<QuerySnapshot>(
+      key: ValueKey(_streamKey),
+      stream: FirebaseFirestore.instance
+          .collection('events')
+          .where('submittedBy', isEqualTo: widget.uid)
+          .snapshots(),
+      builder: (context, snap) {
+        if (!snap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        // Rebuild events list from stream
+        final docs = snap.data!.docs;
+        final freshEvents = docs.map((d) {
+          final data = d.data() as Map<String, dynamic>;
+          return <String, dynamic>{'_docId': d.id, ...data};
+        }).toList()
+          ..sort((a, b) {
+            final tA = a['event_added'] is Timestamp
+                ? (a['event_added'] as Timestamp).millisecondsSinceEpoch
+                : 0;
+            final tB = b['event_added'] is Timestamp
+                ? (b['event_added'] as Timestamp).millisecondsSinceEpoch
+                : 0;
+            return tB.compareTo(tA);
+          });
+
+        // Update _events & trigger metrics load once per stream emission
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          final changed = freshEvents.length != _events.length ||
+              (freshEvents.isNotEmpty &&
+                  freshEvents.first['_docId'] != (_events.isNotEmpty ? _events.first['_docId'] : ''));
+          if (changed || _events.isEmpty) {
+            setState(() => _events = freshEvents);
+            _loadMetrics(freshEvents);
+          }
+        });
+
+        final sortedEvents = _sorted;
+        final totalPages   = (sortedEvents.isEmpty ? 1 : (sortedEvents.length / _pageSize).ceil());
+        final safePage     = _page.clamp(1, totalPages);
+        final pageEvents   = sortedEvents.skip((safePage - 1) * _pageSize).take(_pageSize).toList();
+
+        return RefreshIndicator(
+          onRefresh: widget.onRefreshAll,
+          color: _D.refreshGreen,
+          backgroundColor: Colors.white,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+            children: [
+              // ── Section header ──────────────────────────────────────────
+              Row(children: [
+                Container(
+                  width: 32, height: 32,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(Icons.bar_chart_rounded,
+                      size: 18, color: AppColors.primary),
+                ),
+                const SizedBox(width: 10),
+                Text(_t(widget.lang, 'analyticsTitle'),
+                    style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                        color: _D.textPri)),
+              ]),
+              const SizedBox(height: 4),
+              Text(_t(widget.lang, 'analyticsSub'),
+                  style: const TextStyle(
+                      fontSize: 12,
+                      color: _D.textMuted,
+                      fontWeight: FontWeight.w500)),
+              const SizedBox(height: 20),
+
+              // ── Overview stat cards ────────────────────────────────────
+              GridView.count(
+                crossAxisCount: 2,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+                childAspectRatio: 1.6,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                children: [
+                  _StatCard(
+                    icon: Icons.visibility_rounded,
+                    iconColor: AppColors.primary,
+                    label: _t(widget.lang, 'totalViews'),
+                    value: _totalViews.toString(),
+                    valueColor: _D.textPri,
+                  ),
+                  _StatCard(
+                    icon: Icons.how_to_reg_rounded,
+                    iconColor: const Color(0xFF5C6BC0),
+                    label: _t(widget.lang, 'totalRegistrations'),
+                    value: _totalRegistrations.toString(),
+                    valueColor: _D.textPri,
+                  ),
+                  _StatCard(
+                    icon: Icons.show_chart_rounded,
+                    iconColor: _D.pendClr,
+                    label: _t(widget.lang, 'avgViews'),
+                    value: _avgViews.toString(),
+                    valueColor: _D.textPri,
+                  ),
+                  _StatCard(
+                    icon: Icons.trending_up_rounded,
+                    iconColor: AppColors.primary,
+                    label: _t(widget.lang, 'conversionRate'),
+                    value: '$_conversionRate%',
+                    valueColor: AppColors.primary,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              // ── Search bar ─────────────────────────────────────────────
+              Container(
+                height: 42,
+                decoration: BoxDecoration(
+                  color: _D.rowBg,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: _D.border),
+                ),
+                child: TextField(
+                  controller: _searchCtrl,
+                  style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: _D.textPri),
+                  decoration: InputDecoration(
+                    hintText: _t(widget.lang, 'searchEventsAnalytics'),
+                    hintStyle: const TextStyle(
+                        fontSize: 14,
+                        color: _D.textDim,
+                        fontWeight: FontWeight.w400),
+                    prefixIcon: const Icon(
+                        Icons.search_rounded,
+                        size: 20,
+                        color: _D.textMuted),
+                    suffixIcon: _query.isNotEmpty
+                        ? GestureDetector(
+                      onTap: () => _searchCtrl.clear(),
+                      child: const Icon(Icons.close_rounded,
+                          size: 18, color: _D.textMuted),
+                    )
+                        : null,
+                    border: InputBorder.none,
+                    contentPadding:
+                    const EdgeInsets.symmetric(vertical: 11),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // ── Sort pills ─────────────────────────────────────────────
+              Row(children: [
+                Text(_t(widget.lang, 'sortBy'),
+                    style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: _D.textMuted)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(children: [
+                      _SortPill(
+                        label: _t(widget.lang, 'sortMostViewed'),
+                        selected: _sort == _AnalyticsSort.views,
+                        onTap: () => setState(() { _sort = _AnalyticsSort.views; _page = 1; }),
+                      ),
+                      const SizedBox(width: 6),
+                      _SortPill(
+                        label: _t(widget.lang, 'sortMostRegistered'),
+                        selected: _sort == _AnalyticsSort.registrations,
+                        onTap: () => setState(() { _sort = _AnalyticsSort.registrations; _page = 1; }),
+                      ),
+                      const SizedBox(width: 6),
+                      _SortPill(
+                        label: _t(widget.lang, 'sortConversion'),
+                        selected: _sort == _AnalyticsSort.conversion,
+                        onTap: () => setState(() { _sort = _AnalyticsSort.conversion; _page = 1; }),
+                      ),
+                      const SizedBox(width: 6),
+                      _SortPill(
+                        label: _t(widget.lang, 'sortNewest'),
+                        selected: _sort == _AnalyticsSort.newest,
+                        onTap: () => setState(() { _sort = _AnalyticsSort.newest; _page = 1; }),
+                      ),
+                    ]),
+                  ),
+                ),
+              ]),
+              const SizedBox(height: 16),
+
+              // ── Event cards or empty state ────────────────────────────
+              if (sortedEvents.isEmpty)
+                _EmptyState(
+                  icon: Icons.bar_chart_rounded,
+                  message: _t(widget.lang, 'noEventsAnalytics'),
+                )
+              else
+                ...pageEvents.asMap().entries.map((entry) {
+                  final idx  = entry.key;
+                  final ev   = entry.value;
+                  final id   = ev['_docId'] as String;
+                  final rank = (safePage - 1) * _pageSize + idx + 1;
+                  final m    = _metrics[id] ?? {'regs': 0, 'approved': 0, 'pending': 0};
+
+                  final views    = (ev['event_view_count'] ?? 0) as int;
+                  final regs     = m['regs']    ?? 0;
+                  final approved = m['approved'] ?? 0;
+                  final convPct  = views > 0
+                      ? ((approved / views) * 100).toStringAsFixed(1)
+                      : '0.0';
+
+                  final title = widget.lang == 'ja'
+                      ? (ev['event_title_jp'] ?? ev['event_title'] ?? 'Untitled').toString()
+                      : (ev['event_title'] ?? 'Untitled').toString();
+                  final imgUrl   = (ev['event_pic'] ?? '').toString();
+                  final dateStr  = _fmtDate(ev['event_date'], compact: true);
+                  final evType   = (ev['event_type'] ?? '').toString();
+
+                  final limit    = (ev['event_limit'] ?? 0) as int;
+                  final fillPct  = (limit > 0)
+                      ? (approved / limit * 100).round().clamp(0, 100)
+                      : 0;
+
+                  return _AnalyticsEventCard(
+                    rank:      rank,
+                    rankColor: _rankColor(rank),
+                    title:     title,
+                    imgUrl:    imgUrl,
+                    dateStr:   dateStr,
+                    evType:    evType,
+                    views:     views,
+                    regs:      regs,
+                    approved:  approved,
+                    convPct:   convPct,
+                    limit:     limit,
+                    fillPct:   fillPct,
+                    fillColor: _fillColor(fillPct),
+                    lang:      widget.lang,
+                    onViewDetails: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => OrganizerEventDetailScreen(
+                          eventId: id,
+                          data:    ev,
+                          lang:    widget.lang,
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+
+              // ── Pagination ─────────────────────────────────────────────
+              if (totalPages > 1) ...[
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '${_t(widget.lang, 'page')} $safePage ${_t(widget.lang, 'of')} $totalPages',
+                      style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: _D.textMuted),
+                    ),
+                    Row(children: [
+                      // Prev
+                      _PaginationBtn(
+                        label: '← ${_t(widget.lang, 'prev')}',
+                        enabled: safePage > 1,
+                        onTap: () => setState(() => _page = safePage - 1),
+                      ),
+                      const SizedBox(width: 6),
+                      // Page numbers
+                      ...List.generate(totalPages, (i) => i + 1).map((pg) => Padding(
+                        padding: const EdgeInsets.only(left: 4),
+                        child: GestureDetector(
+                          onTap: () => setState(() => _page = pg),
+                          child: Container(
+                            width: 30, height: 30,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: pg == safePage
+                                  ? AppColors.primary.withOpacity(0.15)
+                                  : _D.rowBg,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: pg == safePage
+                                    ? AppColors.primary.withOpacity(0.4)
+                                    : _D.border,
+                              ),
+                            ),
+                            child: Text('$pg',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                    color: pg == safePage
+                                        ? AppColors.primary
+                                        : _D.textMuted)),
+                          ),
+                        ),
+                      )),
+                      const SizedBox(width: 6),
+                      // Next
+                      _PaginationBtn(
+                        label: '${_t(widget.lang, 'next')} →',
+                        enabled: safePage < totalPages,
+                        onTap: () => setState(() => _page = safePage + 1),
+                      ),
+                    ]),
+                  ],
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Analytics stat card
+// ─────────────────────────────────────────────────────────────────────────────
+class _StatCard extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+  final String value;
+  final Color valueColor;
+
+  const _StatCard({
+    required this.icon,
+    required this.iconColor,
+    required this.label,
+    required this.value,
+    required this.valueColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _D.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _D.border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(label,
+                    style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: _D.textMuted),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis),
+              ),
+              Container(
+                width: 30, height: 30,
+                decoration: BoxDecoration(
+                    color: iconColor.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8)),
+                child: Icon(icon, size: 16, color: iconColor),
+              ),
+            ],
+          ),
+          Text(value,
+              style: TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                  color: valueColor)),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Analytics sort pill
+// ─────────────────────────────────────────────────────────────────────────────
+class _SortPill extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _SortPill({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.primary : _D.rowBg,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? AppColors.primary : _D.border,
+          ),
+        ),
+        child: Text(label,
+            style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: selected ? Colors.white : _D.textMuted)),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Analytics event card
+// ─────────────────────────────────────────────────────────────────────────────
+class _AnalyticsEventCard extends StatelessWidget {
+  final int rank;
+  final Color rankColor;
+  final String title;
+  final String imgUrl;
+  final String dateStr;
+  final String evType;
+  final int views;
+  final int regs;
+  final int approved;
+  final String convPct;
+  final int limit;
+  final int fillPct;
+  final Color fillColor;
+  final String lang;
+  final VoidCallback onViewDetails;
+
+  const _AnalyticsEventCard({
+    required this.rank,
+    required this.rankColor,
+    required this.title,
+    required this.imgUrl,
+    required this.dateStr,
+    required this.evType,
+    required this.views,
+    required this.regs,
+    required this.approved,
+    required this.convPct,
+    required this.limit,
+    required this.fillPct,
+    required this.fillColor,
+    required this.lang,
+    required this.onViewDetails,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: _D.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _D.border),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 12,
+              offset: const Offset(0, 3)),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Cover image + rank badge ──────────────────────────────────
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            child: Stack(children: [
+              imgUrl.isNotEmpty
+                  ? Image.network(
+                imgUrl,
+                height: 100,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _placeholder(),
+              )
+                  : _placeholder(),
+              // Rank badge
+              Positioned(
+                top: 10,
+                left: 10,
+                child: Container(
+                  width: 32, height: 32,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: rankColor,
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: [
+                      BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2)),
+                    ],
+                  ),
+                  child: Text('#$rank',
+                      style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white)),
+                ),
+              ),
+              // Event type badge
+              if (evType.isNotEmpty)
+                Positioned(
+                  top: 10,
+                  right: 10,
+                  child: Container(
+                    padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.55),
+                        borderRadius: BorderRadius.circular(20)),
+                    child: Text(evType,
+                        style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white)),
+                  ),
+                ),
+            ]),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Date + type label
+                Text(
+                  [if (evType.isNotEmpty) evType, dateStr]
+                      .where((s) => s.isNotEmpty)
+                      .join(' • '),
+                  style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: _D.textMuted),
+                ),
+                const SizedBox(height: 4),
+                // Title
+                Text(title,
+                    style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: _D.textPri),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 12),
+
+                // ── Metrics row ───────────────────────────────────────
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.04),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: AppColors.primary.withOpacity(0.12)),
+                  ),
+                  child: Row(children: [
+                    // Views
+                    _MetricCol(
+                      icon: Icons.visibility_rounded,
+                      iconColor: AppColors.primary,
+                      value: views.toString(),
+                      label: _t(lang, 'viewsLabel'),
+                    ),
+                    _vDivider(),
+                    // Registrations
+                    _MetricCol(
+                      icon: Icons.how_to_reg_rounded,
+                      iconColor: const Color(0xFF5C6BC0),
+                      value: regs.toString(),
+                      subLabel: '($approved ${_t(lang, 'approved2')})',
+                      label: _t(lang, 'registrationsLabel'),
+                    ),
+                    _vDivider(),
+                    // Conversion
+                    _MetricCol(
+                      icon: Icons.trending_up_rounded,
+                      iconColor: AppColors.primary,
+                      value: '$convPct%',
+                      label: _t(lang, 'conversionLabel'),
+                      valueColor: AppColors.primary,
+                    ),
+                  ]),
+                ),
+
+                // ── Capacity bar (only if event has a limit) ──────────
+                if (limit > 0) ...[
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        lang == 'ja'
+                            ? '$approved / $limit${_t(lang, 'slotsFilled')}'
+                            : '$approved / $limit ${_t(lang, 'slotsFilled')}',
+                        style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: _D.textMuted),
+                      ),
+                      Text('$fillPct%',
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                              color: fillColor)),
+                    ],
+                  ),
+                  const SizedBox(height: 5),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: fillPct / 100,
+                      minHeight: 5,
+                      backgroundColor: _D.border,
+                      valueColor: AlwaysStoppedAnimation<Color>(fillColor),
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 14),
+
+                // ── View Details button ────────────────────────────────
+                _ActionButton(
+                  icon: Icons.remove_red_eye_rounded,
+                  label: _t(lang, 'viewEvent'),
+                  color: AppColors.primary,
+                  onTap: onViewDetails,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _placeholder() => Container(
+    height: 100,
+    width: double.infinity,
+    color: AppColors.primary.withOpacity(0.08),
+    child: Icon(Icons.event_rounded,
+        size: 36, color: AppColors.primary.withOpacity(0.25)),
+  );
+
+  Widget _vDivider() => Container(
+    width: 1,
+    height: 32,
+    margin: const EdgeInsets.symmetric(horizontal: 10),
+    color: AppColors.primary.withOpacity(0.12),
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A single metric column inside the analytics card metrics row
+// ─────────────────────────────────────────────────────────────────────────────
+class _MetricCol extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String value;
+  final String label;
+  final String? subLabel;
+  final Color? valueColor;
+
+  const _MetricCol({
+    required this.icon,
+    required this.iconColor,
+    required this.value,
+    required this.label,
+    this.subLabel,
+    this.valueColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(icon, size: 12, color: iconColor),
+            const SizedBox(width: 4),
+            Text(value,
+                style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                    color: valueColor ?? _D.textPri)),
+          ]),
+          if (subLabel != null)
+            Text(subLabel!,
+                style: const TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w500,
+                    color: _D.textMuted)),
+          Text(label,
+              style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  color: iconColor.withOpacity(0.7))),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Pagination button
+// ─────────────────────────────────────────────────────────────────────────────
+class _PaginationBtn extends StatelessWidget {
+  final String label;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  const _PaginationBtn({
+    required this.label,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: _D.rowBg,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: _D.border),
+        ),
+        child: Text(label,
+            style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: enabled ? _D.textSec : _D.textDim)),
+      ),
+    );
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// TAB 5 — AUDIT LOG
 // ═════════════════════════════════════════════════════════════════════════════
 class _AuditLogTab extends StatefulWidget {
   final String uid, lang;
