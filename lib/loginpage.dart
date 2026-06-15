@@ -11,6 +11,7 @@ import 'package:pikuru/screens/reset_password_dialog.dart';
 import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:pikuru/services/notification_service.dart'; // ← add this import
+import 'package:google_sign_in/google_sign_in.dart';
 import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
@@ -20,47 +21,46 @@ import 'package:crypto/crypto.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 const _L = {
   kLangEn: {
-    'headerTitle':   'Sign In',
-    'emailHint':     'Email',
-    'passwordHint':  'Password',
-    'forgotPassword':'Forgot Password?',
-    'signInBtn':     'Sign In',
-    'orWith':        'Or Sign In With',
-    'google':        'Google',
-    'apple':         'Apple',
-    'noAccount':     "Don't have an account yet? ",
-    'signUp':        'Sign Up',
+    'headerTitle': 'Sign In',
+    'emailHint': 'Email',
+    'passwordHint': 'Password',
+    'forgotPassword': 'Forgot Password?',
+    'signInBtn': 'Sign In',
+    'orWith': 'Or Sign In With',
+    'google': 'Google',
+    'apple': 'Apple',
+    'noAccount': "Don't have an account yet? ",
+    'signUp': 'Sign Up',
     // Error messages — mirrors web app's friendly() function
-    'errInvalidCred':'Incorrect email or password. Please try again.',
-    'errInvalidEmail':'Please enter a valid email address.',
-    'errDisabled':   'This account has been disabled.',
-    'errTooMany':    'Too many attempts. Please try again later.',
-    'errDefault':    'Login failed. Please try again.',
-    'errGoogle':     'Google sign-in failed',
+    'errInvalidCred': 'Incorrect email or password. Please try again.',
+    'errInvalidEmail': 'Please enter a valid email address.',
+    'errDisabled': 'This account has been disabled.',
+    'errTooMany': 'Too many attempts. Please try again later.',
+    'errDefault': 'Login failed. Please try again.',
+    'errGoogle': 'Google sign-in failed',
   },
   kLangJa: {
-    'headerTitle':   'ログイン',
-    'emailHint':     'メールアドレス',
-    'passwordHint':  'パスワード',
-    'forgotPassword':'パスワードをお忘れですか？',
-    'signInBtn':     'ログイン',
-    'orWith':        'または以下でログイン',
-    'google':        'Google',
-    'apple':         'Apple',
-    'noAccount':     'アカウントをお持ちでないですか？ ',
-    'signUp':        '登録する',
+    'headerTitle': 'ログイン',
+    'emailHint': 'メールアドレス',
+    'passwordHint': 'パスワード',
+    'forgotPassword': 'パスワードをお忘れですか？',
+    'signInBtn': 'ログイン',
+    'orWith': 'または以下でログイン',
+    'google': 'Google',
+    'apple': 'Apple',
+    'noAccount': 'アカウントをお持ちでないですか？ ',
+    'signUp': '登録する',
     // Error messages — mirrors web app's friendlyJa() function
-    'errInvalidCred':'メールアドレスまたはパスワードが正しくありません。',
-    'errInvalidEmail':'有効なメールアドレスを入力してください。',
-    'errDisabled':   'このアカウントは無効化されています。',
-    'errTooMany':    'ログイン試行回数が多すぎます。後でもう一度お試しください。',
-    'errDefault':    'エラーが発生しました。もう一度お試しください。',
-    'errGoogle':     'Googleログインに失敗しました',
+    'errInvalidCred': 'メールアドレスまたはパスワードが正しくありません。',
+    'errInvalidEmail': '有効なメールアドレスを入力してください。',
+    'errDisabled': 'このアカウントは無効化されています。',
+    'errTooMany': 'ログイン試行回数が多すぎます。後でもう一度お試しください。',
+    'errDefault': 'エラーが発生しました。もう一度お試しください。',
+    'errGoogle': 'Googleログインに失敗しました',
   },
 };
 
-String _t(String lang, String key) =>
-    _L[lang]?[key] ?? _L[kLangEn]![key]!;
+String _t(String lang, String key) => _L[lang]?[key] ?? _L[kLangEn]![key]!;
 
 /// Mirrors the web app's friendly() / friendlyJa() functions
 String _authError(String lang, String code) {
@@ -93,17 +93,28 @@ class LoginScreen extends ConsumerStatefulWidget {
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _auth = FirebaseAuth.instance;
   bool showSpinner = false;
-  String email    = '';
+  String email = '';
   String password = '';
+
+  Future<void> _clearGoogleSession() async {
+    try {
+      final google = GoogleSignIn();
+      await google.disconnect();
+    } catch (_) {
+      try {
+        await GoogleSignIn().signOut();
+      } catch (_) {}
+    }
+  }
 
   // ── Ensure SSO users have a registration doc using 'nickname' ──────────────
   Future<void> _ensureRegistrationDoc(User user) async {
     try {
-      final docRef  = FirebaseFirestore.instance
+      final docRef = FirebaseFirestore.instance
           .collection('registration')
           .doc(user.uid);
       final docSnap = await docRef.get();
-      final data    = docSnap.data() ?? {};
+      final data = docSnap.data() ?? {};
 
       if (!docSnap.exists ||
           ((data['nickname'] ?? '').toString().isEmpty &&
@@ -114,15 +125,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             : 'password';
 
         await docRef.set({
-          'nickname':    nickname,
-          'email':       user.email ?? '',
-          'uid':         user.uid,
-          'address':     data['address']     ?? '',
+          'nickname': nickname,
+          'email': user.email ?? '',
+          'uid': user.uid,
+          'address': data['address'] ?? '',
           'description': data['description'] ?? '',
-          'provider':    data['provider']?.toString().isNotEmpty == true
+          'provider': data['provider']?.toString().isNotEmpty == true
               ? data['provider']
               : provider,
-          'createdAt':   data['createdAt'] ?? FieldValue.serverTimestamp(),
+          'createdAt': data['createdAt'] ?? FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
       } else if ((data['provider'] ?? '').toString().isEmpty) {
         final provider = user.providerData.isNotEmpty
@@ -160,7 +171,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       onChanged: (v) => email = v,
                       keyboardType: TextInputType.emailAddress,
                       style: const TextStyle(
-                          color: Colors.black, fontWeight: FontWeight.bold),
+                        color: Colors.black,
+                        fontWeight: FontWeight.bold,
+                      ),
                       decoration: _inputDecoration(_t(lang, 'emailHint')),
                     ),
 
@@ -171,7 +184,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       obscureText: true,
                       onChanged: (v) => password = v,
                       style: const TextStyle(
-                          color: Colors.black, fontWeight: FontWeight.bold),
+                        color: Colors.black,
+                        fontWeight: FontWeight.bold,
+                      ),
                       decoration: _inputDecoration(_t(lang, 'passwordHint')),
                     ),
 
@@ -182,14 +197,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       alignment: Alignment.centerRight,
                       child: TextButton(
                         onPressed: () => showResetPasswordDialog(
-                            context, prefillEmail: email.trim()),
+                          context,
+                          prefillEmail: email.trim(),
+                        ),
                         style: TextButton.styleFrom(
-                            padding: EdgeInsets.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                          padding: EdgeInsets.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
                         child: Text(
                           _t(lang, 'forgotPassword'),
                           style: const TextStyle(
-                              color: Colors.black54, fontSize: 13),
+                            color: Colors.black54,
+                            fontSize: 13,
+                          ),
                         ),
                       ),
                     ),
@@ -204,42 +224,48 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                           setState(() => showSpinner = true);
                           try {
                             await _auth.signInWithEmailAndPassword(
-                                email: email.trim(), password: password);
-                            await NotificationService.instance.init(); // re-saves token with new uid
+                              email: email.trim(),
+                              password: password,
+                            );
+                            await NotificationService.instance
+                                .init(); // re-saves token with new uid
                             setState(() => showSpinner = false);
                             if (!mounted) return;
                             Navigator.pushReplacement(
                               context,
                               MaterialPageRoute(
-                                  builder: (_) => const MainNavigation()),
+                                builder: (_) => const MainNavigation(),
+                              ),
                             );
                           } on FirebaseAuthException catch (e) {
                             setState(() => showSpinner = false);
                             final msg = _authError(lang, e.code);
                             if (!mounted) return;
-                            ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text(msg)));
+                            ScaffoldMessenger.of(
+                              context,
+                            ).showSnackBar(SnackBar(content: Text(msg)));
                           } catch (e) {
                             setState(() => showSpinner = false);
                             if (!mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                    content:
-                                    Text('Error: ${e.toString()}')));
+                              SnackBar(content: Text('Error: ${e.toString()}')),
+                            );
                           }
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.primary,
                           elevation: 0,
                           shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10)),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
                         child: Text(
                           _t(lang, 'signInBtn'),
                           style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white),
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
                     ),
@@ -247,86 +273,101 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     const SizedBox(height: 28),
 
                     // ── Divider ──────────────────────────────────────────────
-                    Row(children: [
-                      const Expanded(child: Divider()),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        child: Text(
-                          _t(lang, 'orWith'),
-                          style: const TextStyle(
-                              fontSize: 12, color: Colors.black45),
+                    Row(
+                      children: [
+                        const Expanded(child: Divider()),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Text(
+                            _t(lang, 'orWith'),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.black45,
+                            ),
+                          ),
                         ),
-                      ),
-                      const Expanded(child: Divider()),
-                    ]),
+                        const Expanded(child: Divider()),
+                      ],
+                    ),
 
                     const SizedBox(height: 20),
 
                     // ── Google + Apple ───────────────────────────────────────
-                    Row(children: [
-                      Expanded(
-                        child: _pillButton(
-                          onPressed: () async {
-                            setState(() => showSpinner = true);
-                            final result =
-                            await AuthService.signInWithGoogle();
-                            setState(() => showSpinner = false);
-                            if (result != null) {
-                              await result.user!.getIdToken(true);
-                              await _ensureRegistrationDoc(result.user!);
-                              await NotificationService.instance.init(); // re-saves token with new uid
-                              if (!mounted) return;
-                              Navigator.pushReplacement(
-                                context,
-                                MaterialPageRoute(
-                                    builder: (_) => const MainNavigation()),
-                              );
-                            } else {
-                              if (!mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _pillButton(
+                            onPressed: () async {
+                              setState(() => showSpinner = true);
+                              await _clearGoogleSession();
+                              final result =
+                              await AuthService.signInWithGoogle();
+                              setState(() => showSpinner = false);
+                              if (result != null) {
+                                await result.user!.getIdToken(true);
+                                await _ensureRegistrationDoc(result.user!);
+                                await NotificationService.instance
+                                    .init(); // re-saves token with new uid
+                                if (!mounted) return;
+                                Navigator.pushReplacement(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const MainNavigation(),
+                                  ),
+                                );
+                              } else {
+                                if (!mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                      content: Text(
-                                          _t(lang, 'errGoogle'))));
-                            }
-                          },
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              _googleIcon(),
-                              const SizedBox(width: 8),
-                              Text(
-                                _t(lang, 'google'),
-                                style: TextStyle(
+                                    content: Text(_t(lang, 'errGoogle')),
+                                  ),
+                                );
+                              }
+                            },
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                _googleIcon(),
+                                const SizedBox(width: 8),
+                                Text(
+                                  _t(lang, 'google'),
+                                  style: TextStyle(
                                     color: AppColors.primary,
                                     fontWeight: FontWeight.w600,
-                                    fontSize: 14),
-                              ),
-                            ],
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _pillButton(
-                          onPressed: () => _signInWithApple(lang),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.apple,
-                                  color: Colors.black87, size: 22),
-                              const SizedBox(width: 6),
-                              Text(
-                                _t(lang, 'apple'),
-                                style: const TextStyle(
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _pillButton(
+                            onPressed: () => _signInWithApple(lang),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(
+                                  Icons.apple,
+                                  color: Colors.black87,
+                                  size: 22,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  _t(lang, 'apple'),
+                                  style: const TextStyle(
                                     color: Colors.black87,
                                     fontWeight: FontWeight.w600,
-                                    fontSize: 14),
-                              ),
-                            ],
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    ]),
+                      ],
+                    ),
 
                     const SizedBox(height: 28),
 
@@ -337,20 +378,24 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         Text(
                           _t(lang, 'noAccount'),
                           style: const TextStyle(
-                              fontSize: 13, color: Colors.black54),
+                            fontSize: 13,
+                            color: Colors.black54,
+                          ),
                         ),
                         GestureDetector(
                           onTap: () => Navigator.pushReplacement(
                             context,
                             MaterialPageRoute(
-                                builder: (_) => const RegisterPage()),
+                              builder: (_) => const RegisterPage(),
+                            ),
                           ),
                           child: Text(
                             _t(lang, 'signUp'),
                             style: TextStyle(
-                                fontSize: 13,
-                                color: AppColors.primary,
-                                fontWeight: FontWeight.bold),
+                              fontSize: 13,
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ],
@@ -371,8 +416,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     const charset =
         '0123456789ABCDEFGHIJKLMNOPQRSTUVXYZabcdefghijklmnopqrstuvwxyz-._';
     final random = Random.secure();
-    return List.generate(length, (_) => charset[random.nextInt(charset.length)])
-        .join();
+    return List.generate(
+      length,
+          (_) => charset[random.nextInt(charset.length)],
+    ).join();
   }
 
   String _sha256ofString(String input) {
@@ -395,17 +442,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         nonce: hashedNonce,
       );
 
-      final oauthCredential = OAuthProvider('apple.com').credential(
-        idToken: appleCredential.identityToken,
-        rawNonce: rawNonce,
-      );
+      final oauthCredential = OAuthProvider(
+        'apple.com',
+      ).credential(idToken: appleCredential.identityToken, rawNonce: rawNonce);
 
-      final result = await FirebaseAuth.instance.signInWithCredential(oauthCredential);
+      final result = await FirebaseAuth.instance.signInWithCredential(
+        oauthCredential,
+      );
       final user = result.user!;
 
       if (appleCredential.givenName != null) {
         final fullName =
-        '${appleCredential.givenName ?? ''} ${appleCredential.familyName ?? ''}'.trim();
+        '${appleCredential.givenName ?? ''} ${appleCredential.familyName ?? ''}'
+            .trim();
         await user.updateDisplayName(fullName);
         await user.reload();
       }
@@ -427,9 +476,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Apple sign-in failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Apple sign-in failed: $e')));
     } finally {
       if (mounted) setState(() => showSpinner = false);
     }
@@ -439,53 +488,69 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final w = MediaQuery.of(context).size.width;
     return SizedBox(
       height: 300,
-      child: Stack(children: [
-        Container(color: Colors.white),
-        Positioned(
-          top: -80, left: -80,
-          child: Container(
-            width: w * 0.75, height: w * 0.75,
-            decoration: BoxDecoration(
+      child: Stack(
+        children: [
+          Container(color: Colors.white),
+          Positioned(
+            top: -80,
+            left: -80,
+            child: Container(
+              width: w * 0.75,
+              height: w * 0.75,
+              decoration: BoxDecoration(
                 color: AppColors.primary.withOpacity(0.85),
-                shape: BoxShape.circle),
+                shape: BoxShape.circle,
+              ),
+            ),
           ),
-        ),
-        Positioned(
-          top: -100, right: -80,
-          child: Container(
-            width: w * 0.70, height: w * 0.70,
-            decoration: BoxDecoration(
+          Positioned(
+            top: -100,
+            right: -80,
+            child: Container(
+              width: w * 0.70,
+              height: w * 0.70,
+              decoration: BoxDecoration(
                 color: AppColors.primary.withOpacity(0.50),
-                shape: BoxShape.circle),
+                shape: BoxShape.circle,
+              ),
+            ),
           ),
-        ),
-        Positioned(
-          top: 68, left: 28,
-          child: Text(
-            _t(lang, 'headerTitle'),
-            style: const TextStyle(
+          Positioned(
+            top: 68,
+            left: 28,
+            child: Text(
+              _t(lang, 'headerTitle'),
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 24,
                 fontWeight: FontWeight.bold,
-                letterSpacing: 0.3),
-          ),
-        ),
-        Positioned(
-          top: 60, right: 20,
-          child: SafeArea(
-            child: _LangToggle(
-              lang: lang,
-              onToggle: (selected) =>
-                  ref.read(appLangProvider.notifier).setLang(selected),
+                letterSpacing: 0.3,
+              ),
             ),
           ),
-        ),
-        Positioned(
-          bottom: 0, left: 0, right: 0,
-          child: Image.asset('assets/pikuru_full_logo.png',
-              height: 160, fit: BoxFit.contain),
-        ),
-      ]),
+          Positioned(
+            top: 60,
+            right: 20,
+            child: SafeArea(
+              child: _LangToggle(
+                lang: lang,
+                onToggle: (selected) =>
+                    ref.read(appLangProvider.notifier).setLang(selected),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Image.asset(
+              'assets/pikuru_full_logo.png',
+              height: 160,
+              fit: BoxFit.contain,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -507,10 +572,13 @@ class _LangToggle extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: Colors.white.withOpacity(0.30)),
       ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        _tab('EN',    lang == kLangEn, () => onToggle(kLangEn)),
-        _tab('日本語', lang == kLangJa, () => onToggle(kLangJa)),
-      ]),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _tab('EN', lang == kLangEn, () => onToggle(kLangEn)),
+          _tab('日本語', lang == kLangJa, () => onToggle(kLangJa)),
+        ],
+      ),
     );
   }
 
@@ -546,32 +614,34 @@ InputDecoration _inputDecoration(String hint) {
   return InputDecoration(
     hintText: hint,
     hintStyle: const TextStyle(
-        color: Colors.black, fontWeight: FontWeight.bold),
+      color: Colors.black,
+      fontWeight: FontWeight.bold,
+    ),
     filled: true,
     fillColor: Colors.white,
-    contentPadding:
-    const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+    contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
     enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide: BorderSide(
-            color: AppColors.primary.withOpacity(0.6), width: 1.4)),
+      borderRadius: BorderRadius.circular(10),
+      borderSide: BorderSide(
+        color: AppColors.primary.withOpacity(0.6),
+        width: 1.4,
+      ),
+    ),
     focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(10),
-        borderSide:
-        const BorderSide(color: AppColors.primary, width: 2.0)),
+      borderRadius: BorderRadius.circular(10),
+      borderSide: const BorderSide(color: AppColors.primary, width: 2.0),
+    ),
   );
 }
 
-Widget _pillButton(
-    {required VoidCallback onPressed, required Widget child}) {
+Widget _pillButton({required VoidCallback onPressed, required Widget child}) {
   return SizedBox(
     height: 48,
     child: OutlinedButton(
       onPressed: onPressed,
       style: OutlinedButton.styleFrom(
         side: const BorderSide(color: Color(0xFFDDDDDD)),
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(30)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
         backgroundColor: Colors.white,
         padding: EdgeInsets.zero,
       ),
@@ -582,16 +652,16 @@ Widget _pillButton(
 
 Widget _googleIcon() {
   return SizedBox(
-      width: 20,
-      height: 20,
-      child: CustomPaint(painter: _GoogleGPainter()));
+    width: 20,
+    height: 20,
+    child: CustomPaint(painter: _GoogleGPainter()),
+  );
 }
 
 class _GoogleGPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final center =
-        Rect.fromLTWH(0, 0, size.width, size.height).center;
+    final center = Rect.fromLTWH(0, 0, size.width, size.height).center;
     final radius = size.width / 2;
     const sweeps = [
       [0.0, 90.0, Color(0xFF4285F4)],
@@ -616,16 +686,26 @@ class _GoogleGPainter extends CustomPainter {
       ..color = Colors.white
       ..style = PaintingStyle.fill;
     canvas.drawRect(
-        Rect.fromLTWH(center.dx, center.dy - size.height * 0.15,
-            size.width * 0.55, size.height * 0.30),
-        whitePaint);
+      Rect.fromLTWH(
+        center.dx,
+        center.dy - size.height * 0.15,
+        size.width * 0.55,
+        size.height * 0.30,
+      ),
+      whitePaint,
+    );
     final bluePaint = Paint()
       ..color = const Color(0xFF4285F4)
       ..style = PaintingStyle.fill;
     canvas.drawRect(
-        Rect.fromLTWH(center.dx, center.dy - size.height * 0.10,
-            size.width * 0.50, size.height * 0.20),
-        bluePaint);
+      Rect.fromLTWH(
+        center.dx,
+        center.dy - size.height * 0.10,
+        size.width * 0.50,
+        size.height * 0.20,
+      ),
+      bluePaint,
+    );
   }
 
   @override

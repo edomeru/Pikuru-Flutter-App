@@ -7,6 +7,70 @@ final showAddEventButtonProvider = StateProvider<bool>((ref) => true);
 final showAddGroupButtonProvider = StateProvider<bool>((ref) => true);
 final showAddCourtButtonProvider = StateProvider<bool>((ref) => true);
 
+int _asInt(dynamic value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value) ?? 0;
+  return 0;
+}
+
+Future<Map<String, dynamic>> _attachEventCapacityMeta(
+    String eventId,
+    Map<String, dynamic> data,
+    ) async {
+  final limit = _asInt(data['event_limit']);
+  int approvedCount = 0;
+  int waitlistCount = 0;
+
+  try {
+    final approvedSnap = await FirebaseFirestore.instance
+        .collection('event_registrations')
+        .where('event_id', isEqualTo: eventId)
+        .where('status', isEqualTo: 'approved')
+        .count()
+        .get();
+    approvedCount = approvedSnap.count ?? 0;
+  } catch (e) {
+    debugPrint('[eventCapacity] approved count failed for $eventId: $e');
+  }
+
+  try {
+    final waitlistSnap = await FirebaseFirestore.instance
+        .collection('event_registrations')
+        .where('event_id', isEqualTo: eventId)
+        .where('status', whereIn: ['waitlisted', 'waiting_list'])
+        .count()
+        .get();
+    waitlistCount = waitlistSnap.count ?? 0;
+  } catch (e) {
+    debugPrint('[eventCapacity] waitlist count failed for $eventId: $e');
+  }
+
+  final hasLimit = limit > 0;
+  final remaining = hasLimit ? (limit - approvedCount).clamp(0, limit) : 0;
+  final isFull = hasLimit && approvedCount >= limit;
+  final pct = hasLimit ? (approvedCount / limit).clamp(0.0, 1.0) : 0.0;
+
+  return {
+    ...data,
+    '_capacity_limit': limit,
+    '_capacity_has_limit': hasLimit,
+    '_capacity_approved_count': approvedCount,
+    '_capacity_waitlist_count': waitlistCount,
+    '_capacity_remaining': remaining,
+    '_capacity_percent': pct,
+    '_capacity_is_full': isFull,
+    '_capacity_cta_label': isFull ? 'Join Waiting List' : 'Register',
+    '_capacity_label': hasLimit
+        ? '$approvedCount / $limit spots filled'
+        : 'No capacity limit',
+    '_waitlist_enabled': isFull,
+    'capacity_limit': limit,
+    'capacity_registered_count': approvedCount,
+    'waiting_list_count': waitlistCount,
+  };
+}
+
 // ── Events Provider ───────────────────────────────────────────────────────────
 // Mirrors the web app's EventsContent load() defaults exactly:
 //   • event_active         == true
@@ -22,25 +86,32 @@ final showAddCourtButtonProvider = StateProvider<bool>((ref) => true);
 //   Fields     : event_active ASC, event_status ASC,
 //                event_pending_review ASC, event_date ASC
 final eventsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
-  final now             = DateTime.now();
-  final today           = DateTime(now.year, now.month, now.day);
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
   final thirtyDaysLater = today.add(const Duration(days: 30));
 
   return FirebaseFirestore.instance
       .collection('events')
-      .where('event_active',         isEqualTo: true)
-      .where('event_status',         isEqualTo: true)
+      .where('event_active', isEqualTo: true)
+      .where('event_status', isEqualTo: true)
       .where('event_pending_review', isEqualTo: false)
       .where('event_date', isGreaterThanOrEqualTo: Timestamp.fromDate(today))
-      .where('event_date', isLessThanOrEqualTo:    Timestamp.fromDate(thirtyDaysLater))
+      .where(
+    'event_date',
+    isLessThanOrEqualTo: Timestamp.fromDate(thirtyDaysLater),
+  )
       .orderBy('event_date')
       .limit(50)
       .snapshots()
-      .map((s) => s.docs.map((d) {
-    final data = d.data();
-    data['_doc_id'] = d.id;
-    return data;
-  }).toList());
+      .asyncMap((s) async {
+    return Future.wait(
+      s.docs.map((d) {
+        final data = d.data();
+        data['_doc_id'] = d.id;
+        return _attachEventCapacityMeta(d.id, data);
+      }),
+    );
+  });
 });
 
 // ── Calendar Events Provider ──────────────────────────────────────────────────
@@ -57,41 +128,52 @@ final eventsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
 //   Collection : events
 //   Fields     : event_active ASC, event_status ASC,
 //                event_pending_review ASC, event_date ASC
-final calendarEventsProvider =
-StreamProvider<List<Map<String, dynamic>>>((ref) {
-  final now             = DateTime.now();
-  final today           = DateTime(now.year, now.month, now.day);
-  final thirtyDaysLater = today.add(const Duration(days: 30)); // ← added upper bound
+final calendarEventsProvider = StreamProvider<List<Map<String, dynamic>>>((
+    ref,
+    ) {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  final thirtyDaysLater = today.add(
+    const Duration(days: 30),
+  ); // ← added upper bound
 
   return FirebaseFirestore.instance
       .collection('events')
-      .where('event_active',         isEqualTo: true)
-      .where('event_status',         isEqualTo: true)
+      .where('event_active', isEqualTo: true)
+      .where('event_status', isEqualTo: true)
       .where('event_pending_review', isEqualTo: false)
       .where('event_date', isGreaterThanOrEqualTo: Timestamp.fromDate(today))
-      .where('event_date', isLessThanOrEqualTo:    Timestamp.fromDate(thirtyDaysLater)) // ← added
+      .where(
+    'event_date',
+    isLessThanOrEqualTo: Timestamp.fromDate(thirtyDaysLater),
+  ) // ← added
       .orderBy('event_date')
       .snapshots()
-      .map((s) => s.docs.map((d) {
-    final data = d.data();
-    data['_doc_id'] = d.id;
-    return data;
-  }).toList());
+      .asyncMap((s) async {
+    return Future.wait(
+      s.docs.map((d) {
+        final data = d.data();
+        data['_doc_id'] = d.id;
+        return _attachEventCapacityMeta(d.id, data);
+      }),
+    );
+  });
 });
 
 // ── Organizations Provider ────────────────────────────────────────────────────
-final organizationsProvider =
-StreamProvider<List<Map<String, dynamic>>>((ref) {
+final organizationsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   return FirebaseFirestore.instance
       .collection('organizations')
       .where('org_active', isEqualTo: true)
       .orderBy('org_created_at')
       .snapshots()
-      .map((s) => s.docs.map((d) {
-    final data = d.data();
-    data['_doc_id'] = d.id;
-    return data;
-  }).toList());
+      .map(
+        (s) => s.docs.map((d) {
+      final data = d.data();
+      data['_doc_id'] = d.id;
+      return data;
+    }).toList(),
+  );
 });
 
 // ── Locations (Courts) Provider ───────────────────────────────────────────────
@@ -107,12 +189,11 @@ StreamProvider<List<Map<String, dynamic>>>((ref) {
 // Required Firestore composite index:
 //   Collection : locations
 //   Fields     : loc_checked ASC, loc_active ASC, loc_pending_review ASC
-final locationsProvider =
-StreamProvider<List<Map<String, dynamic>>>((ref) {
+final locationsProvider = StreamProvider<List<Map<String, dynamic>>>((ref) {
   return FirebaseFirestore.instance
       .collection('locations')
-      .where('loc_checked',        isEqualTo: true)
-      .where('loc_active',         isEqualTo: true)
+      .where('loc_checked', isEqualTo: true)
+      .where('loc_active', isEqualTo: true)
       .where('loc_pending_review', isEqualTo: false)
       .snapshots()
       .map((s) {
@@ -138,12 +219,15 @@ StreamProvider<List<Map<String, dynamic>>>((ref) {
 //   last resort: loc_name (the venue name — only shown if nothing else works)
 //
 // Returns '' on failure so callers can show org_country as a fallback.
-final locationResolverProvider =
-FutureProvider.family<String, String>((ref, locId) async {
+final locationResolverProvider = FutureProvider.family<String, String>((
+    ref,
+    locId,
+    ) async {
   if (locId.isEmpty) return '';
 
   String display(Map<String, dynamic> d) {
-    final city = ((d['loc_city_en'] ?? '').toString().trim().isNotEmpty
+    final city =
+    ((d['loc_city_en'] ?? '').toString().trim().isNotEmpty
         ? d['loc_city_en']
         : d['loc_city'] ?? '')
         .toString()
@@ -159,11 +243,12 @@ FutureProvider.family<String, String>((ref, locId) async {
     final country = (d['loc_country'] ?? '').toString().trim();
 
     if (city.isNotEmpty && prefecture.isNotEmpty) return '$city, $prefecture';
-    if (city.isNotEmpty && country.isNotEmpty)    return '$city, $country';
-    if (city.isNotEmpty)                          return city;
-    if (prefecture.isNotEmpty && country.isNotEmpty) return '$prefecture, $country';
-    if (prefecture.isNotEmpty)                    return prefecture;
-    if (country.isNotEmpty)                       return country;
+    if (city.isNotEmpty && country.isNotEmpty) return '$city, $country';
+    if (city.isNotEmpty) return city;
+    if (prefecture.isNotEmpty && country.isNotEmpty)
+      return '$prefecture, $country';
+    if (prefecture.isNotEmpty) return prefecture;
+    if (country.isNotEmpty) return country;
     return '';
   }
 
@@ -190,8 +275,7 @@ FutureProvider.family<String, String>((ref, locId) async {
     }
 
     // 3️⃣ Full-scan fallback
-    final all =
-    await FirebaseFirestore.instance.collection('locations').get();
+    final all = await FirebaseFirestore.instance.collection('locations').get();
     for (final d in all.docs) {
       final data = d.data();
       if (d.id == locId || data['loc_id']?.toString() == locId) {
@@ -207,8 +291,10 @@ FutureProvider.family<String, String>((ref, locId) async {
 });
 
 // ── Organizer Resolver Provider ───────────────────────────────────────────────
-final organizerResolverProvider =
-FutureProvider.family<String, String>((ref, orgId) async {
+final organizerResolverProvider = FutureProvider.family<String, String>((
+    ref,
+    orgId,
+    ) async {
   if (orgId.isEmpty) return '';
 
   String display(Map<String, dynamic> d) =>
