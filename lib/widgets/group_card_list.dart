@@ -24,6 +24,8 @@ const _L = {
     'errJoin':      'Failed to join group. Please try again.',
     'joined':       'Joined ✓',
     'joinBtn':      'JOIN',
+    'interested':   'Interested',
+    'organizer':    'Organizer',
   },
   kLangJa: {
     'joinTitle':    'グループに参加しますか？',
@@ -37,6 +39,8 @@ const _L = {
     'errJoin':      'グループへの参加に失敗しました。',
     'joined':       '参加済み ✓',
     'joinBtn':      '参加',
+    'interested':   '興味あり',
+    'organizer':    'オーガナイザー',
   },
 };
 
@@ -70,6 +74,18 @@ class _GroupCardListState extends ConsumerState<GroupCardList> {
     return (widget.group['_doc_id'] ?? '').toString();
   }
 
+  // ── Is current user the creator/organizer of this group? ──────────────────
+  // Mirrors web app: g.submittedBy === uid || g.org_addedby === uid
+  bool get _isCreator {
+    final me = FirebaseAuth.instance.currentUser;
+    if (me == null) return false;
+    final uid = me.uid;
+    final submittedBy = (widget.group['submittedBy'] ?? '').toString();
+    final orgAddedBy  = (widget.group['org_addedby'] ?? '').toString();
+    return (submittedBy.isNotEmpty && submittedBy == uid) ||
+        (orgAddedBy.isNotEmpty && orgAddedBy  == uid);
+  }
+
   // ── Read status from Firestore ────────────────────────────────────────────
   Future<void> _checkMembership() async {
     if (!mounted) return;
@@ -99,14 +115,11 @@ class _GroupCardListState extends ConsumerState<GroupCardList> {
   }
 
   // ── Navigate to detail screen, then re-check status on return ────────────
-  // This keeps the card in sync when the user joins/marks interested from
-  // the detail screen and then comes back to the list.
   Future<void> _openDetail() async {
     await Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => GroupDetailScreen(group: widget.group)),
     );
-    // Re-read Firestore after returning — covers join, interested, or toggle
     _checkMembership();
   }
 
@@ -222,6 +235,92 @@ class _GroupCardListState extends ConsumerState<GroupCardList> {
     return ages.isEmpty ? _tr('All ages', '全年齢') : ages.join(' | ');
   }
 
+  // ── Small pill widgets ────────────────────────────────────────────────────
+  Widget _interestedBadge(String lang) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    decoration: BoxDecoration(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: AppColors.primary, width: 1.5),
+    ),
+    child: Text(
+      _t(lang, 'interested'),
+      style: TextStyle(
+        color: AppColors.primary,
+        fontSize: 11,
+        fontWeight: FontWeight.bold,
+      ),
+    ),
+  );
+
+  Widget _organizerBadge(String lang) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    decoration: BoxDecoration(
+      color: AppColors.primary.withOpacity(0.10),
+      borderRadius: BorderRadius.circular(20),
+      border: Border.all(color: AppColors.primary.withOpacity(0.35), width: 1),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.star_rounded, size: 14, color: AppColors.primary),
+        const SizedBox(width: 4),
+        Text(
+          _t(lang, 'organizer'),
+          style: TextStyle(
+            color: AppColors.primary,
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _joinButton(String lang) => GestureDetector(
+    onTap: () {
+      HapticFeedback.lightImpact();
+      _showJoinModal(lang);
+    },
+    behavior: HitTestBehavior.opaque,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.primary,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        _t(lang, 'joinBtn'),
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 0.5,
+        ),
+      ),
+    ),
+  );
+
+  Widget _joinedPill(String lang) => GestureDetector(
+    onTap: null,
+    behavior: HitTestBehavior.opaque,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade200,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        _t(lang, 'joined'),
+        style: TextStyle(
+          color: Colors.grey.shade600,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final lang = ref.watch(appLangProvider);
@@ -265,10 +364,46 @@ class _GroupCardListState extends ConsumerState<GroupCardList> {
 
     final isActive     = _membershipStatus == 'active';
     final isInterested = _membershipStatus == 'interested';
+    final isCreator    = _isCreator;
+
+    // Build the trailing action widget for the bottom-right of the card.
+    Widget actionWidget;
+    if (_checkingStatus) {
+      actionWidget = SizedBox(
+        width: 16, height: 16,
+        child: CircularProgressIndicator(
+            color: AppColors.primary, strokeWidth: 2),
+      );
+    } else if (isCreator) {
+      // Creator/organizer — show Organizer label, no join button.
+      // If also "interested", show the Interested badge alongside.
+      actionWidget = isInterested
+          ? Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _interestedBadge(lang),
+          const SizedBox(width: 6),
+          _organizerBadge(lang),
+        ],
+      )
+          : _organizerBadge(lang);
+    } else if (isActive) {
+      actionWidget = _joinedPill(lang);
+    } else if (isInterested) {
+      // Show "Interested" badge AND still keep the JOIN button.
+      actionWidget = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _interestedBadge(lang),
+          const SizedBox(width: 6),
+          _joinButton(lang),
+        ],
+      );
+    } else {
+      actionWidget = _joinButton(lang);
+    }
 
     return GestureDetector(
-      // ← key change: use _openDetail() instead of direct Navigator.push
-      //   so we re-check membership status when returning
       onTap: _openDetail,
       child: Container(
         margin:     const EdgeInsets.only(bottom: 16),
@@ -323,97 +458,15 @@ class _GroupCardListState extends ConsumerState<GroupCardList> {
                       _getSchedule(widget.group)),
                   const SizedBox(height: 4),
 
-                  // Age groups + JOIN button row
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Expanded(
-                        child: _infoRow(Icons.people_alt_rounded,
-                            _getAgeGroups(widget.group)),
-                      ),
-                      const SizedBox(width: 8),
-
-                      // ── JOIN / status button ──────────────────────────
-                      _checkingStatus
-                          ? SizedBox(
-                          width: 16, height: 16,
-                          child: CircularProgressIndicator(
-                              color: AppColors.primary, strokeWidth: 2))
-
-                      // Active (joined) — gray, not tappable
-                          : isActive
-                          ? GestureDetector(
-                        onTap: null,
-                        behavior: HitTestBehavior.opaque,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade200,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            _t(lang, 'joined'),
-                            style: TextStyle(
-                              color: Colors.grey.shade600,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      )
-
-                      // Interested — show outline badge (not primary JOIN)
-                          : isInterested
-                          ? GestureDetector(
-                        onTap: () => _openDetail(),
-                        behavior: HitTestBehavior.opaque,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.transparent,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                                color: AppColors.primary, width: 1.5),
-                          ),
-                          child: Text(
-                            _isJa ? '興味あり' : 'Interested',
-                            style: TextStyle(
-                              color: AppColors.primary,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      )
-
-                      // None — green JOIN button
-                          : GestureDetector(
-                        onTap: () {
-                          HapticFeedback.lightImpact();
-                          _showJoinModal(lang);
-                        },
-                        behavior: HitTestBehavior.opaque,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 18, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            _t(lang, 'joinBtn'),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                  // Age groups (full width) — action moves below so long
+                  // text isn't truncated by the badge/button.
+                  _infoRow(Icons.people_alt_rounded,
+                      _getAgeGroups(widget.group)),
+                  const SizedBox(height: 8),
+                  // Action row (JOIN / Interested+JOIN / Joined / Organizer)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: actionWidget,
                   ),
                 ],
               ),
