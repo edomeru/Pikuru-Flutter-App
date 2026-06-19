@@ -30,7 +30,15 @@ const _T = {
     'amenitiesTitle':     'Court Type & Amenities',
     'amenitiesSub':       'What does this venue offer?',
     'hoursTitle':         'Operating Hours',
-    'hoursSub':           'When is the court open?',
+    'hoursSub':           'When is the court open? Use semicolons for multiple ranges.',
+    'hoursMon':           'Monday',
+    'hoursTue':           'Tuesday',
+    'hoursWed':           'Wednesday',
+    'hoursThu':           'Thursday',
+    'hoursFri':           'Friday',
+    'hoursSat':           'Saturday',
+    'hoursSun':           'Sunday',
+    'hoursHint':          'e.g. 9:00-17:00 or 0:00-2:00; 6:00-23:59',
     'reviewTitle':        'Review & Submit',
     'reviewSub':          'Everything look good?',
     // Fields
@@ -135,7 +143,15 @@ const _T = {
     'amenitiesTitle':     'コートタイプと設備',
     'amenitiesSub':       'この施設が提供するものは？',
     'hoursTitle':         '営業時間',
-    'hoursSub':           'コートはいつ利用できますか？',
+    'hoursSub':           'コートはいつ利用できますか？複数の時間帯はセミコロンで区切ってください。',
+    'hoursMon':           '月曜日',
+    'hoursTue':           '火曜日',
+    'hoursWed':           '水曜日',
+    'hoursThu':           '木曜日',
+    'hoursFri':           '金曜日',
+    'hoursSat':           '土曜日',
+    'hoursSun':           '日曜日',
+    'hoursHint':          '例：9:00-17:00 または 0:00-2:00; 6:00-23:59',
     'reviewTitle':        '確認して送信',
     'reviewSub':          '内容を確認してください',
     // Fields
@@ -282,6 +298,13 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
   late TextEditingController _priceController;
   late TextEditingController _notesController;
   late TextEditingController _mapSearchController;
+  late TextEditingController _hoursMonController;
+  late TextEditingController _hoursTueController;
+  late TextEditingController _hoursWedController;
+  late TextEditingController _hoursThuController;
+  late TextEditingController _hoursFriController;
+  late TextEditingController _hoursSatController;
+  late TextEditingController _hoursSunController;
 
   // ── Dropdown / toggle state ───────────────────────────────────────────────
   static const List<String> _locTypes = [
@@ -327,6 +350,13 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
     _priceController        = TextEditingController();
     _notesController        = TextEditingController();
     _mapSearchController    = TextEditingController();
+    _hoursMonController     = TextEditingController();
+    _hoursTueController     = TextEditingController();
+    _hoursWedController     = TextEditingController();
+    _hoursThuController     = TextEditingController();
+    _hoursFriController     = TextEditingController();
+    _hoursSatController     = TextEditingController();
+    _hoursSunController     = TextEditingController();
   }
 
   @override
@@ -339,6 +369,9 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
       _countryController, _latController, _lngController,
       _googlelinkController, _websiteController, _contactEmailController,
       _priceController, _notesController, _mapSearchController,
+      _hoursMonController, _hoursTueController, _hoursWedController,
+      _hoursThuController, _hoursFriController, _hoursSatController,
+      _hoursSunController,
     ]) { c.dispose(); }
     super.dispose();
   }
@@ -637,13 +670,13 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
         'loc_amenities_lessons':       _lessons,
         'loc_amenities_paddlerentals': _paddleRentals,
 
-        'loc_hours_mon':   '',
-        'loc_hours_tues':  '',
-        'loc_hours_weds':  '',
-        'loc_hours_thurs': '',
-        'loc_hours_fri':   '',
-        'loc_hours_sat':   '',
-        'loc_hours_sun':   '',
+        'loc_hours_mon':   _hoursMonController.text.trim(),
+        'loc_hours_tues':  _hoursTueController.text.trim(),
+        'loc_hours_weds':  _hoursWedController.text.trim(),
+        'loc_hours_thurs': _hoursThuController.text.trim(),
+        'loc_hours_fri':   _hoursFriController.text.trim(),
+        'loc_hours_sat':   _hoursSatController.text.trim(),
+        'loc_hours_sun':   _hoursSunController.text.trim(),
         'loc_hours_notes': '',
 
         'loc_notes': _notesController.text.trim(),
@@ -1324,11 +1357,19 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
   // PAGE 4 — Hours
   // ─────────────────────────────────────────────────────────────────────────
   Widget _buildHoursPage(String lang) {
+    final hint = _t(lang, 'hoursHint');
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         _buildPageHeader(_t(lang, 'hoursTitle'), _t(lang, 'hoursSub'),
             Icons.schedule_outlined),
+        _buildTextField(label: _t(lang, 'hoursMon'), controller: _hoursMonController, hint: hint),
+        _buildTextField(label: _t(lang, 'hoursTue'), controller: _hoursTueController, hint: hint),
+        _buildTextField(label: _t(lang, 'hoursWed'), controller: _hoursWedController, hint: hint),
+        _buildTextField(label: _t(lang, 'hoursThu'), controller: _hoursThuController, hint: hint),
+        _buildTextField(label: _t(lang, 'hoursFri'), controller: _hoursFriController, hint: hint),
+        _buildTextField(label: _t(lang, 'hoursSat'), controller: _hoursSatController, hint: hint),
+        _buildTextField(label: _t(lang, 'hoursSun'), controller: _hoursSunController, hint: hint),
         _buildTextField(
             label: _t(lang, 'additionalNotes'),
             controller: _notesController,

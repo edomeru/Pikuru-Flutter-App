@@ -1284,7 +1284,7 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
       }
     }
     groups.add((range: startDay == prevDay ? startDay : '$startDay–$prevDay', hours: curHours));
-    return groups.map((g) => '${g.range}: ${g.hours}').join('  •  ');
+    return groups.map((g) => '${g.range}: ${g.hours}').join('\n');
   }
 
   bool _isTruthy(dynamic v) =>
