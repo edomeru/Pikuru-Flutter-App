@@ -91,6 +91,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
   // Filter: 'All' | 'Unread' | 'Groups' | 'Events'
   String _filter = 'All';
   String _searchQuery = '';
+  bool _pastEventsExpanded = false;
 
   List<_ChatItem> _groupItems = [];
   List<_ChatItem> _individualItems = [];
@@ -329,7 +330,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
   }
 
   // ── Event channels subscription ────────────────────────────────────────
-  // Mirrors web's dedicated event subscription — no per-doc reads needed.
+  // Mirrors web's dedicated event subscription — resolves event dates so we
+  // can split current vs past event channels.
   void _subscribeEventChannels() {
     final me = _me;
     if (me == null) return;
@@ -339,8 +341,10 @@ class _ChatsScreenState extends State<ChatsScreen> {
         .where('type', isEqualTo: 'event')
         .orderBy('last_message_at', descending: true)
         .snapshots()
-        .listen((snap) {
+        .listen((snap) async {
       final List<_ChatItem> items = [];
+      final List<String> eventIds = [];
+
       for (final doc in snap.docs) {
         final data = doc.data();
 
@@ -358,6 +362,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
             : 'Event Channel';
         final imgUrl = (data['image'] ?? '').toString();
 
+        final eventId = (data['event_id'] ?? doc.id).toString();
+        if (eventId.isNotEmpty) eventIds.add(eventId);
+
         items.add(_ChatItem(
           id: doc.id,
           name: name,
@@ -368,9 +375,46 @@ class _ChatsScreenState extends State<ChatsScreen> {
           isGroup: true,
           isEvent: true,
           repliesAllowed: data['replies_allowed'] != false,
-          raw: {...data, '_doc_id': doc.id},
+          raw: {...data, '_doc_id': doc.id, '_event_id': eventId},
         ));
       }
+
+      // Resolve event dates in chunks of 30 (Firestore whereIn limit)
+      final Map<String, Map<String, DateTime?>> datesMap = {};
+      try {
+        final uniqueIds = eventIds
+            .where((id) => id.trim().isNotEmpty)
+            .toSet()
+            .toList();
+        for (var i = 0; i < uniqueIds.length; i += 30) {
+          final chunk = uniqueIds.sublist(
+              i, i + 30 > uniqueIds.length ? uniqueIds.length : i + 30);
+          final evsSnap = await FirebaseFirestore.instance
+              .collection('events')
+              .where(FieldPath.documentId, whereIn: chunk)
+              .get();
+          for (final d in evsSnap.docs) {
+            final ed = d.data();
+            datesMap[d.id] = {
+              'event_date': (ed['event_date'] as Timestamp?)?.toDate(),
+              'event_date_end':
+              (ed['event_date_end'] as Timestamp?)?.toDate(),
+            };
+          }
+        }
+      } catch (e) {
+        debugPrint('[eventDates] resolve failed: $e');
+      }
+
+      for (final item in items) {
+        final evId = (item.raw['_event_id'] ?? item.id).toString();
+        final dates = datesMap[evId];
+        if (dates != null) {
+          item.raw['event_date'] = dates['event_date'];
+          item.raw['event_date_end'] = dates['event_date_end'];
+        }
+      }
+
       if (mounted) setState(() { _eventItems = items; _loading = false; });
     });
   }
@@ -400,6 +444,35 @@ class _ChatsScreenState extends State<ChatsScreen> {
     return _eventItems
         .where((e) => e.name.toLowerCase().contains(_searchQuery))
         .toList();
+  }
+
+  // Split event channels into current vs past based on event_date_end / event_date
+  // Mirrors web's currentEventItems / pastEventItems logic.
+  ({List<_ChatItem> current, List<_ChatItem> past}) get _splitEventItems {
+    final List<_ChatItem> current = [];
+    final List<_ChatItem> past = [];
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    for (final item in _filteredEventItems) {
+      final endRaw = item.raw['event_date_end'];
+      final startRaw = item.raw['event_date'];
+      DateTime? endDate;
+      DateTime? startDate;
+      if (endRaw is DateTime) endDate = endRaw;
+      else if (endRaw is Timestamp) endDate = endRaw.toDate();
+      if (startRaw is DateTime) startDate = startRaw;
+      else if (startRaw is Timestamp) startDate = startRaw.toDate();
+
+      bool isPast = false;
+      if (endDate != null) {
+        isPast = endDate.isBefore(now);
+      } else if (startDate != null) {
+        final startDay = DateTime(startDate.year, startDate.month, startDate.day);
+        isPast = startDay.isBefore(today);
+      }
+      if (isPast) past.add(item); else current.add(item);
+    }
+    return (current: current, past: past);
   }
 
   int get _unreadTotal {
@@ -586,28 +659,30 @@ class _ChatsScreenState extends State<ChatsScreen> {
               color: AppColors.primary, strokeWidth: 2.5));
     }
 
-    // Events tab: full list of event channels
+    // Events tab: current event channels list + collapsible past events
     if (_filter == 'Events') {
-      final evs = _filteredEventItems;
-      if (evs.isEmpty) {
+      final split = _splitEventItems;
+      final current = split.current;
+      final past = split.past;
+      if (current.isEmpty && past.isEmpty) {
         return _buildScrollableEmpty('No event channels yet');
       }
-      return ListView.builder(
-        itemCount: evs.length,
-        itemBuilder: (_, i) => Column(children: [
-          _buildEventTile(evs[i]),
-          if (i < evs.length - 1)
+      return ListView(children: [
+        ...List.generate(current.length, (i) => Column(children: [
+          _buildEventTile(current[i]),
+          if (i < current.length - 1)
             const Divider(
                 height: 1, indent: 76, endIndent: 20, color: Color(0xFFF0F0F0)),
-        ]),
-      );
+        ])),
+        if (past.isNotEmpty) _buildPastEventsSection(past),
+      ]);
     }
 
     // All / Unread / Groups tabs
     final items = _mergedItems;
     final evs = _filteredEventItems;
 
-    if (items.isEmpty && (_filter == 'Events' || evs.isEmpty)) {
+    if (items.isEmpty && evs.isEmpty) {
       return _buildScrollableEmpty(_filter == 'Unread'
           ? 'No unread messages'
           : _filter == 'Groups'
@@ -616,9 +691,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
     }
 
     return ListView(children: [
-      // ── Event Channels section (max 2 preview, only in All/Unread) ──
+      // ── Event Channels button (only in All/Unread) — routes to Events tab ──
       if ((_filter == 'All' || _filter == 'Unread') && evs.isNotEmpty) ...[
-        _buildEventSection(evs),
+        _buildEventChannelsButton(evs),
         if (items.isNotEmpty)
           Divider(
               height: 1,
@@ -666,91 +741,145 @@ class _ChatsScreenState extends State<ChatsScreen> {
     );
   }
 
-  // ── Event Channels Section Header ─────────────────────────────────────
-  Widget _buildEventSection(List<_ChatItem> evs) {
+  // ── Event Channels Button (All/Unread tab) ────────────────────────────
+  // Single tappable button that routes to the Events tab. Replaces the
+  // previous preview-list section.
+  Widget _buildEventChannelsButton(List<_ChatItem> evs) {
     final hasUnread = evs.any((e) => e.hasUnread);
-    final preview = evs.take(2).toList();
-    final extras = evs.length - 2;
+    final count = evs.length;
+    const orange = Color(0xFFFF9933);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Section header
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => setState(() => _filter = 'Events'),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          decoration: BoxDecoration(
+            color: orange.withOpacity(0.06),
+            border: Border.all(color: orange.withOpacity(0.35), width: 1),
+            borderRadius: BorderRadius.circular(16),
+          ),
           child: Row(children: [
             Container(
-              width: 26, height: 26,
+              width: 44, height: 44,
               decoration: BoxDecoration(
-                  color: const Color(0xFFFF9933).withOpacity(0.15),
-                  shape: BoxShape.circle),
-              child: const Icon(Icons.campaign_rounded,
-                  size: 13, color: Color(0xFFFF9933)),
+                color: orange,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.chat_bubble_outline,
+                  color: Colors.white, size: 22),
             ),
-            const SizedBox(width: 8),
-            const Text('EVENT CHANNELS',
-                style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                    color: Color(0xFFFF9933),
-                    letterSpacing: 0.8)),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Event Channels',
+                      style: TextStyle(
+                          fontSize: 15.5,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF1C1C1E),
+                          letterSpacing: -0.2)),
+                  SizedBox(height: 2),
+                  Text('Tap to view event channels',
+                      style: TextStyle(
+                          fontSize: 12.5,
+                          color: Color(0xFF8A8A8E),
+                          fontWeight: FontWeight.w500)),
+                ],
+              ),
+            ),
             if (hasUnread) ...[
-              const SizedBox(width: 6),
               Container(
-                width: 7, height: 7,
+                width: 8, height: 8,
                 decoration: const BoxDecoration(
                     color: Color(0xFFf44336), shape: BoxShape.circle),
               ),
+              const SizedBox(width: 8),
             ],
-            const Spacer(),
-            if (extras > 0)
-              GestureDetector(
-                onTap: () => setState(() => _filter = 'Events'),
-                child: Text('+$extras more',
-                    style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFFFF9933))),
+            Container(
+              padding:
+              const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+              decoration: BoxDecoration(
+                color: orange.withOpacity(0.18),
+                borderRadius: BorderRadius.circular(20),
               ),
+              child: Text('$count',
+                  style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                      color: orange)),
+            ),
+            const SizedBox(width: 6),
+            const Icon(Icons.chevron_right, color: orange, size: 22),
           ]),
         ),
-        // Preview tiles (up to 2)
-        ...preview.map(_buildEventTile),
-        // See all button if more than 2
-        if (extras > 0)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 2, 20, 6),
-            child: GestureDetector(
-              onTap: () => setState(() => _filter = 'Events'),
-              child: Container(
+      ),
+    );
+  }
+
+  // ── Past Events collapsible section (Events tab) ──────────────────────
+  Widget _buildPastEventsSection(List<_ChatItem> past) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 8),
+        Divider(height: 1, color: Colors.black.withOpacity(0.05)),
+        InkWell(
+          onTap: () =>
+              setState(() => _pastEventsExpanded = !_pastEventsExpanded),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+            child: Row(children: [
+              Icon(Icons.history,
+                  size: 16, color: Colors.black.withOpacity(0.45)),
+              const SizedBox(width: 8),
+              Text('Past Events',
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.black.withOpacity(0.55),
+                      letterSpacing: -0.1)),
+              const SizedBox(width: 8),
+              Container(
                 padding:
-                const EdgeInsets.symmetric(vertical: 9),
+                const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  border: Border.all(
-                      color: const Color(0xFFFF9933).withOpacity(0.3),
-                      width: 1),
-                  borderRadius: BorderRadius.circular(12),
+                  color: Colors.black.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(20),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.campaign_rounded,
-                        size: 13, color: Color(0xFFFF9933)),
-                    const SizedBox(width: 6),
-                    Text('See all ${evs.length} event channels',
-                        style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFFFF9933))),
-                  ],
-                ),
+                child: Text('${past.length}',
+                    style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.black.withOpacity(0.45))),
               ),
-            ),
+              const Spacer(),
+              AnimatedRotation(
+                turns: _pastEventsExpanded ? 0.5 : 0,
+                duration: const Duration(milliseconds: 180),
+                child: Icon(Icons.keyboard_arrow_down,
+                    size: 20, color: Colors.black.withOpacity(0.45)),
+              ),
+            ]),
           ),
-        const SizedBox(height: 4),
+        ),
+        if (_pastEventsExpanded)
+          ...List.generate(past.length, (i) => Column(children: [
+            _buildEventTile(past[i]),
+            if (i < past.length - 1)
+              const Divider(
+                  height: 1,
+                  indent: 76,
+                  endIndent: 20,
+                  color: Color(0xFFF0F0F0)),
+          ])),
       ],
     );
   }
+
 
   // ── Event Channel Tile ────────────────────────────────────────────────
   Widget _buildEventTile(_ChatItem item) {
