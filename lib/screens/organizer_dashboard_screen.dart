@@ -2030,11 +2030,12 @@ class _GroupCard extends StatelessWidget {
                   errorBuilder: (_, __, ___) => _grpPlaceholder(),
                 )
                     : _grpPlaceholder(),
-                Positioned(
-                  top: 12,
-                  left: 12,
-                  child: _Badge(label: sl, icon: si, color: sc, bg: sb),
-                ),
+                if (!isApproved)
+                  Positioned(
+                    top: 12,
+                    left: 12,
+                    child: _Badge(label: sl, icon: si, color: sc, bg: sb),
+                  ),
                 if (isApproved)
                   Positioned(
                     top: 12,
