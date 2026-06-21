@@ -1191,7 +1191,12 @@ class _OrganizerGroupSettingsScreenState extends ConsumerState<OrganizerGroupSet
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           _buildCoverImage(imgUrl, lang),
           const SizedBox(height: 16),
-          if (isApproved) ...[_buildStatusToggles(lang, isActive, isPublic), const SizedBox(height: 16)],
+          if (isApproved) ...[
+            _buildStatusToggles(lang, isActive, isPublic),
+            const SizedBox(height: 10),
+            _buildAddEventButton(lang),
+            const SizedBox(height: 16),
+          ],
           _buildInfoCard(lang, isApproved, isRejected),
           const SizedBox(height: 16),
           _buildCard(child: Column(children: [
@@ -1275,6 +1280,31 @@ class _OrganizerGroupSettingsScreenState extends ConsumerState<OrganizerGroupSet
 
   Widget _imgPlaceholder() => Container(width: double.infinity, height: 200, color: _D.accentLt,
       child: Icon(Icons.group_rounded, size: 56, color: _D.accent.withOpacity(0.3)));
+
+  Widget _buildAddEventButton(String lang) {
+    return Material(
+      color: _D.accentLt,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => _navigateToAddEvent(context),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: _D.accentBdr),
+          ),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            const Icon(Icons.add_circle_outline_rounded, size: 16, color: _D.accent),
+            const SizedBox(width: 6),
+            Text(_t(lang, 'addEvent'),
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _D.accent)),
+          ]),
+        ),
+      ),
+    );
+  }
 
   Widget _buildStatusToggles(String lang, bool isActive, bool isPublic) {
     return Row(children: [
@@ -1584,25 +1614,8 @@ class _OrganizerGroupSettingsScreenState extends ConsumerState<OrganizerGroupSet
                 ]),
               ),
             ),
-          // Divider between "view all" and "add event" (only for upcoming section)
-          if (hasMore && !isPast) const Divider(height: 1, color: _D.border),
-          // "+ Add an event" — only in upcoming section
-          if (!isPast)
-            InkWell(
-              borderRadius: BorderRadius.vertical(
-                bottom: const Radius.circular(16),
-                top: (!hasMore && scopedAll.isEmpty) ? const Radius.circular(16) : Radius.zero,
-              ),
-              onTap: () => _navigateToAddEvent(context),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Icon(Icons.add_circle_outline_rounded, size: 16, color: _D.accent),
-                  const SizedBox(width: 6),
-                  Text(_t(lang, 'addEvent'), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _D.accent)),
-                ]),
-              ),
-            ),
+          // "+ Add an event" footer moved out of the events card —
+          // it now lives directly under the Deactivate / Make Private toggles.
         ]),
       ),
     ]));
