@@ -105,6 +105,14 @@ const _L = {
     'viewAllEvents':   'View all {count} events for this group',
     'eventsModalTitle':'Events by this Group',
     'eventsCount':     '{count} events',
+    'upcomingTitle':       'Upcoming Events from this Group',
+    'pastTitle':           'Past Events from this Group',
+    'noUpcoming':          'No upcoming events for this group.',
+    'noPast':              'No past events for this group.',
+    'viewAllUpcoming':     'View all {count} upcoming events',
+    'viewAllPast':         'View all {count} past events',
+    'upcomingModalTitle':  'Upcoming Events from this Group',
+    'pastModalTitle':      'Past Events from this Group',
   },
   kLangJa: {
     'title':           'グループ設定',
@@ -157,6 +165,14 @@ const _L = {
     'viewAllEvents':   'このグループの全{count}イベントを見る',
     'eventsModalTitle':'このグループのイベント',
     'eventsCount':     '{count}件のイベント',
+    'upcomingTitle':       'このグループの今後のイベント',
+    'pastTitle':           'このグループの過去のイベント',
+    'noUpcoming':          '今後のイベントはありません。',
+    'noPast':              '過去のイベントはありません。',
+    'viewAllUpcoming':     '今後の{count}件のイベントをすべて見る',
+    'viewAllPast':         '過去の{count}件のイベントをすべて見る',
+    'upcomingModalTitle':  'このグループの今後のイベント',
+    'pastModalTitle':      'このグループの過去のイベント',
   },
 };
 
@@ -184,6 +200,24 @@ String _fmtDateShort(dynamic ts, {String lang = kLangEn}) {
   }
   return '${d.month}/${d.day}/${d.year}';
 }
+
+// Mirrors web logic: prefer event_date_end, fall back to event_date.
+// Events without any date count as upcoming.
+bool _isPastEvent(Map<String, dynamic> ev) {
+  final end = ev['event_date_end'];
+  final start = ev['event_date'];
+  final ts = end is Timestamp ? end : (start is Timestamp ? start : null);
+  if (ts == null) return false;
+  return ts.millisecondsSinceEpoch < DateTime.now().millisecondsSinceEpoch;
+}
+
+
+List<Map<String, dynamic>> _upcomingOf(List<Map<String, dynamic>> all) =>
+    all.where((e) => !_isPastEvent(e)).toList();
+
+List<Map<String, dynamic>> _pastOf(List<Map<String, dynamic>> all) =>
+    all.where(_isPastEvent).toList();
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Avatar helpers
@@ -302,7 +336,8 @@ Future<List<Map<String, dynamic>>> _fetchEventsForGroup({
 // ─────────────────────────────────────────────────────────────────────────────
 void _showAllEventsModal(
     BuildContext context, String groupDocId, String orgId, String orgName,
-    String lang, String currentUserUid, List<Map<String, dynamic>> preloaded) {
+    String lang, String currentUserUid, List<Map<String, dynamic>> preloaded,
+    {String filter = 'all'}) {
   showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -310,6 +345,7 @@ void _showAllEventsModal(
     builder: (_) => _AllEventsSheet(
       groupDocId: groupDocId, orgId: orgId, orgName: orgName,
       lang: lang, currentUserUid: currentUserUid, preloaded: preloaded,
+      filter: filter,
     ),
   );
 }
@@ -317,9 +353,11 @@ void _showAllEventsModal(
 class _AllEventsSheet extends StatefulWidget {
   final String groupDocId, orgId, orgName, lang, currentUserUid;
   final List<Map<String, dynamic>> preloaded;
+  final String filter; // 'all' | 'upcoming' | 'past'
   const _AllEventsSheet({
     required this.groupDocId, required this.orgId, required this.orgName,
     required this.lang, required this.currentUserUid, required this.preloaded,
+    this.filter = 'all',
   });
 
   @override
@@ -351,6 +389,21 @@ class _AllEventsSheetState extends State<_AllEventsSheet> {
   @override
   Widget build(BuildContext context) {
     final lang = widget.lang;
+    final List<Map<String, dynamic>> filtered = widget.filter == 'upcoming'
+        ? _upcomingOf(_events)
+        : widget.filter == 'past'
+        ? _pastOf(_events)
+        : _events;
+    final String titleKey = widget.filter == 'upcoming'
+        ? 'upcomingModalTitle'
+        : widget.filter == 'past'
+        ? 'pastModalTitle'
+        : 'eventsModalTitle';
+    final String emptyKey = widget.filter == 'upcoming'
+        ? 'noUpcoming'
+        : widget.filter == 'past'
+        ? 'noPast'
+        : 'noEvents';
     return DraggableScrollableSheet(
       initialChildSize: 0.92,
       maxChildSize:     0.96,
@@ -373,11 +426,11 @@ class _AllEventsSheetState extends State<_AllEventsSheet> {
             child: Row(children: [
               Expanded(
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(_t(lang, 'eventsModalTitle'),
+                  Text(_t(lang, titleKey),
                       style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900,
                           color: _D.textPri, letterSpacing: -0.3)),
                   const SizedBox(height: 2),
-                  Text(_t(lang, 'eventsCount').replaceAll('{count}', '${_events.length}'),
+                  Text(_t(lang, 'eventsCount').replaceAll('{count}', '${filtered.length}'),
                       style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: _D.accent)),
                 ]),
               ),
@@ -398,14 +451,14 @@ class _AllEventsSheetState extends State<_AllEventsSheet> {
           Expanded(
             child: _loading
                 ? Center(child: CircularProgressIndicator(color: _D.accent, strokeWidth: 2.5))
-                : _events.isEmpty
+                : filtered.isEmpty
                 ? Center(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 Container(width: 60, height: 60,
                     decoration: const BoxDecoration(color: _D.accentLt, shape: BoxShape.circle),
                     child: Icon(Icons.event_rounded, size: 28, color: _D.accent.withOpacity(0.5))),
                 const SizedBox(height: 12),
-                Text(_t(lang, 'noEvents'),
+                Text(_t(lang, emptyKey),
                     style: const TextStyle(fontSize: 13, color: _D.textMuted, fontWeight: FontWeight.w500)),
               ]),
             )
@@ -415,8 +468,8 @@ class _AllEventsSheetState extends State<_AllEventsSheet> {
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2, crossAxisSpacing: 12, mainAxisSpacing: 12, childAspectRatio: 0.72,
               ),
-              itemCount: _events.length,
-              itemBuilder: (_, i) => _EventGridCard(ev: _events[i], lang: lang),
+              itemCount: filtered.length,
+              itemBuilder: (_, i) => _EventGridCard(ev: filtered[i], lang: lang),
             ),
           ),
         ]),
@@ -1156,10 +1209,15 @@ class _OrganizerGroupSettingsScreenState extends ConsumerState<OrganizerGroupSet
           const SizedBox(height: 8),
           _buildMembersCard(lang),
           const SizedBox(height: 16),
-          _buildSectionHeader(_t(lang, 'eventsByGroup'), Icons.event_rounded,
-              badge: _events.isNotEmpty ? '${_events.length}' : null),
+          _buildSectionHeader(_t(lang, 'upcomingTitle'), Icons.event_rounded,
+              badge: _upcomingOf(_events).isNotEmpty ? '${_upcomingOf(_events).length}' : null),
           const SizedBox(height: 8),
-          _buildEventsCard(lang),
+          _buildEventsCard(lang, isPast: false),
+          const SizedBox(height: 20),
+          _buildSectionHeader(_t(lang, 'pastTitle'), Icons.history_rounded,
+              badge: _pastOf(_events).isNotEmpty ? '${_pastOf(_events).length}' : null),
+          const SizedBox(height: 8),
+          _buildEventsCard(lang, isPast: true),
           const SizedBox(height: 24),
           _buildSaveButton(lang),
           const SizedBox(height: 32),
@@ -1387,32 +1445,37 @@ class _OrganizerGroupSettingsScreenState extends ConsumerState<OrganizerGroupSet
   //   • Always shows "+ Add an event" footer
   //   • Uses the fixed multi-strategy query (event_org_id primary, org_id fallback, name last resort)
   // ─────────────────────────────────────────────────────────────────────────
-  Widget _buildEventsCard(String lang) {
+  Widget _buildEventsCard(String lang, {required bool isPast}) {
     if (_eventsLoading) {
       return _buildCard(child: const Padding(
           padding: EdgeInsets.all(24),
           child: Center(child: CircularProgressIndicator(color: _D.accent, strokeWidth: 2.5))));
     }
 
-    final preview  = _events.take(_maxEventsPreview).toList();
-    final hasMore  = _events.length > _maxEventsPreview;
-    final allCount = _events.length;
+    final scopedAll = isPast ? _pastOf(_events) : _upcomingOf(_events);
+    final preview   = scopedAll.take(_maxEventsPreview).toList();
+    final hasMore   = scopedAll.length > _maxEventsPreview;
+    final allCount  = scopedAll.length;
 
     final orgId      = (_groupData['org_id'] ?? '').toString().trim();
     final orgName    = (_groupData['org_name'] ?? '').toString().trim();
     final currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+    final emptyKey   = isPast ? 'noPast' : 'noUpcoming';
+    final viewAllKey = isPast ? 'viewAllPast' : 'viewAllUpcoming';
+    final modalFilter = isPast ? 'past' : 'upcoming';
 
     return _buildCard(child: Column(children: [
       // ── Empty state ──────────────────────────────────────────────────────
-      if (_events.isEmpty)
+      if (scopedAll.isEmpty)
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 28, 20, 20),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Container(width: 60, height: 60,
                 decoration: const BoxDecoration(color: _D.accentLt, shape: BoxShape.circle),
-                child: Icon(Icons.event_rounded, size: 28, color: _D.accent.withOpacity(0.5))),
+                child: Icon(isPast ? Icons.history_rounded : Icons.event_rounded,
+                    size: 28, color: _D.accent.withOpacity(0.5))),
             const SizedBox(height: 12),
-            Text(_t(lang, 'noEvents'),
+            Text(_t(lang, emptyKey),
                 style: const TextStyle(fontSize: 13, color: _D.textMuted, fontWeight: FontWeight.w500),
                 textAlign: TextAlign.center),
           ]),
@@ -1495,7 +1558,7 @@ class _OrganizerGroupSettingsScreenState extends ConsumerState<OrganizerGroupSet
       // ── Footer ─────────────────────────────────────────────────────────
       Container(
         decoration: BoxDecoration(
-          border: Border(top: BorderSide(color: _events.isEmpty ? Colors.transparent : _D.border)),
+          border: Border(top: BorderSide(color: scopedAll.isEmpty ? Colors.transparent : _D.border)),
         ),
         child: Column(children: [
           // "View all N events" — only shown when there are more than preview limit
@@ -1503,16 +1566,17 @@ class _OrganizerGroupSettingsScreenState extends ConsumerState<OrganizerGroupSet
             InkWell(
               onTap: () => _showAllEventsModal(
                 context, widget.groupId, orgId, orgName, lang, currentUid, _events,
+                filter: modalFilter,
               ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                   Container(width: 26, height: 26,
                       decoration: BoxDecoration(color: _D.accentLt, borderRadius: BorderRadius.circular(8)),
-                      child: const Icon(Icons.event_rounded, size: 14, color: _D.accent)),
+                      child: Icon(isPast ? Icons.history_rounded : Icons.event_rounded, size: 14, color: _D.accent)),
                   const SizedBox(width: 8),
                   Text(
-                    _t(lang, 'viewAllEvents').replaceAll('{count}', '$allCount'),
+                    _t(lang, viewAllKey).replaceAll('{count}', '$allCount'),
                     style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _D.accent),
                   ),
                   const SizedBox(width: 4),
@@ -1520,28 +1584,30 @@ class _OrganizerGroupSettingsScreenState extends ConsumerState<OrganizerGroupSet
                 ]),
               ),
             ),
-          // Divider between "view all" and "add event"
-          if (hasMore) const Divider(height: 1, color: _D.border),
-          // "+ Add an event" — always visible
-          InkWell(
-            borderRadius: BorderRadius.vertical(
-              bottom: const Radius.circular(16),
-              top: (!hasMore && _events.isEmpty) ? const Radius.circular(16) : Radius.zero,
+          // Divider between "view all" and "add event" (only for upcoming section)
+          if (hasMore && !isPast) const Divider(height: 1, color: _D.border),
+          // "+ Add an event" — only in upcoming section
+          if (!isPast)
+            InkWell(
+              borderRadius: BorderRadius.vertical(
+                bottom: const Radius.circular(16),
+                top: (!hasMore && scopedAll.isEmpty) ? const Radius.circular(16) : Radius.zero,
+              ),
+              onTap: () => _navigateToAddEvent(context),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Icon(Icons.add_circle_outline_rounded, size: 16, color: _D.accent),
+                  const SizedBox(width: 6),
+                  Text(_t(lang, 'addEvent'), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _D.accent)),
+                ]),
+              ),
             ),
-            onTap: () => _navigateToAddEvent(context),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                Icon(Icons.add_circle_outline_rounded, size: 16, color: _D.accent),
-                const SizedBox(width: 6),
-                Text(_t(lang, 'addEvent'), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _D.accent)),
-              ]),
-            ),
-          ),
         ]),
       ),
     ]));
   }
+
 
   Widget _eventImgPh() => Container(height: 160, width: double.infinity, color: _D.accentLt,
       child: Icon(Icons.event_rounded, size: 36, color: _D.accent.withOpacity(0.3)));
