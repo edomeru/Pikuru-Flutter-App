@@ -8,6 +8,8 @@ import 'dart:async';
 import 'dart:io' show Platform;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:pikuru/screens/add_court_screen.dart';
+import 'package:pikuru/screens/event_detail_screen.dart';
+import 'package:pikuru/screens/group_detail_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
@@ -1156,6 +1158,13 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
   List<Map<String, dynamic>> _courtImages = [];
   int? _selectedImageIndex;
 
+  // ── Facility sections (Upcoming Events / Local Groups at this Facility) ──
+  bool _loadingFacility = true;
+  List<Map<String, dynamic>> _facilityEvents = [];
+  List<Map<String, dynamic>> _facilityGroups = [];
+  bool _facilityEventsExpanded = true;
+  bool _facilityGroupsExpanded = true;
+
   final TextEditingController _reviewController = TextEditingController();
 
   bool get _isJa => widget.lang == kLangJa;
@@ -1294,6 +1303,105 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
   void initState() {
     super.initState();
     _fetchData();
+    _loadFacilitySections();
+  }
+
+  // ───────────────────────── Facility data loader ─────────────────────────
+  // Mirrors web app logic: query events by event_loc_id, then derive groups
+  // from event_org_id (org_public == true).
+  Future<void> _loadFacilitySections() async {
+    if (_locId.isEmpty) {
+      if (mounted) setState(() => _loadingFacility = false);
+      return;
+    }
+    setState(() => _loadingFacility = true);
+    try {
+      final db = FirebaseFirestore.instance;
+
+      DateTime? _toDate(dynamic v) {
+        if (v is Timestamp) return v.toDate();
+        if (v is DateTime) return v;
+        if (v is String && v.isNotEmpty) return DateTime.tryParse(v);
+        return null;
+      }
+
+      // 1. Fetch events for this facility (mirror web app filters)
+      final eventsSnap = await db
+          .collection('events')
+          .where('event_loc_id', isEqualTo: _locId)
+          .where('event_active', isEqualTo: true)
+          .where('event_checked', isEqualTo: true)
+          .where('event_pending_review', isEqualTo: false)
+          .get();
+
+      final allEvents = eventsSnap.docs
+          .map((d) => {'_doc_id': d.id, 'id': d.id, ...d.data()})
+          .toList();
+
+      // 2. Filter upcoming
+      final now = DateTime.now();
+      final upcoming = allEvents.where((e) {
+        final d = _toDate(e['event_date']);
+        return d != null && !d.isBefore(now);
+      }).toList();
+
+      upcoming.sort((a, b) {
+        final da = _toDate(a['event_date']) ?? DateTime(2100);
+        final db_ = _toDate(b['event_date']) ?? DateTime(2100);
+        return da.compareTo(db_);
+      });
+
+      // 3. Local Groups — unique org ids from events (sorted by most recent event)
+      final sortedDesc = [...allEvents]..sort((a, b) {
+        final ta = _toDate(a['event_date'])?.millisecondsSinceEpoch ?? 0;
+        final tb = _toDate(b['event_date'])?.millisecondsSinceEpoch ?? 0;
+        return tb.compareTo(ta);
+      });
+
+      final uniqueOrgIds = <String>[];
+      final seen = <String>{};
+      for (final e in sortedDesc) {
+        final oid = (e['event_org_id'] ?? '').toString();
+        if (oid.isNotEmpty && seen.add(oid)) uniqueOrgIds.add(oid);
+      }
+
+      final resolvedGroups = <Map<String, dynamic>>[];
+      for (final orgId in uniqueOrgIds) {
+        if (resolvedGroups.length >= 20) break;
+        Map<String, dynamic>? groupDoc;
+        try {
+          final snap = await db.collection('organizations').doc(orgId).get();
+          if (snap.exists) {
+            groupDoc = {'_doc_id': snap.id, ...?snap.data()};
+          } else {
+            final q = await db
+                .collection('organizations')
+                .where('org_id', isEqualTo: orgId)
+                .limit(1)
+                .get();
+            if (q.docs.isNotEmpty) {
+              groupDoc = {'_doc_id': q.docs.first.id, ...q.docs.first.data()};
+            }
+          }
+        } catch (e) {
+          debugPrint('[facility] org lookup failed for $orgId: $e');
+        }
+        if (groupDoc != null && groupDoc['org_public'] == true) {
+          resolvedGroups.add(groupDoc);
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _facilityEvents = upcoming;
+          _facilityGroups = resolvedGroups;
+        });
+      }
+    } catch (e) {
+      debugPrint('[CourtDetailSheet] _loadFacilitySections error: $e');
+    } finally {
+      if (mounted) setState(() => _loadingFacility = false);
+    }
   }
 
   @override
@@ -1638,6 +1746,8 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
                   _buildGallery(),
                 ],
 
+                _buildFacilitySections(),
+
                 const SizedBox(height: 18),
 
                 if (_primaryLink.isNotEmpty)
@@ -1840,6 +1950,218 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
             ),
           ),
         ]),
+      ),
+    );
+  }
+
+  // ─────────── Facility sections UI (Upcoming Events / Local Groups) ───────────
+  Widget _buildFacilitySections() {
+    if (_loadingFacility) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Center(child: SizedBox(
+          width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2),
+        )),
+      );
+    }
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      if (_facilityEvents.isNotEmpty) ...[
+        const SizedBox(height: 18),
+        _facilitySectionHeader(
+          emoji: '📅',
+          label: _isJa ? 'この施設で開催予定のイベント' : 'Upcoming Events at this Facility',
+          count: _facilityEvents.length,
+          expanded: _facilityEventsExpanded,
+          onTap: () => setState(() => _facilityEventsExpanded = !_facilityEventsExpanded),
+        ),
+        if (_facilityEventsExpanded) ...[
+          const SizedBox(height: 8),
+          ..._facilityEvents.map((e) {
+            // Mirror web app field names (event_title / event_title_jp, event_pic / event_pic_thumbnail)
+            final title = _isJa
+                ? ((e['event_title_jp'] ?? e['event_title'] ?? e['event_name'] ?? '').toString())
+                : ((e['event_title'] ?? e['event_name'] ?? '').toString());
+            final img = (e['event_pic'] ?? e['event_pic_thumbnail'] ?? e['event_image'] ?? '').toString();
+            final dt = e['event_date'];
+            String subtitle = '';
+            DateTime? d;
+            if (dt is Timestamp) d = dt.toDate();
+            if (dt is String) d = DateTime.tryParse(dt);
+            if (d != null) {
+              subtitle = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+            }
+            return _facilityListTile(image: img, title: title, subtitle: subtitle, onTap: () {
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => EventDetailScreen(event: Map<String, dynamic>.from(e)),
+              ));
+            });
+          }),
+        ],
+      ] else if (!_loadingFacility) ...[
+        const SizedBox(height: 18),
+        _facilitySectionHeader(
+          emoji: '📅',
+          label: _isJa ? 'この施設で開催予定のイベント' : 'Upcoming Events at this Facility',
+          count: 0,
+          expanded: _facilityEventsExpanded,
+          onTap: () => setState(() => _facilityEventsExpanded = !_facilityEventsExpanded),
+        ),
+        if (_facilityEventsExpanded) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: _cardBg,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _border),
+            ),
+            child: Text(
+              _isJa
+                  ? 'この施設で予定されているイベントはありません。'
+                  : 'No upcoming events scheduled at this facility.',
+              style: TextStyle(fontSize: 12, color: _textLight),
+            ),
+          ),
+        ],
+      ],
+      if (_facilityGroups.isNotEmpty) ...[
+        const SizedBox(height: 18),
+        _facilitySectionHeader(
+          emoji: '👥',
+          label: _isJa ? 'この施設を利用しているグループ' : 'Local Groups at this Facility',
+          count: _facilityGroups.length,
+          expanded: _facilityGroupsExpanded,
+          onTap: () => setState(() => _facilityGroupsExpanded = !_facilityGroupsExpanded),
+        ),
+        if (_facilityGroupsExpanded) ...[
+          const SizedBox(height: 8),
+          ..._facilityGroups.map((g) {
+            // Mirror web app field names (org_name / org_name_jp, org_logo_url / org_image, org_type)
+            final title = _isJa
+                ? ((g['org_name_jp'] ?? g['org_name'] ?? '').toString())
+                : ((g['org_name'] ?? '').toString());
+            final img = (g['org_logo_url'] ?? g['org_image'] ?? g['org_logo'] ?? '').toString();
+            final subtitle = (g['org_type'] ?? g['org_city'] ?? '').toString();
+            return _facilityListTile(image: img, title: title, subtitle: subtitle, onTap: () {
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => GroupDetailScreen(group: Map<String, dynamic>.from(g)),
+              ));
+            });
+          }),
+        ],
+      ] else if (!_loadingFacility) ...[
+        const SizedBox(height: 18),
+        _facilitySectionHeader(
+          emoji: '👥',
+          label: _isJa ? 'この施設を利用しているグループ' : 'Local Groups at this Facility',
+          count: 0,
+          expanded: _facilityGroupsExpanded,
+          onTap: () => setState(() => _facilityGroupsExpanded = !_facilityGroupsExpanded),
+        ),
+        if (_facilityGroupsExpanded) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: _cardBg,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _border),
+            ),
+            child: Text(
+              _isJa
+                  ? 'この施設でイベントを開催したグループはまだありません。'
+                  : 'No groups have hosted events at this facility yet.',
+              style: TextStyle(fontSize: 12, color: _textLight),
+            ),
+          ),
+        ],
+      ],
+    ]);
+  }
+
+  Widget _facilitySectionHeader({
+    required String emoji,
+    required String label,
+    required int count,
+    required bool expanded,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: _accentSoft.withOpacity(0.4),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _border),
+        ),
+        child: Row(children: [
+          Text(emoji, style: const TextStyle(fontSize: 16)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '$label ($count)',
+              style: const TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w800, color: _textDark),
+            ),
+          ),
+          Icon(expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+              size: 20, color: _primary),
+        ]),
+      ),
+    );
+  }
+
+  Widget _facilityListTile({
+    required String image,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: _cardBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _border),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Row(children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: SizedBox(
+                width: 48, height: 48,
+                child: image.isNotEmpty
+                    ? Image.network(image, fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(color: _accentSoft,
+                        child: Icon(Icons.image_rounded, size: 20, color: _primary.withOpacity(0.4))))
+                    : Container(color: _accentSoft,
+                    child: Icon(Icons.image_rounded, size: 20, color: _primary.withOpacity(0.4))),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(title.isEmpty ? '—' : title,
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w700, color: _textDark)),
+                if (subtitle.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(subtitle,
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 11, color: _textLight)),
+                ],
+              ]),
+            ),
+            Icon(Icons.chevron_right_rounded, size: 20, color: _textLight),
+          ]),
+        ),
       ),
     );
   }
