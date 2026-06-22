@@ -266,14 +266,14 @@ class _T {
 class CourtFilter {
   final String? prefecture;
   final String? city;
-  final String? setupType;
+  final Set<String> setupTypes;
   final Set<String> amenities;
   final String setting;
 
   const CourtFilter({
     this.prefecture,
     this.city,
-    this.setupType,
+    this.setupTypes = const {},
     this.amenities = const {},
     this.setting = 'all',
   });
@@ -281,14 +281,14 @@ class CourtFilter {
   CourtFilter copyWith({
     Object? prefecture = _sentinel,
     Object? city       = _sentinel,
-    Object? setupType  = _sentinel,
+    Set<String>? setupTypes,
     Set<String>? amenities,
     String? setting,
   }) {
     return CourtFilter(
       prefecture: prefecture == _sentinel ? this.prefecture : prefecture as String?,
       city:       city       == _sentinel ? this.city       : city       as String?,
-      setupType:  setupType  == _sentinel ? this.setupType  : setupType  as String?,
+      setupTypes: setupTypes ?? this.setupTypes,
       amenities:  amenities  ?? this.amenities,
       setting:    setting    ?? this.setting,
     );
@@ -323,8 +323,8 @@ class CourtFilter {
 
   bool _matchesNonGeo(Map<String, dynamic> loc) {
     if (city != null && _cityValue(loc) != city) return false;
-    if (setupType != null &&
-        (loc['loc_setup_type'] ?? '').toString() != setupType) return false;
+    if (setupTypes.isNotEmpty &&
+        !setupTypes.contains((loc['loc_setup_type'] ?? '').toString())) return false;
     if (setting == 'indoor'  && loc['loc_court_type_indoor']  != true) return false;
     if (setting == 'outdoor' && loc['loc_court_type_outdoor'] != true) return false;
     for (final a in amenities) {
@@ -342,9 +342,10 @@ const _sentinel = Object();
 bool _hasActiveFilter(CourtFilter f) =>
     (f.prefecture != null && f.prefecture != 'Tokyo') ||
         f.city != null ||
-        f.setupType != null ||
+        f.setupTypes.isNotEmpty ||
         f.amenities.isNotEmpty ||
         f.setting != 'all';
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CourtsScreen
@@ -2614,8 +2615,12 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
   late final Map<String, List<String>> _citiesByPref;
 
   static const _setupTypes = [
-    ('Public Access Courts',         'Public Access Courts',         '一般開放コート'),
-    ('Private / Coordinated Courts', 'Private / Coordinated Courts', '事前調整・予約制コート'),
+    ('Public Access Courts',             'Public Access Courts',             '一般開放コート'),
+    ('Private / Coordinated Courts',     'Private / Coordinated Courts',     '事前調整・予約制コート'),
+    ('Reserved Courts',                  'Reserved Courts',                  '予約制コート'),
+    ('Class/Membership Only Courts',     'Class/Membership Only Courts',     'クラス・会員限定コート'),
+    ('Coordinated Group / Setup Courts', 'Coordinated Group / Setup Courts', '調整グループ／セットアップコート'),
+    ('Drop-in Courts',                   'Drop-in Courts',                   'ドロップインコート'),
   ];
 
   static const _amenities = [
@@ -2747,6 +2752,17 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
                     padding: EdgeInsets.fromLTRB(
                         20, 4, 20, MediaQuery.of(context).padding.bottom + 16),
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      _sectionLabel(_t.setupType, Icons.construction_rounded),
+                      const SizedBox(height: 10),
+                      Wrap(spacing: 8, runSpacing: 8, children: [
+                        _setupChip(_isJa ? 'すべて' : 'All', null),
+                        ..._setupTypes.map((tp) {
+                          final (value, enLabel, jpLabel) = tp;
+                          return _setupChip(_isJa ? jpLabel : enLabel, value);
+                        }),
+                      ]),
+                      const SizedBox(height: 20),
+
                       _sectionLabel(_t.courtSetting, Icons.roofing_rounded),
                       const SizedBox(height: 10),
                       Row(children: [
@@ -2777,16 +2793,6 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
                         const SizedBox(height: 20),
                       ],
 
-                      _sectionLabel(_t.setupType, Icons.construction_rounded),
-                      const SizedBox(height: 10),
-                      Wrap(spacing: 8, runSpacing: 8, children: [
-                        _setupChip(_isJa ? 'すべて' : 'All', null),
-                        ..._setupTypes.map((tp) {
-                          final (value, enLabel, jpLabel) = tp;
-                          return _setupChip(_isJa ? jpLabel : enLabel, value);
-                        }),
-                      ]),
-                      const SizedBox(height: 20),
 
                       _sectionLabel(_t.amenities, Icons.star_outline_rounded),
                       const SizedBox(height: 10),
@@ -2921,9 +2927,23 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
   }
 
   Widget _setupChip(String label, String? value) {
-    final selected = _draft.setupType == value;
+    final selected = value == null
+        ? _draft.setupTypes.isEmpty
+        : _draft.setupTypes.contains(value);
     return GestureDetector(
-      onTap: () => setState(() => _draft = _draft.copyWith(setupType: value)),
+      onTap: () => setState(() {
+        if (value == null) {
+          _draft = _draft.copyWith(setupTypes: <String>{});
+        } else {
+          final next = Set<String>.from(_draft.setupTypes);
+          if (next.contains(value)) {
+            next.remove(value);
+          } else {
+            next.add(value);
+          }
+          _draft = _draft.copyWith(setupTypes: next);
+        }
+      }),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
@@ -2940,6 +2960,7 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
       ),
     );
   }
+
 
   Widget _buildDropdown({
     required String? value,
