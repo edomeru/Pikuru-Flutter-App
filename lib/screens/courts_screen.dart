@@ -1166,6 +1166,13 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
   bool _facilityEventsExpanded = true;
   bool _facilityGroupsExpanded = true;
 
+  // ── Pagination state (mirrors web app: 3 items per page) ──
+  static const int _facilityPageSize = 3;
+  int _eventsPage = 1;
+  int _groupsPage = 1;
+
+
+
   final TextEditingController _reviewController = TextEditingController();
 
   bool get _isJa => widget.lang == kLangJa;
@@ -1396,8 +1403,11 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
         setState(() {
           _facilityEvents = upcoming;
           _facilityGroups = resolvedGroups;
+          _eventsPage = 1;
+          _groupsPage = 1;
         });
       }
+
     } catch (e) {
       debugPrint('[CourtDetailSheet] _loadFacilitySections error: $e');
     } finally {
@@ -1977,27 +1987,51 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
         ),
         if (_facilityEventsExpanded) ...[
           const SizedBox(height: 8),
-          ..._facilityEvents.map((e) {
-            // Mirror web app field names (event_title / event_title_jp, event_pic / event_pic_thumbnail)
-            final title = _isJa
-                ? ((e['event_title_jp'] ?? e['event_title'] ?? e['event_name'] ?? '').toString())
-                : ((e['event_title'] ?? e['event_name'] ?? '').toString());
-            final img = (e['event_pic'] ?? e['event_pic_thumbnail'] ?? e['event_image'] ?? '').toString();
-            final dt = e['event_date'];
-            String subtitle = '';
-            DateTime? d;
-            if (dt is Timestamp) d = dt.toDate();
-            if (dt is String) d = DateTime.tryParse(dt);
-            if (d != null) {
-              subtitle = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
-            }
-            return _facilityListTile(image: img, title: title, subtitle: subtitle, onTap: () {
-              Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => EventDetailScreen(event: Map<String, dynamic>.from(e)),
-              ));
+          ...(() {
+            // Mirror web app: slice the list and render only the current page
+            // (3 per page) so we don't pay for rendering everything at once.
+            final totalPages =
+            (_facilityEvents.length / _facilityPageSize).ceil().clamp(1, 9999);
+            if (_eventsPage > totalPages) _eventsPage = totalPages;
+            final start = (_eventsPage - 1) * _facilityPageSize;
+            final end = (start + _facilityPageSize) > _facilityEvents.length
+                ? _facilityEvents.length
+                : (start + _facilityPageSize);
+            final pageItems = _facilityEvents.sublist(start, end);
+            return pageItems.map((e) {
+              final title = _isJa
+                  ? ((e['event_title_jp'] ?? e['event_title'] ?? e['event_name'] ?? '').toString())
+                  : ((e['event_title'] ?? e['event_name'] ?? '').toString());
+              final img = (e['event_pic'] ?? e['event_pic_thumbnail'] ?? e['event_image'] ?? '').toString();
+              final dt = e['event_date'];
+              String subtitle = '';
+              DateTime? d;
+              if (dt is Timestamp) d = dt.toDate();
+              if (dt is String) d = DateTime.tryParse(dt);
+              if (d != null) {
+                subtitle = '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+              }
+              return _facilityListTile(image: img, title: title, subtitle: subtitle, onTap: () {
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => EventDetailScreen(event: Map<String, dynamic>.from(e)),
+                ));
+              });
             });
-          }),
+          })(),
+          if (_facilityEvents.length > _facilityPageSize)
+            _facilityPaginationBar(
+              currentPage: _eventsPage,
+              totalPages: (_facilityEvents.length / _facilityPageSize).ceil(),
+              onPrev: () => setState(() {
+                if (_eventsPage > 1) _eventsPage--;
+              }),
+              onNext: () => setState(() {
+                final tp = (_facilityEvents.length / _facilityPageSize).ceil();
+                if (_eventsPage < tp) _eventsPage++;
+              }),
+            ),
         ],
+
       ] else if (!_loadingFacility) ...[
         const SizedBox(height: 18),
         _facilitySectionHeader(
@@ -2036,20 +2070,42 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
         ),
         if (_facilityGroupsExpanded) ...[
           const SizedBox(height: 8),
-          ..._facilityGroups.map((g) {
-            // Mirror web app field names (org_name / org_name_jp, org_logo_url / org_image, org_type)
-            final title = _isJa
-                ? ((g['org_name_jp'] ?? g['org_name'] ?? '').toString())
-                : ((g['org_name'] ?? '').toString());
-            final img = (g['org_logo_url'] ?? g['org_image'] ?? g['org_logo'] ?? '').toString();
-            final subtitle = (g['org_type'] ?? g['org_city'] ?? '').toString();
-            return _facilityListTile(image: img, title: title, subtitle: subtitle, onTap: () {
-              Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => GroupDetailScreen(group: Map<String, dynamic>.from(g)),
-              ));
+          ...(() {
+            final totalPages =
+            (_facilityGroups.length / _facilityPageSize).ceil().clamp(1, 9999);
+            if (_groupsPage > totalPages) _groupsPage = totalPages;
+            final start = (_groupsPage - 1) * _facilityPageSize;
+            final end = (start + _facilityPageSize) > _facilityGroups.length
+                ? _facilityGroups.length
+                : (start + _facilityPageSize);
+            final pageItems = _facilityGroups.sublist(start, end);
+            return pageItems.map((g) {
+              final title = _isJa
+                  ? ((g['org_name_jp'] ?? g['org_name'] ?? '').toString())
+                  : ((g['org_name'] ?? '').toString());
+              final img = (g['org_logo_url'] ?? g['org_image'] ?? g['org_logo'] ?? '').toString();
+              final subtitle = (g['org_type'] ?? g['org_city'] ?? '').toString();
+              return _facilityListTile(image: img, title: title, subtitle: subtitle, onTap: () {
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => GroupDetailScreen(group: Map<String, dynamic>.from(g)),
+                ));
+              });
             });
-          }),
+          })(),
+          if (_facilityGroups.length > _facilityPageSize)
+            _facilityPaginationBar(
+              currentPage: _groupsPage,
+              totalPages: (_facilityGroups.length / _facilityPageSize).ceil(),
+              onPrev: () => setState(() {
+                if (_groupsPage > 1) _groupsPage--;
+              }),
+              onNext: () => setState(() {
+                final tp = (_facilityGroups.length / _facilityPageSize).ceil();
+                if (_groupsPage < tp) _groupsPage++;
+              }),
+            ),
         ],
+
       ] else if (!_loadingFacility) ...[
         const SizedBox(height: 18),
         _facilitySectionHeader(
@@ -2166,6 +2222,68 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
       ),
     );
   }
+
+  // ── Pagination bar (mirrors web app: ← Prev | X / Y | Next →) ──
+  Widget _facilityPaginationBar({
+    required int currentPage,
+    required int totalPages,
+    required VoidCallback onPrev,
+    required VoidCallback onNext,
+  }) {
+    final isFirst = currentPage <= 1;
+    final isLast = currentPage >= totalPages;
+
+    Widget pageBtn({
+      required String label,
+      required bool disabled,
+      required VoidCallback onTap,
+    }) {
+      return Opacity(
+        opacity: disabled ? 0.4 : 1.0,
+        child: InkWell(
+          onTap: disabled ? null : onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: _accentSoft.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: _border),
+            ),
+            child: Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: _textDark,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          pageBtn(label: '← Prev', disabled: isFirst, onTap: onPrev),
+          Text(
+            '$currentPage / $totalPages',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: _textDark,
+            ),
+          ),
+          pageBtn(label: 'Next →', disabled: isLast, onTap: onNext),
+        ],
+      ),
+    );
+  }
+
+
 
   Widget _buildGallery() {
     final imgs = _allImages;
