@@ -858,9 +858,9 @@ class _BadgesRow extends StatelessWidget {
           _Badge(
             label: _t(lang, 'badgeSelfReported'),
             icon: Icons.check_rounded,
-            color: AppColors.primary,
-            bg: AppColors.primary.withOpacity(0.10),
-            borderColor: AppColors.primary.withOpacity(0.30),
+            color: const Color(0xFF9CA3AF),
+            bg: const Color(0xFFF3F4F6),
+            borderColor: const Color(0xFFE5E7EB),
           ),
         ],
       );
