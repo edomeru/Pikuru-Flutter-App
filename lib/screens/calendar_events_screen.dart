@@ -37,10 +37,10 @@ class _S {
   String get selectDate   => isJa ? '選択'   : 'Select';
 
   String get secSave           => isJa ? '保存'           : 'SAVE';
-  String get saveMyEvents      => isJa ? 'マイイベント'     : 'My Events';
-  String get saveMyEventsSub   => isJa ? '参加予定のイベント' : "Events you're planning to join";
-  String get saveInterested    => isJa ? '興味あり'        : 'Interested';
-  String get saveInterestedSub => isJa ? '注目しているイベント' : "Events you'd like to keep an eye on";
+  String get saveMyEvents      => isJa ? '自己申告として登録' : 'Register as Self-Reported';
+  String get saveMyEventsSub   => isJa ? '参加予定のイベント'   : "Events you're planning to join";
+  String get saveInterested    => isJa ? 'お気に入り'         : 'Favorite';
+  String get saveInterestedSub => isJa ? '気になるイベント'    : "Events you'd like to keep an eye on";
 
   String get saveMarkMyEvents      => isJa ? 'My Eventsに追加？'   : 'Add to My Events?';
   String get saveMarkMyEventsBody  => isJa ? 'このイベントをMy Eventsリストに保存します。' : 'This event will be saved to your My Events list.';
