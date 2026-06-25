@@ -2872,13 +2872,17 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       _sectionLabel(_t.setupType, Icons.construction_rounded),
                       const SizedBox(height: 10),
-                      Wrap(spacing: 8, runSpacing: 8, children: [
-                        _setupChip(_isJa ? 'すべて' : 'All', null),
-                        ..._setupTypes.map((tp) {
-                          final (value, enLabel, jpLabel) = tp;
-                          return _setupChip(_isJa ? jpLabel : enLabel, value);
-                        }),
-                      ]),
+                      _multiSelectDropdown(
+                        selected: _draft.setupTypes,
+                        options: _setupTypes
+                            .map((tp) => (
+                        value: tp.$1,
+                        label: _isJa ? tp.$3 : tp.$2,
+                        ))
+                            .toList(),
+                        onChanged: (next) => setState(
+                                () => _draft = _draft.copyWith(setupTypes: next)),
+                      ),
                       const SizedBox(height: 20),
 
                       _sectionLabel(_t.courtSetting, Icons.roofing_rounded),
@@ -2914,46 +2918,16 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
 
                       _sectionLabel(_t.amenities, Icons.star_outline_rounded),
                       const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 8, runSpacing: 8,
-                        children: _amenities.map((a) {
-                          final (enLabel, jpLabel, key) = a;
-                          final label  = _isJa ? jpLabel : enLabel;
-                          final active = _draft.amenities.contains(key);
-                          return GestureDetector(
-                            onTap: () {
-                              final next = Set<String>.from(_draft.amenities);
-                              if (active) next.remove(key); else next.add(key);
-                              setState(() => _draft = _draft.copyWith(amenities: next));
-                            },
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 180),
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-                              decoration: BoxDecoration(
-                                color: active
-                                    ? AppColors.primary.withOpacity(0.1)
-                                    : Colors.black.withOpacity(0.04),
-                                borderRadius: BorderRadius.circular(24),
-                                border: Border.all(
-                                  color: active ? AppColors.primary : Colors.transparent,
-                                  width: 1.5,
-                                ),
-                              ),
-                              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                                if (active) ...[
-                                  Icon(Icons.check_rounded, size: 14, color: AppColors.primary),
-                                  const SizedBox(width: 4),
-                                ],
-                                Text(label,
-                                    style: TextStyle(
-                                        fontSize: 13, fontWeight: FontWeight.w600,
-                                        color: active
-                                            ? AppColors.primary
-                                            : Colors.black.withOpacity(0.55))),
-                              ]),
-                            ),
-                          );
-                        }).toList(),
+                      _multiSelectDropdown(
+                        selected: _draft.amenities,
+                        options: _amenities
+                            .map((a) => (
+                        value: a.$3,
+                        label: _isJa ? a.$2 : a.$1,
+                        ))
+                            .toList(),
+                        onChanged: (next) => setState(
+                                () => _draft = _draft.copyWith(amenities: next)),
                       ),
                       const SizedBox(height: 28),
 
@@ -3130,6 +3104,235 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
           onChanged: onChanged,
         ),
       ),
+    );
+  }
+
+  Widget _multiSelectDropdown({
+    required Set<String> selected,
+    required List<({String value, String label})> options,
+    required void Function(Set<String>) onChanged,
+  }) {
+    final allLabel = _isJa ? 'すべて' : 'All';
+    String summary;
+    if (selected.isEmpty) {
+      summary = allLabel;
+    } else if (selected.length == 1) {
+      final only = selected.first;
+      final match = options.where((o) => o.value == only).toList();
+      summary = match.isNotEmpty ? match.first.label : '1 selected';
+    } else {
+      summary = _isJa ? '${selected.length}件選択中' : '${selected.length} selected';
+    }
+    final hasSelection = selected.isNotEmpty;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: hasSelection
+              ? AppColors.primary.withOpacity(0.5)
+              : Colors.transparent,
+          width: 1.5,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: () async {
+            final result = await showModalBottomSheet<Set<String>>(
+              context: context,
+              backgroundColor: Colors.transparent,
+              isScrollControlled: true,
+              builder: (ctx) => _MultiSelectSheet(
+                initialSelected: selected,
+                options: options,
+                isJa: _isJa,
+              ),
+            );
+            if (result != null) onChanged(result);
+          },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+            child: Row(children: [
+              Expanded(
+                child: Text(
+                  summary,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: hasSelection
+                        ? AppColors.primary
+                        : Colors.black.withOpacity(0.45),
+                  ),
+                ),
+              ),
+              Icon(Icons.keyboard_arrow_down_rounded,
+                  color: AppColors.primary, size: 22),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+}
+
+
+// ── Multi-select bottom sheet ────────────────────────────────────────────────
+class _MultiSelectSheet extends StatefulWidget {
+  final Set<String> initialSelected;
+  final List<({String value, String label})> options;
+  final bool isJa;
+
+  const _MultiSelectSheet({
+    required this.initialSelected,
+    required this.options,
+    required this.isJa,
+  });
+
+  @override
+  State<_MultiSelectSheet> createState() => _MultiSelectSheetState();
+}
+
+class _MultiSelectSheetState extends State<_MultiSelectSheet> {
+  late Set<String> _sel;
+
+  @override
+  void initState() {
+    super.initState();
+    _sel = Set<String>.from(widget.initialSelected);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final allLabel = widget.isJa ? 'すべて' : 'All';
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 8),
+            // "All" row -> clears selection
+            InkWell(
+              onTap: () => setState(() => _sel.clear()),
+              child: Padding(
+                padding:
+                const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                child: Row(children: [
+                  _checkbox(_sel.isEmpty),
+                  const SizedBox(width: 12),
+                  Text(allLabel,
+                      style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: _sel.isEmpty
+                              ? AppColors.primary
+                              : Colors.black.withOpacity(0.7))),
+                ]),
+              ),
+            ),
+            Divider(height: 1, color: Colors.black.withOpacity(0.06)),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: EdgeInsets.zero,
+                itemCount: widget.options.length,
+                separatorBuilder: (_, __) =>
+                    Divider(height: 1, color: Colors.black.withOpacity(0.04)),
+                itemBuilder: (ctx, i) {
+                  final opt = widget.options[i];
+                  final active = _sel.contains(opt.value);
+                  return InkWell(
+                    onTap: () => setState(() {
+                      if (active) {
+                        _sel.remove(opt.value);
+                      } else {
+                        _sel.add(opt.value);
+                      }
+                    }),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 14),
+                      child: Row(children: [
+                        _checkbox(active),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(opt.label,
+                              style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: active
+                                      ? AppColors.primary
+                                      : Colors.black.withOpacity(0.75))),
+                        ),
+                      ]),
+                    ),
+                  );
+                },
+              ),
+            ),
+            Divider(height: 1, color: Colors.black.withOpacity(0.06)),
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                  16, 12, 16, MediaQuery.of(context).padding.bottom + 12),
+              child: SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                  onPressed: () => Navigator.of(context).pop(_sel),
+                  child: Text(widget.isJa ? '完了' : 'Done',
+                      style: const TextStyle(
+                          fontSize: 14, fontWeight: FontWeight.w800)),
+                ),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+
+  Widget _checkbox(bool active) {
+    return Container(
+      width: 20,
+      height: 20,
+      decoration: BoxDecoration(
+        color: active
+            ? AppColors.primary.withOpacity(0.15)
+            : Colors.black.withOpacity(0.04),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: active ? AppColors.primary : Colors.black.withOpacity(0.18),
+          width: 1.5,
+        ),
+      ),
+      child: active
+          ? Icon(Icons.check_rounded, size: 14, color: AppColors.primary)
+          : null,
     );
   }
 }
