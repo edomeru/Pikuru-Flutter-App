@@ -84,6 +84,7 @@ class _S {
   String get loginToRegister    => isJa ? '登録にはログインが必要です' : 'Log in to register for events';
   String get registrationClosed => isJa ? '登録終了'                 : 'Registration Closed';
   String get regClosedMsg       => isJa ? '主催者がこのイベントの登録を締め切りました。' : 'The organizer has closed registration for this event.';
+  String get regDeadlinePassed  => isJa ? '申し込み締切日を過ぎました。' : 'Registration deadline has passed.';
   String get capacityReached    => isJa ? '定員に達しました'          : 'Maximum Capacity Reached';
   String get capacityMsg        => isJa ? 'このイベントは満席です。ウェイティングリストに登録できます。' : 'This event is full. You can join the waitlist.';
   String get joinWaitlist       => isJa ? 'ウェイティングリストに登録' : 'Join Waitlist';
@@ -230,7 +231,22 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
       _eventLimit != null && _approvedCount >= _eventLimit!;
 
   bool get _regOpen =>
-      widget.event['event_registration_open'] != false;
+      widget.event['event_registration_open'] != false &&
+          !_isRegistrationDeadlinePassed;
+
+  DateTime? get _registrationDeadline {
+    final raw = widget.event['registration_deadline'];
+    if (raw == null) return null;
+    if (raw is Timestamp) return raw.toDate();
+    if (raw is DateTime) return raw;
+    if (raw is String) return DateTime.tryParse(raw);
+    return null;
+  }
+
+  bool get _isRegistrationDeadlinePassed {
+    final d = _registrationDeadline;
+    return d != null && DateTime.now().isAfter(d);
+  }
 
   bool get _isEventOwner {
     final uid = FirebaseAuth.instance.currentUser?.uid;
@@ -619,6 +635,40 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                       ),
                     ),
                   ),
+                if (_isRegistrationDeadlinePassed)
+                  Positioned(
+                    top: 16, right: 16,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: _amber,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.15),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.lock_clock_rounded, color: Colors.white, size: 13),
+                          const SizedBox(width: 4),
+                          Text(
+                            s.registrationClosed.toUpperCase(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.8,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
               ]),
             ),
           ),
@@ -634,6 +684,8 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                     Text(title,
                         style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800,
                             color: _textDark, height: 1.25, letterSpacing: -0.3)),
+
+
 
                     if (dateStr.isNotEmpty) ...[
                       const SizedBox(height: 18),
@@ -992,15 +1044,35 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
     // ── From here: pikuru in-app registration ─────────────────────────────────
 
     // ── 4. Registration closed ────────────────────────────────────────────────
+    // Mirrors web app: show the "Registration Closed" banner at the top, then
+    // STILL show the user's registration status banner below (e.g. "Registration
+    // Approved") if they already have one. Both stack together — closed banner
+    // does NOT replace the status.
     if (!_regOpen) {
-      return _StatusBanner(
+      final closedBanner = _StatusBanner(
         icon: Icons.lock_rounded,
         iconColor: _textMid,
         bgColor: _cardBg,
         borderColor: _border,
         title: s.registrationClosed,
-        subtitle: s.regClosedMsg,
+        subtitle: _isRegistrationDeadlinePassed ? s.regDeadlinePassed : s.regClosedMsg,
       );
+
+      if (_regStatus == _RegStatus.approved) {
+        return Column(children: [
+          closedBanner,
+          const SizedBox(height: 10),
+          _ApprovedBanner(s: s),
+        ]);
+      }
+      if (_regStatus != _RegStatus.none) {
+        return Column(children: [
+          closedBanner,
+          const SizedBox(height: 10),
+          _regStatusBanner(),
+        ]);
+      }
+      return closedBanner;
     }
 
     // ── 5a. APPROVED — show prominent green banner, no cancel button ──────────

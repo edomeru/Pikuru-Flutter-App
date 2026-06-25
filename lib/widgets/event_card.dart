@@ -6,6 +6,8 @@ class EventCard extends StatelessWidget {
   final String title;
   final String dateTime;
   final String location;
+  final bool registrationClosed;
+  final String lang;
 
   const EventCard({
     super.key,
@@ -13,6 +15,8 @@ class EventCard extends StatelessWidget {
     required this.title,
     required this.dateTime,
     required this.location,
+    this.registrationClosed = false,
+    this.lang = 'en',
   });
 
   @override
@@ -115,6 +119,46 @@ class EventCard extends StatelessWidget {
                   ),
                 ),
               ),
+              // Registration closed badge (bottom-right, so it doesn't overlap the date chip)
+              if (registrationClosed)
+                Positioned(
+                  bottom: 10,
+                  right: 10,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE07A2B),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.25),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.lock_outline,
+                            color: Colors.white, size: 11),
+                        const SizedBox(width: 4),
+                        Text(
+                          lang == 'ja' ? '受付終了' : 'REG. CLOSED',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
             ],
           ),
 

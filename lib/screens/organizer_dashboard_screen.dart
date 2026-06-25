@@ -670,6 +670,24 @@ class _EventCard extends StatelessWidget {
     );
   }
 
+  bool _isRegistrationClosed(dynamic deadline) {
+    if (deadline == null) return false;
+    DateTime? dt;
+    if (deadline is Timestamp) {
+      dt = deadline.toDate();
+    } else if (deadline is DateTime) {
+      dt = deadline;
+    } else if (deadline is String && deadline.isNotEmpty) {
+      try {
+        dt = DateTime.parse(deadline);
+      } catch (_) {
+        return false;
+      }
+    }
+    if (dt == null) return false;
+    return DateTime.now().isAfter(dt);
+  }
+
   @override
   Widget build(BuildContext context) {
     final isPending =
@@ -694,6 +712,7 @@ class _EventCard extends StatelessWidget {
         : '¥$feeRaw';
     final dateStr = _fmtDate(data['event_date'], compact: true);
     final eventType = (data['event_type'] ?? '').toString();
+    final regClosed = _isRegistrationClosed(data['registration_deadline']);
 
     Color sc;
     Color sb;
@@ -770,6 +789,37 @@ class _EventCard extends StatelessWidget {
                           fontWeight: FontWeight.w700,
                           color: Colors.white,
                         ),
+                      ),
+                    ),
+                  ),
+                if (regClosed)
+                  Positioned(
+                    bottom: 12,
+                    right: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 5,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFD97706),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.lock_rounded,
+                              size: 12, color: Colors.white),
+                          const SizedBox(width: 4),
+                          Text(
+                            lang == 'ja' ? '受付終了' : 'REGISTRATION CLOSED',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),

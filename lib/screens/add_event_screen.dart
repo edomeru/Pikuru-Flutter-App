@@ -33,6 +33,7 @@ class _S {
   String get lblLink     => isJa ? '申し込み / イベントリンク' : 'Registration / Event Link';
   String get lblDate     => isJa ? '開催日 *'               : 'Date of Event *';
   String get lblDateEnd  => isJa ? '終了日 (任意)'           : 'End Date (Optional)';
+  String get lblRegistrationDeadline => isJa ? '申し込み締切日 *' : 'Registration Deadline *';
   String get lblStart    => isJa ? '開始時間 * (例: 09:00)'  : 'Start Time (e.g. 09:00)';
   String get lblFee      => isJa ? '登録料 (登録無料の場合は「0」を入力してください。)' : 'Registration Fee (Please enter "0" if registration is free.)';
   String get lblMax      => isJa ? '最大参加人数'             : 'Maximum number of participants';
@@ -211,6 +212,7 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
   String    _registrationType  = 'pikuru';
   DateTime? _eventDate;
   DateTime? _eventDateEnd;
+  DateTime? _registrationDeadline;
   bool _acceptStripe    = false;
   bool _touristFriendly = false;
   bool _skillBeginner   = false;
@@ -348,7 +350,7 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
     final contact = _contactController.text.trim();
     final desc    = _descController.text.trim();
 
-    if (title.isEmpty || _eventDate == null || address.isEmpty || contact.isEmpty) {
+    if (title.isEmpty || _eventDate == null || _registrationDeadline == null || address.isEmpty || contact.isEmpty) {
       _showSnack(s.errFields, isError: true);
       return;
     }
@@ -443,6 +445,8 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
 
         'event_date':       eventDateTs,
         'event_date_end':   eventDateEndTs,
+        'registration_deadline': _registrationDeadline != null
+            ? Timestamp.fromDate(_registrationDeadline!) : null,
         'event_time':       startTs,
         'event_start_date': startTs,
         'event_fee':        _feeController.text.trim(),
@@ -730,6 +734,12 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
 
         _buildTextField(label: s.lblStart, controller: _startTimeController,
             hint: '09:00', keyboardType: TextInputType.datetime),
+        const SizedBox(height: 14),
+
+        _buildLabel(s.lblRegistrationDeadline),
+        const SizedBox(height: 6),
+        _buildDatePicker(value: _registrationDeadline, hint: s.lblRegistrationDeadline,
+            onPicked: (d) => setState(() => _registrationDeadline = d)),
         const SizedBox(height: 14),
 
         Row(children: [

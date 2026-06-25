@@ -965,6 +965,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ? (data['location_jp'] ?? data['location'] ?? '').toString()
                 : (data['location'] ?? '').toString();
 
+            // ── Registration deadline passed? (mirrors web app) ──
+            DateTime? deadline;
+            final rawDeadline = data['registration_deadline'];
+            if (rawDeadline is Timestamp) {
+              deadline = rawDeadline.toDate();
+            } else if (rawDeadline is DateTime) {
+              deadline = rawDeadline;
+            } else if (rawDeadline is String && rawDeadline.isNotEmpty) {
+              deadline = DateTime.tryParse(rawDeadline);
+            }
+            final registrationClosed =
+                deadline != null && DateTime.now().isAfter(deadline);
+
             return GestureDetector(
               onTap: () => Navigator.push(
                 context,
@@ -979,6 +992,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 location: location.isNotEmpty
                     ? location
                     : _t(lang, 'unknownLocation'),
+                registrationClosed: registrationClosed,
+                lang: lang == kLangJa ? 'ja' : 'en',
               ),
             );
           },

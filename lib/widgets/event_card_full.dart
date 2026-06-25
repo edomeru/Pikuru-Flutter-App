@@ -69,6 +69,7 @@ class EventCardFull extends ConsumerWidget {
     }
 
     final tags = _buildTagStrings();
+    final regClosed = _isRegistrationClosed();
 
     return GestureDetector(
       onTap: () => Navigator.push(
@@ -168,6 +169,34 @@ class EventCardFull extends ConsumerWidget {
                           letterSpacing: 0.6,
                         ),
                       ),
+                    ),
+                  ),
+
+                // ── Registration Closed badge (bottom-right) ──────────────
+                if (regClosed)
+                  Positioned(
+                    bottom: 12, right: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFD97706).withOpacity(0.95),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.white.withOpacity(0.3)),
+                      ),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        const Icon(Icons.lock_rounded,
+                            size: 11, color: Colors.white),
+                        const SizedBox(width: 5),
+                        Text(
+                          _isJa ? '受付終了' : 'REGISTRATION CLOSED',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.6,
+                          ),
+                        ),
+                      ]),
                     ),
                   ),
               ],
@@ -284,6 +313,22 @@ class EventCardFull extends ConsumerWidget {
     const weekdays = ['月', '火', '水', '木', '金', '土', '日'];
     final wd = weekdays[dt.weekday - 1]; // Monday==1 … Sunday==7
     return '${dt.year}年${dt.month}月${dt.day}日($wd)';
+  }
+
+  // ── Registration deadline check ──────────────────────────────────────────
+  bool _isRegistrationClosed() {
+    final raw = event['registration_deadline'];
+    if (raw == null) return false;
+    DateTime? deadline;
+    if (raw is Timestamp) {
+      deadline = raw.toDate();
+    } else if (raw is DateTime) {
+      deadline = raw;
+    } else if (raw is String && raw.isNotEmpty) {
+      try { deadline = DateTime.parse(raw); } catch (_) {}
+    }
+    if (deadline == null) return false;
+    return DateTime.now().isAfter(deadline);
   }
 
   // ── Tag helpers ───────────────────────────────────────────────────────────
