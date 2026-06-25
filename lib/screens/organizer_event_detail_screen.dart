@@ -19,6 +19,7 @@ class _C {
   static const approved  = Color(0xFF1F7A35);
   static const pending   = Color(0xFFB07D00);
   static const rejected  = Color(0xFFB0193A);
+  static const regClosed = Color(0xFFD97706);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -55,6 +56,13 @@ String _fmtTime(dynamic ts) {
   final period = h >= 12 ? 'PM' : 'AM';
   final h12 = h == 0 ? 12 : (h > 12 ? h - 12 : h);
   return '$h12:$m $period';
+}
+
+bool _isRegClosed(dynamic dl) {
+  if (dl == null) return false;
+  final d = dl is Timestamp ? dl.toDate() : null;
+  if (d == null) return false;
+  return d.isBefore(DateTime.now());
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -324,11 +332,12 @@ class _OrganizerEventDetailScreenState
           Column(
             children: [
               _TopBar(
-                title:      _title,
-                isApproved: isApproved,
-                counts:     _counts,
-                loading:    _loadingCounts,
-                lang:       lang,
+                title:       _title,
+                isApproved:  isApproved,
+                isRegClosed: _isRegClosed(d['registration_deadline']),
+                counts:      _counts,
+                loading:     _loadingCounts,
+                lang:        lang,
               ),
               Expanded(
                 child: SingleChildScrollView(
@@ -455,6 +464,16 @@ class _OrganizerEventDetailScreenState
     if (added != null) {
       rows.add(_DetailEntry(
           _t('Submission Date', '提出日'), _fmt(added, lang), Icons.calendar_today_rounded));
+    }
+    final regDl = d['registration_deadline'];
+    if (regDl != null) {
+      final closed = _isRegClosed(regDl);
+      final base = _fmt(regDl, lang, long: true);
+      final suffix = closed ? (lang == 'ja' ? '  ・ 終了' : '  ・ Closed') : '';
+      rows.add(_DetailEntry(
+          _t('Reg. Deadline', '登録締切'),
+          '$base$suffix',
+          Icons.lock_clock_rounded));
     }
     if (rows.isEmpty) return [];
     return [
@@ -711,12 +730,13 @@ class _RegSheet extends StatelessWidget {
 // ─────────────────────────────────────────────────────────────────────────────
 class _TopBar extends StatelessWidget {
   final String title;
-  final bool isApproved, loading;
+  final bool isApproved, loading, isRegClosed;
   final _RegCounts counts;
   final String lang;
   const _TopBar({
     required this.title,
     required this.isApproved,
+    required this.isRegClosed,
     required this.counts,
     required this.loading,
     required this.lang,
@@ -741,6 +761,13 @@ class _TopBar extends StatelessWidget {
                   fontSize: 16, fontWeight: FontWeight.w800, color: _C.textPri)),
         ),
         const SizedBox(width: 8),
+        if (isRegClosed) ...[
+          _Pill(
+            label: lang == 'ja' ? '🔒 受付終了' : '🔒 Registration Closed',
+            color: _C.regClosed,
+          ),
+          const SizedBox(width: 6),
+        ],
         if (isApproved)
           _Pill(
             label: lang == 'ja' ? '✓ 承認済み' : '✓ Approved',
