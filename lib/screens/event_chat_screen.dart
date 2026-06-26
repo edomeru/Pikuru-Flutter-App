@@ -1,10 +1,16 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:record/record.dart';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:pikuru/screens/chat_members_screen.dart';
@@ -170,6 +176,24 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
   bool _loading = true;
   bool _isTyping = false;
 
+  // ── Attachments / voice state ──────────────────────────────────────────
+  bool _uploadingImage = false;
+  bool _isRecording = false;
+  bool _uploadingVoice = false;
+  Duration _recordDuration = Duration.zero;
+  Timer? _recordTicker;
+  final AudioRecorder _recorder = AudioRecorder();
+  String? _currentRecordingPath;
+
+  // Audio playback (one shared player per screen)
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  String? _playingMessageId;
+  Duration _playPosition = Duration.zero;
+  Duration _playDuration = Duration.zero;
+  StreamSubscription? _posSub;
+  StreamSubscription? _durSub;
+  StreamSubscription? _stateSub;
+
   // ── My live profile ─────────────────────────────────────────────────────
   String _myName = '';
   String _myAvatar = '';
@@ -190,6 +214,18 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
       if (typing != _isTyping) setState(() => _isTyping = typing);
     });
     _focusNode.addListener(() => setState(() {}));
+    _posSub = _audioPlayer.onPositionChanged.listen((p) {
+      if (mounted) setState(() => _playPosition = p);
+    });
+    _durSub = _audioPlayer.onDurationChanged.listen((d) {
+      if (mounted) setState(() => _playDuration = d);
+    });
+    _stateSub = _audioPlayer.onPlayerComplete.listen((_) {
+      if (mounted) setState(() {
+        _playingMessageId = null;
+        _playPosition = Duration.zero;
+      });
+    });
     _init();
   }
 
@@ -198,6 +234,12 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
     _myProfileSub?.cancel();
     _chatDocSub?.cancel();
     for (final s in _senderSubs.values) s.cancel();
+    _recordTicker?.cancel();
+    _recorder.dispose();
+    _posSub?.cancel();
+    _durSub?.cancel();
+    _stateSub?.cancel();
+    _audioPlayer.dispose();
     _msgCtrl.dispose();
     _scrollCtrl.dispose();
     _focusNode.dispose();
@@ -361,6 +403,243 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
         SetOptions(merge: true));
 
     _scrollToBottom();
+  }
+
+  // ── Image attachment ───────────────────────────────────────────────────
+  Future<void> _pickAndSendImage() async {
+    if (_me == null || _uploadingImage) return;
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 82,
+        maxWidth: 1920,
+      );
+      if (picked == null) return;
+      HapticFeedback.lightImpact();
+      setState(() => _uploadingImage = true);
+
+      final file = File(picked.path);
+      final name =
+          '${DateTime.now().millisecondsSinceEpoch}_${picked.name}';
+      final ref = FirebaseStorage.instance
+          .ref('chat_images/${widget.chatId}/$name');
+      final snap = await ref.putFile(file);
+      final url = await snap.ref.getDownloadURL();
+
+      final isBroadcast = _activeTab == 'announcements';
+      await FirebaseFirestore.instance
+          .collection('group_chats')
+          .doc(widget.chatId)
+          .collection('messages')
+          .add({
+        'sender_id': _me!.uid,
+        'sender_name':
+        _myName.isNotEmpty ? _myName : (_me!.displayName ?? 'User'),
+        'sender_avatar': _myAvatar,
+        'text': '',
+        'image_url': url,
+        'sent_at': FieldValue.serverTimestamp(),
+        if (isBroadcast) ...{
+          'type': 'image',
+          'is_broadcast': true,
+        } else ...{
+          'type': 'image',
+        },
+      });
+
+      await FirebaseFirestore.instance
+          .collection('group_chats')
+          .doc(widget.chatId)
+          .set({
+        'last_message': '📷 Photo',
+        'last_message_at': FieldValue.serverTimestamp(),
+        'last_message_by': _me!.uid,
+        'messages_cleared': false,
+      }, SetOptions(merge: true));
+
+      _scrollToBottom();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to send image: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingImage = false);
+    }
+  }
+
+  // ── Voice recording ────────────────────────────────────────────────────
+  Future<void> _toggleRecording() async {
+    if (_uploadingVoice) return;
+    if (_isRecording) {
+      await _stopAndSendVoice();
+    } else {
+      await _startRecording();
+    }
+  }
+
+  Future<void> _startRecording() async {
+    if (_me == null) return;
+    try {
+      if (!await _recorder.hasPermission()) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Microphone permission required')),
+          );
+        }
+        return;
+      }
+      final dir = await getTemporaryDirectory();
+      final path =
+          '${dir.path}/voice_${DateTime.now().millisecondsSinceEpoch}.m4a';
+      await _recorder.start(
+        const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 96000),
+        path: path,
+      );
+      HapticFeedback.mediumImpact();
+      _currentRecordingPath = path;
+      _recordDuration = Duration.zero;
+      _recordTicker?.cancel();
+      _recordTicker = Timer.periodic(const Duration(milliseconds: 250), (_) {
+        if (!mounted) return;
+        setState(() => _recordDuration += const Duration(milliseconds: 250));
+      });
+      setState(() => _isRecording = true);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to start recording: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _cancelRecording() async {
+    try {
+      await _recorder.stop();
+    } catch (_) {}
+    _recordTicker?.cancel();
+    if (_currentRecordingPath != null) {
+      try {
+        final f = File(_currentRecordingPath!);
+        if (await f.exists()) await f.delete();
+      } catch (_) {}
+    }
+    if (mounted) {
+      setState(() {
+        _isRecording = false;
+        _recordDuration = Duration.zero;
+        _currentRecordingPath = null;
+      });
+    }
+  }
+
+  Future<void> _stopAndSendVoice() async {
+    if (_me == null) return;
+    String? path;
+    try {
+      path = await _recorder.stop();
+    } catch (_) {}
+    _recordTicker?.cancel();
+    final duration = _recordDuration;
+    final recordingPath = path ?? _currentRecordingPath;
+    if (mounted) {
+      setState(() {
+        _isRecording = false;
+        _recordDuration = Duration.zero;
+        _currentRecordingPath = null;
+      });
+    }
+    if (recordingPath == null) return;
+    final file = File(recordingPath);
+    if (!await file.exists()) return;
+    if (duration.inMilliseconds < 700) {
+      try { await file.delete(); } catch (_) {}
+      return;
+    }
+
+    setState(() => _uploadingVoice = true);
+    try {
+      final name = '${DateTime.now().millisecondsSinceEpoch}.m4a';
+      final ref = FirebaseStorage.instance
+          .ref('chat_voices/${widget.chatId}/$name');
+      final snap = await ref.putFile(
+        file,
+        SettableMetadata(contentType: 'audio/mp4'),
+      );
+      final url = await snap.ref.getDownloadURL();
+
+      final isBroadcast = _activeTab == 'announcements';
+      await FirebaseFirestore.instance
+          .collection('group_chats')
+          .doc(widget.chatId)
+          .collection('messages')
+          .add({
+        'sender_id': _me!.uid,
+        'sender_name':
+        _myName.isNotEmpty ? _myName : (_me!.displayName ?? 'User'),
+        'sender_avatar': _myAvatar,
+        'text': '',
+        'voice_url': url,
+        'voice_duration': duration.inMilliseconds,
+        'sent_at': FieldValue.serverTimestamp(),
+        if (isBroadcast) ...{
+          'type': 'voice',
+          'is_broadcast': true,
+        } else ...{
+          'type': 'voice',
+        },
+      });
+
+      await FirebaseFirestore.instance
+          .collection('group_chats')
+          .doc(widget.chatId)
+          .set({
+        'last_message': '🎤 Voice message',
+        'last_message_at': FieldValue.serverTimestamp(),
+        'last_message_by': _me!.uid,
+        'messages_cleared': false,
+      }, SetOptions(merge: true));
+
+      try { await file.delete(); } catch (_) {}
+      _scrollToBottom();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to send voice: $e')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _uploadingVoice = false);
+    }
+  }
+
+  // ── Audio playback ─────────────────────────────────────────────────────
+  Future<void> _togglePlayVoice(String messageId, String url) async {
+    try {
+      if (_playingMessageId == messageId) {
+        await _audioPlayer.pause();
+        setState(() => _playingMessageId = null);
+      } else {
+        await _audioPlayer.stop();
+        setState(() {
+          _playingMessageId = messageId;
+          _playPosition = Duration.zero;
+          _playDuration = Duration.zero;
+        });
+        await _audioPlayer.play(UrlSource(url));
+      }
+    } catch (_) {
+      if (mounted) setState(() => _playingMessageId = null);
+    }
+  }
+
+  String _fmtDur(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(1, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    return '$m:$s';
   }
 
   // ── Toggle silence ─────────────────────────────────────────────────────
@@ -655,7 +934,9 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
           padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
           itemCount: msgs.length,
           itemBuilder: (ctx, i) {
-            final msg = msgs[i].data() as Map<String, dynamic>;
+            final msg = Map<String, dynamic>.from(
+                msgs[i].data() as Map<String, dynamic>);
+            msg['_id'] = msgs[i].id;
             final isMe = msg['sender_id'] == _me?.uid;
             final prevSenderId = i > 0
                 ? (msgs[i - 1].data() as Map<String, dynamic>)['sender_id']
@@ -744,6 +1025,15 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
     final isBroadcast =
         msg['is_broadcast'] == true || msg['type'] == 'broadcast';
     final text = (msg['text'] ?? '').toString();
+    final msgType = (msg['type'] ?? 'text').toString();
+    final imageUrl = (msg['image_url'] ?? '').toString();
+    final voiceUrl = (msg['voice_url'] ?? '').toString();
+    final voiceDurMs = (msg['voice_duration'] is num)
+        ? (msg['voice_duration'] as num).toInt()
+        : 0;
+    final isImage = msgType == 'image' && imageUrl.isNotEmpty;
+    final isVoice = msgType == 'voice' && voiceUrl.isNotEmpty;
+    final messageId = (msg['_id'] ?? '${senderId}_${sentAt?.millisecondsSinceEpoch ?? 0}').toString();
 
     final radius = BorderRadius.only(
       topLeft: Radius.circular(!isMe && !isFirst ? 6 : 20),
@@ -860,44 +1150,80 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
                     ),
                   )
                 else
-                // Regular text bubble
-                  Container(
-                    constraints: BoxConstraints(
-                        maxWidth:
-                        MediaQuery.of(context).size.width * 0.70),
-                    decoration: BoxDecoration(
-                      gradient: isMe
-                          ? LinearGradient(
-                        colors: [
-                          AppColors.primary,
-                          Color.lerp(AppColors.primary,
-                              const Color(0xFF1A6B4A), 0.4)!,
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      )
-                          : null,
-                      color: isMe ? null : Colors.white,
+                  if (isImage)
+                    ClipRRect(
                       borderRadius: radius,
-                      boxShadow: [
-                        BoxShadow(
-                            color: isMe
-                                ? AppColors.primary.withOpacity(0.22)
-                                : Colors.black.withOpacity(0.05),
-                            blurRadius: isMe ? 14 : 10,
-                            offset: const Offset(0, 4))
-                      ],
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth:
+                          MediaQuery.of(context).size.width * 0.62,
+                          maxHeight: 280,
+                        ),
+                        child: Image.network(
+                          imageUrl,
+                          fit: BoxFit.cover,
+                          loadingBuilder: (c, w, p) => p == null
+                              ? w
+                              : Container(
+                            width: 180,
+                            height: 180,
+                            color: const Color(0xFFE5E5EA),
+                            alignment: Alignment.center,
+                            child: CircularProgressIndicator(
+                                color: AppColors.primary,
+                                strokeWidth: 2),
+                          ),
+                          errorBuilder: (_, __, ___) => Container(
+                            width: 180,
+                            height: 120,
+                            color: const Color(0xFFE5E5EA),
+                            child: const Icon(Icons.broken_image_rounded,
+                                color: Color(0xFF8E8E93)),
+                          ),
+                        ),
+                      ),
+                    )
+                  else if (isVoice)
+                    _buildVoiceBubble(messageId, voiceUrl, voiceDurMs, isMe, radius)
+                  else
+                  // Regular text bubble
+                    Container(
+                      constraints: BoxConstraints(
+                          maxWidth:
+                          MediaQuery.of(context).size.width * 0.70),
+                      decoration: BoxDecoration(
+                        gradient: isMe
+                            ? LinearGradient(
+                          colors: [
+                            AppColors.primary,
+                            Color.lerp(AppColors.primary,
+                                const Color(0xFF1A6B4A), 0.4)!,
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        )
+                            : null,
+                        color: isMe ? null : Colors.white,
+                        borderRadius: radius,
+                        boxShadow: [
+                          BoxShadow(
+                              color: isMe
+                                  ? AppColors.primary.withOpacity(0.22)
+                                  : Colors.black.withOpacity(0.05),
+                              blurRadius: isMe ? 14 : 10,
+                              offset: const Offset(0, 4))
+                        ],
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      child: Text(text,
+                          style: TextStyle(
+                              fontSize: 15,
+                              color: isMe
+                                  ? Colors.white
+                                  : const Color(0xFF1C1C1E),
+                              height: 1.45)),
                     ),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 10),
-                    child: Text(text,
-                        style: TextStyle(
-                            fontSize: 15,
-                            color: isMe
-                                ? Colors.white
-                                : const Color(0xFF1C1C1E),
-                            height: 1.45)),
-                  ),
                 if (isLast)
                   Padding(
                     padding: const EdgeInsets.only(top: 5, left: 4, right: 4),
@@ -911,6 +1237,106 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
             ),
           ),
           if (isMe) const SizedBox(width: 4),
+        ],
+      ),
+    );
+  }
+
+  // ── Voice Bubble ───────────────────────────────────────────────────────
+  Widget _buildVoiceBubble(String messageId, String url, int durationMs,
+      bool isMe, BorderRadius radius) {
+    final isPlaying = _playingMessageId == messageId;
+    final total = durationMs > 0
+        ? Duration(milliseconds: durationMs)
+        : (isPlaying ? _playDuration : Duration.zero);
+    final pos = isPlaying ? _playPosition : Duration.zero;
+    final progress = (total.inMilliseconds > 0)
+        ? (pos.inMilliseconds / total.inMilliseconds).clamp(0.0, 1.0)
+        : 0.0;
+    final fg = isMe ? Colors.white : AppColors.primary;
+    final bgFill = isMe
+        ? Colors.white.withOpacity(0.30)
+        : AppColors.primary.withOpacity(0.18);
+
+    return Container(
+      constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.66),
+      decoration: BoxDecoration(
+        gradient: isMe
+            ? LinearGradient(
+          colors: [
+            AppColors.primary,
+            Color.lerp(AppColors.primary,
+                const Color(0xFF1A6B4A), 0.4)!,
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        )
+            : null,
+        color: isMe ? null : Colors.white,
+        borderRadius: radius,
+        boxShadow: [
+          BoxShadow(
+              color: isMe
+                  ? AppColors.primary.withOpacity(0.22)
+                  : Colors.black.withOpacity(0.05),
+              blurRadius: isMe ? 14 : 10,
+              offset: const Offset(0, 4))
+        ],
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          GestureDetector(
+            onTap: () => _togglePlayVoice(messageId, url),
+            child: Container(
+              width: 34, height: 34,
+              decoration: BoxDecoration(
+                color: isMe
+                    ? Colors.white.withOpacity(0.22)
+                    : AppColors.primary.withOpacity(0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                isPlaying
+                    ? Icons.pause_rounded
+                    : Icons.play_arrow_rounded,
+                color: fg,
+                size: 22,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 120,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(3),
+                  child: LinearProgressIndicator(
+                    value: progress,
+                    minHeight: 4,
+                    backgroundColor: bgFill,
+                    valueColor: AlwaysStoppedAnimation<Color>(fg),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  _fmtDur(isPlaying ? pos : total),
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: isMe
+                        ? Colors.white.withOpacity(0.9)
+                        : const Color(0xFF8E8E93),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -1016,6 +1442,32 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
+                // ── Image attach button ─────────────────────────────────
+                GestureDetector(
+                  onTap: _isRecording ? null : _pickAndSendImage,
+                  child: Container(
+                    width: 42, height: 42,
+                    margin: const EdgeInsets.only(right: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF2F2F7),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                          color: Colors.black.withOpacity(0.06)),
+                    ),
+                    child: _uploadingImage
+                        ? Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: AppColors.primary),
+                    )
+                        : Icon(Icons.image_rounded,
+                        color: _isRecording
+                            ? const Color(0xFFAEAEB2)
+                            : const Color(0xFF8E8E93),
+                        size: 22),
+                  ),
+                ),
                 Expanded(
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 180),
@@ -1029,7 +1481,40 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
                         width: 1.5,
                       ),
                     ),
-                    child: TextField(
+                    child: _isRecording
+                        ? Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 12),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 9, height: 9,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFFF3B30),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Recording  ${_fmtDur(_recordDuration)}',
+                            style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF1C1C1E)),
+                          ),
+                          const Spacer(),
+                          GestureDetector(
+                            onTap: _cancelRecording,
+                            child: const Text('Cancel',
+                                style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFFFF3B30))),
+                          ),
+                        ],
+                      ),
+                    )
+                        : TextField(
                       controller: _msgCtrl,
                       focusNode: _focusNode,
                       keyboardType: TextInputType.multiline,
@@ -1053,33 +1538,81 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                GestureDetector(
-                  onTap: _send,
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: 46, height: 46,
-                    decoration: BoxDecoration(
-                      color: _isTyping
-                          ? sendColor
-                          : const Color(0xFFD1D1D6),
-                      shape: BoxShape.circle,
-                      boxShadow: _isTyping
-                          ? [
-                        BoxShadow(
-                            color: sendColor.withOpacity(0.38),
-                            blurRadius: 14,
-                            offset: const Offset(0, 5))
-                      ]
-                          : [],
-                    ),
-                    child: const Icon(Icons.arrow_upward_rounded,
-                        color: Colors.white, size: 22),
-                  ),
-                ),
+                _buildRightActionButton(sendColor),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // ── Right action: Send when typing, Mic otherwise (toggles recording) ──
+  Widget _buildRightActionButton(Color sendColor) {
+    if (_uploadingVoice) {
+      return Container(
+        width: 46, height: 46,
+        decoration: const BoxDecoration(
+          color: Color(0xFFD1D1D6),
+          shape: BoxShape.circle,
+        ),
+        padding: const EdgeInsets.all(13),
+        child: const CircularProgressIndicator(
+            strokeWidth: 2, color: Colors.white),
+      );
+    }
+    if (_isTyping) {
+      return GestureDetector(
+        onTap: _send,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          width: 46, height: 46,
+          decoration: BoxDecoration(
+            color: sendColor,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                  color: sendColor.withOpacity(0.38),
+                  blurRadius: 14,
+                  offset: const Offset(0, 5))
+            ],
+          ),
+          child: const Icon(Icons.arrow_upward_rounded,
+              color: Colors.white, size: 22),
+        ),
+      );
+    }
+    // Mic button
+    final bgColor = _isRecording
+        ? const Color(0xFFFF3B30)
+        : const Color(0xFFF2F2F7);
+    final iconColor = _isRecording ? Colors.white : const Color(0xFF8E8E93);
+    return GestureDetector(
+      onTap: _toggleRecording,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        width: 46, height: 46,
+        decoration: BoxDecoration(
+          color: bgColor,
+          shape: BoxShape.circle,
+          border: Border.all(
+              color: _isRecording
+                  ? Colors.transparent
+                  : Colors.black.withOpacity(0.06)),
+          boxShadow: _isRecording
+              ? [
+            BoxShadow(
+                color: const Color(0xFFFF3B30).withOpacity(0.38),
+                blurRadius: 14,
+                offset: const Offset(0, 5))
+          ]
+              : [],
+        ),
+        child: Icon(
+          _isRecording ? Icons.stop_rounded : Icons.mic_rounded,
+          color: iconColor,
+          size: 22,
+        ),
       ),
     );
   }
