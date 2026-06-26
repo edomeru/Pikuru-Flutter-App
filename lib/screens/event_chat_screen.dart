@@ -8,6 +8,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:pikuru/screens/chat_members_screen.dart';
+import 'package:pikuru/screens/event_detail_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // i18n
@@ -92,6 +93,67 @@ class EventChatScreen extends ConsumerStatefulWidget {
 }
 
 class _EventChatScreenState extends ConsumerState<EventChatScreen> {
+  Future<void> _openEventDetail(BuildContext context) async {
+    // Resolve the event document id from eventData or fall back to chatId ("event_<id>")
+    String eventId = (widget.eventData['event_id'] ??
+        widget.eventData['_doc_id'] ??
+        widget.eventData['id'] ??
+        '')
+        .toString()
+        .trim();
+    if (eventId.isEmpty && widget.chatId.startsWith('event_')) {
+      eventId = widget.chatId.substring('event_'.length);
+    }
+    if (eventId.isEmpty) {
+      // Nothing to fetch — push with whatever we have so UI still opens.
+      if (!context.mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => EventDetailScreen(event: widget.eventData),
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    Map<String, dynamic> merged = {
+      ...widget.eventData,
+      'event_id': eventId,
+      '_doc_id': eventId,
+    };
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('events')
+          .doc(eventId)
+          .get();
+      if (snap.exists) {
+        merged = {
+          ...widget.eventData,
+          ...?snap.data(),
+          'event_id': eventId,
+          '_doc_id': eventId,
+        };
+      }
+    } catch (e) {
+      debugPrint('[EventChatScreen] failed to load event $eventId: $e');
+    }
+
+    if (!context.mounted) return;
+    Navigator.pop(context); // close loading
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EventDetailScreen(event: merged),
+      ),
+    );
+  }
+
   // ── Tabs: announcements | general ──────────────────────────────────────
   String _activeTab = 'announcements'; // 'announcements' | 'general'
 
@@ -416,72 +478,80 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
                       size: 18, color: Color(0xFF1C1C1E)),
                   onPressed: () => Navigator.pop(context),
                 ),
-                // Avatar
-                Stack(children: [
-                  Container(
-                    width: 44, height: 44,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: const Color(0xFFFF9933).withOpacity(0.15),
-                    ),
-                    child: image != null
-                        ? ClipOval(
-                        child: Image(image: image, fit: BoxFit.cover))
-                        : const Icon(Icons.campaign_rounded,
-                        color: Color(0xFFFF9933), size: 22),
-                  ),
-                  Positioned(
-                    right: 1, bottom: 1,
-                    child: Container(
-                      width: 11, height: 11,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF34C759),
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
-                      ),
-                    ),
-                  ),
-                ]),
-                const SizedBox(width: 10),
-                // Name + member count
+                // Avatar + title — tap to open event detail
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(channelName,
-                          style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF1C1C1E),
-                              letterSpacing: -0.3),
-                          overflow: TextOverflow.ellipsis),
-                      const SizedBox(height: 1),
-                      StreamBuilder<QuerySnapshot>(
-                        stream: FirebaseFirestore.instance
-                            .collection('group_chats')
-                            .doc(widget.chatId)
-                            .collection('participants')
-                            .snapshots(),
-                        builder: (_, snap) {
-                          final count = snap.data?.size ?? 0;
-                          return Row(children: [
-                            Container(
-                              width: 6, height: 6,
-                              decoration: const BoxDecoration(
-                                  color: Color(0xFF34C759),
-                                  shape: BoxShape.circle),
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => _openEventDetail(context),
+                    child: Row(children: [
+                      Stack(children: [
+                        Container(
+                          width: 44, height: 44,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: const Color(0xFFFF9933).withOpacity(0.15),
+                          ),
+                          child: image != null
+                              ? ClipOval(
+                              child: Image(image: image, fit: BoxFit.cover))
+                              : const Icon(Icons.campaign_rounded,
+                              color: Color(0xFFFF9933), size: 22),
+                        ),
+                        Positioned(
+                          right: 1, bottom: 1,
+                          child: Container(
+                            width: 11, height: 11,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF34C759),
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 2),
                             ),
-                            const SizedBox(width: 4),
-                            Text('$count ${_t(lang, 'members')}',
+                          ),
+                        ),
+                      ]),
+                      const SizedBox(width: 10),
+                      // Name + member count
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(channelName,
                                 style: const TextStyle(
-                                    fontSize: 11.5,
-                                    color: Color(0xFFFF9933),
-                                    fontWeight: FontWeight.w500)),
-                          ]);
-                        },
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF1C1C1E),
+                                    letterSpacing: -0.3),
+                                overflow: TextOverflow.ellipsis),
+                            const SizedBox(height: 1),
+                            StreamBuilder<QuerySnapshot>(
+                              stream: FirebaseFirestore.instance
+                                  .collection('group_chats')
+                                  .doc(widget.chatId)
+                                  .collection('participants')
+                                  .snapshots(),
+                              builder: (_, snap) {
+                                final count = snap.data?.size ?? 0;
+                                return Row(children: [
+                                  Container(
+                                    width: 6, height: 6,
+                                    decoration: const BoxDecoration(
+                                        color: Color(0xFF34C759),
+                                        shape: BoxShape.circle),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text('$count ${_t(lang, 'members')}',
+                                      style: const TextStyle(
+                                          fontSize: 11.5,
+                                          color: Color(0xFFFF9933),
+                                          fontWeight: FontWeight.w500)),
+                                ]);
+                              },
+                            ),
+                          ],
+                        ),
                       ),
-                    ],
+                    ]),
                   ),
                 ),
                 // Silence button
