@@ -57,54 +57,107 @@ async function getDisplayName(uid: string): Promise<string> {
 
 // Line 51 — getGroupName
 /**
- * Resolves the group name from a group_chats document.
+ * Resolves the display name and metadata from a group_chats document.
+ * Returns an object with the resolved title and event-chat flags.
  * @param {string} chatId - The chat document ID.
- * @return {Promise<string>} The group name.
+ * @return {Promise<object>} The chat metadata.
  */
-async function getGroupName(chatId: string): Promise<string> {
+async function getGroupChatMeta(chatId: string): Promise<{
+  name: string;
+  chatType: string;
+  notifRoute: string;
+  notifTab: string;
+  notifTitle: string;
+}> {
+  const defaults = {
+    name: "Group Chat",
+    chatType: "group",
+    notifRoute: `/chats/group/${chatId}`,
+    notifTab: "general",
+    notifTitle: "",
+  };
+
   try {
     const chatDoc = await admin.firestore().collection("group_chats").doc(chatId).get();
     const chatData = chatDoc.data() ?? {};
 
-    // Try org_name stored directly on the chat doc first (fastest)
-    const directName = (chatData.org_name ?? "").toString().trim();
-    if (directName) {
-      console.log(`[FCM] Group name from chat doc: "${directName}"`);
-      return directName;
+    const chatType = (chatData.chat_type ?? "").toString().trim();
+    const isEventChat =
+      chatType === "event" ||
+      chatId.startsWith("event_") ||
+      (chatData.notification_route ?? "").toString().startsWith("/chats/event/");
+
+    // Resolve the best human-readable title
+    let name: string = defaults.name;
+    const notifTitle = (chatData.notification_title ?? chatData.event_name ?? chatData.name ?? "").toString().trim();
+    if (notifTitle) {
+      name = notifTitle;
+    } else if (!isEventChat) {
+      // For regular group chats fall back to org_name lookup
+      const directName = (chatData.org_name ?? "").toString().trim();
+      if (directName) {
+        name = directName;
+      } else {
+        const orgId = (chatData.org_id ?? chatId).toString().trim();
+        if (orgId) {
+          const orgDoc = await admin.firestore().collection("organizations").doc(orgId).get();
+          if (orgDoc.exists) {
+            const n = (orgDoc.data()?.org_name ?? "").toString().trim();
+            if (n) name = n;
+          }
+          if (name === defaults.name) {
+            const orgSnap = await admin.firestore()
+              .collection("organizations")
+              .where("org_id", "==", orgId)
+              .limit(1)
+              .get();
+            if (!orgSnap.empty) {
+              const n = (orgSnap.docs[0].data()?.org_name ?? "").toString().trim();
+              if (n) name = n;
+            }
+          }
+        }
+      }
     }
 
-    // Fall back to looking up the organizations collection via org_id
-    const orgId = (chatData.org_id ?? chatId).toString().trim();
-    if (orgId) {
-      // Step 1: try document ID directly
-      const orgDoc = await admin.firestore().collection("organizations").doc(orgId).get();
-      if (orgDoc.exists) {
-        const name = (orgDoc.data()?.org_name ?? "").toString().trim();
-        if (name) {
-          console.log(`[FCM] Group name from organizations doc: "${name}"`);
-          return name;
-        }
-      }
+    const notifRoute = isEventChat ?
+      `/chats/event/${chatId}` :
+      `/chats/group/${chatId}`;
 
-      // Step 2: query by org_id field
-      const orgSnap = await admin.firestore()
-        .collection("organizations")
-        .where("org_id", "==", orgId)
-        .limit(1)
-        .get();
-      if (!orgSnap.empty) {
-        const name = (orgSnap.docs[0].data()?.org_name ?? "").toString().trim();
-        if (name) {
-          console.log(`[FCM] Group name from organizations query: "${name}"`);
-          return name;
+    return {
+      name,
+      chatType: isEventChat ? "event" : "group",
+      notifRoute,
+      notifTab: defaults.notifTab, // resolved per-message in the trigger
+      notifTitle,
+    };
+  } catch (e) {
+    console.error(`[FCM] getGroupChatMeta error for chatId=${chatId}:`, e);
+    return defaults;
+  }
+}
+
+/**
+ * Sends a multicast FCM notification and logs detailed success/failure states.
+ * @param {admin.messaging.MulticastMessage} payload - The multicast message payload.
+ * @return {Promise<void>}
+ */
+async function sendMulticastAndLog(
+  payload: admin.messaging.MulticastMessage
+): Promise<void> {
+  try {
+    const res = await admin.messaging().sendEachForMulticast(payload);
+    console.log(`[FCM] Multicast stats: successCount=${res.successCount}, failureCount=${res.failureCount}`);
+    if (res.failureCount > 0) {
+      res.responses.forEach((resp, idx) => {
+        if (!resp.success) {
+          console.error(`  [FCM] Token index ${idx} failed (${payload.tokens[idx].substring(0, 15)}...):`, resp.error);
         }
-      }
+      });
     }
   } catch (e) {
-    console.error(`[FCM] getGroupName error for chatId=${chatId}:`, e);
+    console.error("[FCM] Multicast execution crashed:", e);
   }
-
-  return "Group Chat";
 }
 
 // ── New message in group chat ─────────────────────────────────────────────────
@@ -115,17 +168,35 @@ export const onGroupMessage = onDocumentCreated(
     if (!message) return;
 
     const chatId = event.params.chatId;
+    const messageId = event.params.messageId;
     const senderId = message.sender_id;
 
     console.log(`[FCM] Group message in chatId=${chatId} from senderId=${senderId}`);
 
+    // ── Determine if this message is a broadcast / announcement ───────────
+    const isBroadcast: boolean =
+      message.is_broadcast === true ||
+      (message.type ?? "").toString() === "broadcast" ||
+      (message.type ?? "").toString() === "announcement";
+
+    // ── Resolve chat metadata (name, type, route) ─────────────────────────
+    const chatMeta = await getGroupChatMeta(chatId);
+    console.log(`[FCM] Resolved chat meta: name="${chatMeta.name}", type=${chatMeta.chatType}`);
+
+    // For event chats the route and tab must reflect the message's broadcast flag.
+    const notifTab: string = isBroadcast ? "announcements" : "general";
+    const notifRoute: string =
+      chatMeta.chatType === "event" ?
+        `${chatMeta.notifRoute}?tab=${notifTab}` :
+        chatMeta.notifRoute;
+
+    // Use the per-message notification_title if available, else fall back to the chat name.
+    const notifTitle: string =
+      ((message.notification_title ?? message.event_name ?? chatMeta.notifTitle) || chatMeta.name).toString().trim();
+
     const participantsSnap = await admin.firestore()
       .collection("group_chats").doc(chatId)
       .collection("participants").get();
-
-    // ── Resolve the real group name ───────────────────────────────────────
-    const groupName = await getGroupName(chatId);
-    console.log(`[FCM] Resolved group name: "${groupName}"`);
 
     const normalTokens: string[] = [];
     const silentTokens: string[] = [];
@@ -145,20 +216,33 @@ export const onGroupMessage = onDocumentCreated(
       }
     }
 
+    // Build the shared data payload — all values must be strings for FCM.
+    const sharedData: Record<string, string> = {
+      chat_id: chatId,
+      message_id: messageId,
+      chat_type: chatMeta.chatType,
+      notification_route: notifRoute,
+      notification_tab: notifTab,
+      is_broadcast: isBroadcast ? "true" : "false",
+      ...(chatMeta.chatType === "event" ?
+        {route: notifRoute} :
+        {route: `/chats/group/${chatId}`}),
+      ...(notifTitle ? {notification_title: notifTitle} : {}),
+    };
+
     // ── Normal notifications (sound + vibration) ──────────────────────────
     if (normalTokens.length > 0) {
-      console.log(`[FCM] Sending normal notification to ${normalTokens.length} device(s)`);
-      await admin.messaging().sendEachForMulticast({
+      console.log(`[FCM] Sending normal notification to ${normalTokens.length} device(s), broadcast=${isBroadcast}`);
+      await sendMulticastAndLog({
         tokens: normalTokens,
         notification: {
-          title: groupName,
-          body: message.text || "New message",
+          title: notifTitle || chatMeta.name,
+          body: message.text || (isBroadcast ? "New announcement" : "New message"),
         },
         data: {
-          route: `/chats/group/${chatId}`,
-          chat_id: chatId,
-          type: "group_message",
+          ...sharedData,
           silenced: "false",
+          type: (message.type ?? (isBroadcast ? "broadcast" : "group_message")).toString(),
         },
         android: {
           notification: {
@@ -175,16 +259,15 @@ export const onGroupMessage = onDocumentCreated(
 
     // ── Silent notifications (no sound, no vibration) ─────────────────────
     if (silentTokens.length > 0) {
-      console.log(`[FCM] Sending silent notification to ${silentTokens.length} device(s)`);
-      await admin.messaging().sendEachForMulticast({
+      console.log(`[FCM] Sending silent notification to ${silentTokens.length} device(s), broadcast=${isBroadcast}`);
+      await sendMulticastAndLog({
         tokens: silentTokens,
         data: {
-          route: `/chats/group/${chatId}`,
-          chat_id: chatId,
-          type: "group_message",
+          ...sharedData,
           silenced: "true",
-          title: groupName,
-          body: message.text || "New message",
+          type: (message.type ?? (isBroadcast ? "broadcast" : "group_message")).toString(),
+          title: notifTitle || chatMeta.name,
+          body: message.text || (isBroadcast ? "New announcement" : "New message"),
         },
         android: {
           priority: "high",

@@ -87,11 +87,15 @@ ImageProvider? _resolveImage(String av) {
 class EventChatScreen extends ConsumerStatefulWidget {
   final String chatId;
   final Map<String, dynamic> eventData;
+  /// Optional initial tab when opened from a push notification.
+  /// Accepts 'announcements' or 'general'. Defaults to 'announcements'.
+  final String? initialTab;
 
   const EventChatScreen({
     super.key,
     required this.chatId,
     required this.eventData,
+    this.initialTab,
   });
 
   @override
@@ -161,7 +165,7 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
   }
 
   // ── Tabs: announcements | general ──────────────────────────────────────
-  String _activeTab = 'announcements'; // 'announcements' | 'general'
+  String _activeTab = 'announcements'; // 'announcements' | 'general' — overridden in initState from widget.initialTab
 
   final TextEditingController _msgCtrl = TextEditingController();
   final ScrollController _scrollCtrl = ScrollController();
@@ -209,6 +213,11 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
   @override
   void initState() {
     super.initState();
+    // Honour initial tab from push-notification tap.
+    final t = (widget.initialTab ?? '').trim().toLowerCase();
+    if (t == 'general' || t == 'announcements') {
+      _activeTab = t;
+    }
     _msgCtrl.addListener(() {
       final typing = _msgCtrl.text.trim().isNotEmpty;
       if (typing != _isTyping) setState(() => _isTyping = typing);
@@ -249,6 +258,41 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
   // ── Init ──────────────────────────────────────────────────────────────
   Future<void> _init() async {
     if (_me == null) return;
+
+    // Tag this chat doc so push-notification fan-out can route taps back here.
+    // Safe to call repeatedly; merge:true means we never clobber existing fields.
+    try {
+      // Resolve a human-readable event-chat name for OS notification title.
+      final String _evName = (widget.eventData['event_title'] ??
+          widget.eventData['event_title_jp'] ??
+          widget.eventData['event_name'] ??
+          widget.eventData['name'] ??
+          '')
+          .toString()
+          .trim();
+      await FirebaseFirestore.instance
+          .collection('group_chats')
+          .doc(widget.chatId)
+          .set({
+        'chat_type': 'event',
+        'notification_route': '/chats/event/${widget.chatId}',
+        if (_evName.isNotEmpty) ...{
+          'name': _evName,
+          'event_name': _evName,
+          // Read by the FCM fan-out (Cloud Function) as the OS notification
+          // title — replaces the generic "Group Chat".
+          'notification_title': _evName,
+        },
+        if ((widget.eventData['event_id'] ?? widget.eventData['_doc_id'] ?? '')
+            .toString()
+            .isNotEmpty)
+          'event_id': (widget.eventData['event_id'] ??
+              widget.eventData['_doc_id'])
+              .toString(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('[EventChatScreen] tag chat_type failed: $e');
+    }
 
     // Subscribe to my own registration profile
     _myProfileSub = FirebaseFirestore.instance
@@ -370,12 +414,22 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
         .doc(widget.chatId)
         .collection('messages');
 
+    final String _tab = isBroadcast ? 'announcements' : 'general';
+    final String _notifTitle = _resolveChannelNameForNotif();
     await msgsRef.add({
       'sender_id': _me!.uid,
       'sender_name': _myName.isNotEmpty ? _myName : (_me!.displayName ?? 'User'),
       'sender_avatar': _myAvatar,
       'text': text,
       'sent_at': FieldValue.serverTimestamp(),
+      // Push-notification metadata used by the Cloud Function fan-out so the
+      // tap can be routed to the correct tab and display the right title.
+      'notification_tab': _tab,
+      'notification_route': '/chats/event/${widget.chatId}?tab=$_tab',
+      if (_notifTitle.isNotEmpty) ...{
+        'notification_title': _notifTitle,
+        'event_name': _notifTitle,
+      },
       if (isBroadcast) ...{
         'type': 'broadcast',
         'is_broadcast': true,
@@ -392,6 +446,14 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
       'last_message_at': FieldValue.serverTimestamp(),
       'last_message_by': _me!.uid,
       'messages_cleared': false,
+      'chat_type': 'event',
+      'notification_route': '/chats/event/${widget.chatId}?tab=$_tab',
+      'notification_tab': _tab,
+      if (_notifTitle.isNotEmpty) ...{
+        'notification_title': _notifTitle,
+        'name': _notifTitle,
+        'event_name': _notifTitle,
+      },
     }, SetOptions(merge: true));
 
     await FirebaseFirestore.instance
@@ -428,6 +490,8 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
       final url = await snap.ref.getDownloadURL();
 
       final isBroadcast = _activeTab == 'announcements';
+      final String _tab = isBroadcast ? 'announcements' : 'general';
+      final String _notifTitle = _resolveChannelNameForNotif();
       await FirebaseFirestore.instance
           .collection('group_chats')
           .doc(widget.chatId)
@@ -440,6 +504,12 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
         'text': '',
         'image_url': url,
         'sent_at': FieldValue.serverTimestamp(),
+        'notification_tab': _tab,
+        'notification_route': '/chats/event/${widget.chatId}?tab=$_tab',
+        if (_notifTitle.isNotEmpty) ...{
+          'notification_title': _notifTitle,
+          'event_name': _notifTitle,
+        },
         if (isBroadcast) ...{
           'type': 'image',
           'is_broadcast': true,
@@ -456,6 +526,14 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
         'last_message_at': FieldValue.serverTimestamp(),
         'last_message_by': _me!.uid,
         'messages_cleared': false,
+        'chat_type': 'event',
+        'notification_route': '/chats/event/${widget.chatId}?tab=$_tab',
+        'notification_tab': _tab,
+        if (_notifTitle.isNotEmpty) ...{
+          'notification_title': _notifTitle,
+          'name': _notifTitle,
+          'event_name': _notifTitle,
+        },
       }, SetOptions(merge: true));
 
       _scrollToBottom();
@@ -572,6 +650,8 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
       final url = await snap.ref.getDownloadURL();
 
       final isBroadcast = _activeTab == 'announcements';
+      final String _tab = isBroadcast ? 'announcements' : 'general';
+      final String _notifTitle = _resolveChannelNameForNotif();
       await FirebaseFirestore.instance
           .collection('group_chats')
           .doc(widget.chatId)
@@ -585,6 +665,12 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
         'voice_url': url,
         'voice_duration': duration.inMilliseconds,
         'sent_at': FieldValue.serverTimestamp(),
+        'notification_tab': _tab,
+        'notification_route': '/chats/event/${widget.chatId}?tab=$_tab',
+        if (_notifTitle.isNotEmpty) ...{
+          'notification_title': _notifTitle,
+          'event_name': _notifTitle,
+        },
         if (isBroadcast) ...{
           'type': 'voice',
           'is_broadcast': true,
@@ -601,6 +687,14 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
         'last_message_at': FieldValue.serverTimestamp(),
         'last_message_by': _me!.uid,
         'messages_cleared': false,
+        'chat_type': 'event',
+        'notification_route': '/chats/event/${widget.chatId}?tab=$_tab',
+        'notification_tab': _tab,
+        if (_notifTitle.isNotEmpty) ...{
+          'notification_title': _notifTitle,
+          'name': _notifTitle,
+          'event_name': _notifTitle,
+        },
       }, SetOptions(merge: true));
 
       try { await file.delete(); } catch (_) {}
@@ -664,6 +758,27 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
         duration: const Duration(seconds: 2),
       ));
     }
+  }
+
+  /// Build the best human-readable channel name for OS push notifications.
+  /// Prefers the chat doc (name / name_jp / notification_title) and falls
+  /// back to eventData (event_title / event_title_jp / event_name).
+  String _resolveChannelNameForNotif() {
+    String pick(dynamic v) => (v ?? '').toString().trim();
+    final candidates = <String>[
+      pick(_chatDoc['notification_title']),
+      pick(_chatDoc['name']),
+      pick(_chatDoc['event_name']),
+      pick(_chatDoc['name_jp']),
+      pick(widget.eventData['event_title']),
+      pick(widget.eventData['event_title_jp']),
+      pick(widget.eventData['event_name']),
+      pick(widget.eventData['name']),
+    ];
+    for (final c in candidates) {
+      if (c.isNotEmpty) return c;
+    }
+    return '';
   }
 
   void _scrollToBottom() {

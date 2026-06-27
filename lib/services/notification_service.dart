@@ -8,6 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:pikuru/screens/individual_chat_screen.dart';
 import 'package:pikuru/screens/group_chat_screen.dart';
+import 'package:pikuru/screens/event_chat_screen.dart';
+import 'package:pikuru/services/event_chat_service.dart';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -88,7 +90,6 @@ class NotificationService {
 
   Future<void> _setupLocalNotifications() async {
     if (Platform.isAndroid) {
-      // ── ONE LINE — do not split the generic across lines ─────────────────
       final androidPlugin = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
 
       await androidPlugin?.createNotificationChannel(
@@ -184,6 +185,244 @@ class NotificationService {
     }
   }
 
+  // ── Routing helpers ──────────────────────────────────────────────────────
+  String _routeFromData(Map<String, dynamic> data) {
+    final route = (data['route'] ?? data['notification_route'] ?? '').toString();
+    if (route.isNotEmpty) return route;
+    final chatId = (data['chat_id'] ?? '').toString();
+    final chatType = (data['chat_type'] ?? '').toString();
+    if (chatId.isNotEmpty) {
+      if (chatType == 'event' || chatId.startsWith('event_')) {
+        return '/chats/event/$chatId';
+      }
+      return '/chats/group/$chatId';
+    }
+    return '';
+  }
+
+  /// Build a payload string with optional tab info appended as a query so the
+  /// local-notification tap handler (which only receives a string) can still
+  /// know which tab to open.
+  ///
+  /// For event chats, if the backend didn't already set `notification_tab`/`tab`,
+  /// we infer it from the message's broadcast flags:
+  ///   - is_broadcast == true  OR  type == 'broadcast'  → 'announcements'
+  ///   - otherwise                                       → 'general'
+  String _buildPayload(RemoteMessage message) {
+    final data = message.data;
+    var route = _routeFromData(data);
+    if (route.isEmpty) return '';
+
+    String upsertQueryParam(String value, String key, String paramValue) {
+      final qIdx = value.indexOf('?');
+      final base = qIdx >= 0 ? value.substring(0, qIdx) : value;
+      final query = qIdx >= 0 ? value.substring(qIdx + 1) : '';
+      final params = <String, String>{};
+
+      if (query.isNotEmpty) {
+        for (final pair in query.split('&')) {
+          if (pair.isEmpty) continue;
+          final eq = pair.indexOf('=');
+          if (eq < 0) {
+            params[pair] = '';
+          } else {
+            params[pair.substring(0, eq)] = pair.substring(eq + 1);
+          }
+        }
+      }
+
+      params[key] = Uri.encodeQueryComponent(paramValue);
+      final nextQuery = params.entries
+          .map((e) => e.value.isEmpty ? e.key : '${e.key}=${e.value}')
+          .join('&');
+      return nextQuery.isEmpty ? base : '$base?$nextQuery';
+    }
+
+    var tab = (data['notification_tab'] ?? data['tab'] ?? '').toString();
+
+    final chatType = (data['chat_type'] ?? '').toString();
+    final chatId = (data['chat_id'] ?? '').toString();
+    final isEventChat = route.startsWith('/chats/event/') ||
+        chatType == 'event' ||
+        chatId.startsWith('event_');
+
+    if (isEventChat) {
+      // Message fields are more reliable than a generic/stale tab value.
+      // Broadcast messages must open Announcements; every explicit
+      // non-broadcast event message must open General Chat.
+      if (_isBroadcastFromData(data)) {
+        tab = 'announcements';
+      } else if (_isGeneralFromData(data)) {
+        tab = 'general';
+      }
+    }
+
+    if (tab.isNotEmpty) {
+      route = upsertQueryParam(route, 'tab', tab);
+    }
+
+    // Carry the message_id through the payload so the tap handler can fetch
+    // the exact Firestore message document and infer the correct tab even
+    // when the FCM data payload didn't include broadcast flags.
+    final msgId = (data['message_id'] ??
+        data['messageId'] ??
+        data['msg_id'] ??
+        data['id'] ??
+        '')
+        .toString();
+    if (msgId.isNotEmpty) {
+      route = upsertQueryParam(route, 'msg', msgId);
+    }
+    return route;
+  }
+
+  /// True if FCM data carries any signal that the message is a broadcast.
+  bool _isBroadcastFromData(Map<String, dynamic> data) {
+    bool truthy(dynamic v) {
+      if (v == true) return true;
+      if (v is String) {
+        final s = v.toLowerCase().trim();
+        return s == 'true' || s == '1' || s == 'yes';
+      }
+      if (v is num) return v != 0;
+      return false;
+    }
+    if (truthy(data['is_broadcast'])) return true;
+    if (truthy(data['isBroadcast'])) return true;
+    if (truthy(data['broadcast'])) return true;
+    final t = (data['type'] ?? '').toString().toLowerCase();
+    final mt = (data['message_type'] ?? '').toString().toLowerCase();
+    final nt = (data['notification_type'] ?? '').toString().toLowerCase();
+    if (t == 'broadcast' || t == 'announcement') return true;
+    if (mt == 'broadcast' || mt == 'announcement') return true;
+    if (nt == 'broadcast' || nt == 'announcement') return true;
+    return false;
+  }
+
+  /// True if FCM data explicitly says this is a normal event-chat message.
+  bool _isGeneralFromData(Map<String, dynamic> data) {
+    bool falsey(dynamic v) {
+      if (v == false) return true;
+      if (v is String) {
+        final s = v.toLowerCase().trim();
+        return s == 'false' || s == '0' || s == 'no';
+      }
+      if (v is num) return v == 0;
+      return false;
+    }
+
+    if (falsey(data['is_broadcast'])) return true;
+    if (falsey(data['isBroadcast'])) return true;
+    if (falsey(data['broadcast'])) return true;
+
+    bool generalType(dynamic v) {
+      final s = (v ?? '').toString().toLowerCase().trim();
+      if (s.isEmpty) return false;
+      return s == 'text' ||
+          s == 'message' ||
+          s == 'image' ||
+          s == 'photo' ||
+          s == 'audio' ||
+          s == 'voice' ||
+          s == 'file' ||
+          s == 'general' ||
+          s == 'chat' ||
+          s == 'chat_message' ||
+          s == 'group_message';
+    }
+
+    if (generalType(data['type'])) return true;
+    if (generalType(data['message_type'])) return true;
+    if (generalType(data['notification_type'])) return true;
+    return false;
+  }
+
+  // ── Title resolution (overrides backend "Group Chat" for event chats) ──
+  //
+  // Backend currently sends notification.title = "Group Chat" for any
+  // group_chats doc — including event chats. We try to override it here:
+  //   1. If FCM data contains notification_title / event_name / chat_title, use it.
+  //   2. Else if this is an event chat (by chat_type OR chatId convention OR route),
+  //      look up the group_chats doc (notification_title / name / event_name) and
+  //      then fall back to events/{eventId}.event_name.
+  //   3. Else fall back to the original notification.title.
+  //
+  // NOTE: This only affects FOREGROUND notifications and silenced (data-only)
+  // notifications. When the app is in the BACKGROUND and the FCM message
+  // includes a `notification` payload, Android renders the OS notification
+  // using `notification.title` directly — Flutter code does not run before
+  // the banner appears, and we cannot rewrite it. The only complete fix for
+  // background is server-side (Cloud Function should set notification.title
+  // from group_chats.notification_title / event_name).
+  Future<String?> _resolveDisplayTitle(RemoteMessage message) async {
+    final data = message.data;
+    final explicit = (data['notification_title'] ??
+        data['event_name'] ??
+        data['chat_title'] ??
+        '')
+        .toString();
+    if (explicit.isNotEmpty) return explicit;
+
+    final chatType = (data['chat_type'] ?? '').toString();
+    final route = _routeFromData(data);
+
+    // Resolve chatId from payload
+    String chatId = (data['chat_id'] ?? '').toString();
+    if (chatId.isEmpty && route.startsWith('/chats/event/')) {
+      chatId = route.substring('/chats/event/'.length).split('?').first;
+    }
+    if (chatId.isEmpty && route.startsWith('/chats/group/')) {
+      chatId = route.substring('/chats/group/'.length).split('?').first;
+    }
+
+    final isEvent = chatType == 'event' ||
+        route.startsWith('/chats/event/') ||
+        chatId.startsWith('event_');
+    if (!isEvent) return message.notification?.title;
+
+    // Try the group_chats doc first — it carries the most up-to-date title.
+    if (chatId.isNotEmpty) {
+      try {
+        final snap = await FirebaseFirestore.instance
+            .collection('group_chats')
+            .doc(chatId)
+            .get();
+        final d = snap.data();
+        if (d != null) {
+          final t = (d['notification_title'] ??
+              d['name'] ??
+              d['event_name'] ??
+              '')
+              .toString()
+              .trim();
+          if (t.isNotEmpty) return t;
+        }
+      } catch (e) {
+        debugPrint('[FCM] _resolveDisplayTitle group_chats fetch failed: $e');
+      }
+    }
+
+    // Fall back to the events doc.
+    String eventId = (data['event_id'] ?? '').toString();
+    if (eventId.isEmpty && chatId.startsWith('event_')) {
+      eventId = chatId.substring('event_'.length);
+    }
+    if (eventId.isEmpty) return message.notification?.title;
+
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('events').doc(eventId).get();
+      final d = snap.data() ?? {};
+      final name = (d['event_name'] ?? d['event_title'] ?? '')
+          .toString()
+          .trim();
+      if (name.isNotEmpty) return name;
+    } catch (e) {
+      debugPrint('[FCM] _resolveDisplayTitle events fetch failed: $e');
+    }
+    return message.notification?.title;
+  }
+
   void _onForegroundMessage(RemoteMessage message) {
     final isSilenced = message.data['silenced'] == 'true';
 
@@ -197,31 +436,37 @@ class NotificationService {
     if (Platform.isIOS) return;
 
     final n = message.notification!;
-    _plugin.show(
-      n.hashCode,
-      n.title,
-      n.body,
-      NotificationDetails(
-        android: AndroidNotificationDetails(
-          isSilenced ? _silentChannelId : _channelId,
-          isSilenced ? _silentChannelName : _channelName,
-          channelDescription: isSilenced ? _silentChannelDesc : _channelDesc,
-          importance: isSilenced ? Importance.low : Importance.high,
-          priority: isSilenced ? Priority.low : Priority.high,
-          playSound: !isSilenced,
-          enableVibration: !isSilenced,
-          color: const Color(0xFF3A7D44),
-          icon: '@drawable/ic_notification',
+    final payload = _buildPayload(message);
+    // Override title async without blocking the show — show fallback first,
+    // then if a better title resolves quickly, re-show with the same id.
+    _resolveDisplayTitle(message).then((title) {
+      _plugin.show(
+        n.hashCode,
+        title ?? n.title,
+        n.body,
+        NotificationDetails(
+          android: AndroidNotificationDetails(
+            isSilenced ? _silentChannelId : _channelId,
+            isSilenced ? _silentChannelName : _channelName,
+            channelDescription: isSilenced ? _silentChannelDesc : _channelDesc,
+            importance: isSilenced ? Importance.low : Importance.high,
+            priority: isSilenced ? Priority.low : Priority.high,
+            playSound: !isSilenced,
+            enableVibration: !isSilenced,
+            color: const Color(0xFF3A7D44),
+            icon: '@drawable/ic_notification',
+          ),
         ),
-      ),
-      payload: message.data['route'],
-    );
+        payload: payload,
+      );
+    });
   }
 
   Future<void> _showSilentLocalNotification(RemoteMessage message) async {
-    final title = message.data['title'] ?? 'New message';
-    final body = message.data['body'] ?? '';
-    final route = message.data['route'] ?? '';
+    final resolved = await _resolveDisplayTitle(message);
+    final title = resolved ?? (message.data['title'] ?? 'New message').toString();
+    final body = (message.data['body'] ?? '').toString();
+    final payload = _buildPayload(message);
 
     if (Platform.isAndroid) {
       await _plugin.show(
@@ -242,7 +487,7 @@ class NotificationService {
             icon: '@drawable/ic_notification',
           ),
         ),
-        payload: route,
+        payload: payload,
       );
     } else if (Platform.isIOS) {
       await _plugin.show(
@@ -256,16 +501,34 @@ class NotificationService {
             presentSound: false,
           ),
         ),
-        payload: route,
+        payload: payload,
       );
     }
   }
 
-  void _onTap(RemoteMessage message) => _handlePayload(message.data['route']);
+  void _onTap(RemoteMessage message) => _handlePayload(_buildPayload(message));
 
   void _handlePayload(String? payload) {
     if (payload == null || payload.isEmpty) return;
     debugPrint('[FCM] Handling payload: $payload');
+
+    // Split route and query (tab=..., msg=...)
+    String route = payload;
+    String? tab;
+    String? messageId;
+    final qIdx = payload.indexOf('?');
+    if (qIdx >= 0) {
+      route = payload.substring(0, qIdx);
+      final qs = payload.substring(qIdx + 1);
+      for (final pair in qs.split('&')) {
+        final eq = pair.indexOf('=');
+        if (eq < 0) continue;
+        final k = pair.substring(0, eq);
+        final v = pair.substring(eq + 1);
+        if (k == 'tab') tab = v;
+        if (k == 'msg') messageId = v;
+      }
+    }
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       final context = navigatorKey.currentContext;
@@ -273,14 +536,82 @@ class NotificationService {
         debugPrint('[FCM] Navigator context not ready');
         return;
       }
-      if (payload.startsWith('/chats/individual/')) {
-        final chatId = payload.replaceFirst('/chats/individual/', '');
+      if (route.startsWith('/chats/individual/')) {
+        final chatId = route.replaceFirst('/chats/individual/', '');
         await _openIndividualChat(context, chatId);
-      } else if (payload.startsWith('/chats/group/')) {
-        final chatId = payload.replaceFirst('/chats/group/', '');
-        await _openGroupChat(context, chatId);
+      } else if (route.startsWith('/chats/event/')) {
+        final chatId = route.replaceFirst('/chats/event/', '');
+        final resolvedTab =
+        await _resolveEventTab(chatId, tab, messageId: messageId);
+        await _openEventChat(context, chatId, initialTab: resolvedTab);
+      } else if (route.startsWith('/chats/group/')) {
+        final chatId = route.replaceFirst('/chats/group/', '');
+        // IMPORTANT: backend sends /chats/group/<id> for event chats too,
+        // because they live in the same `group_chats` collection. Detect
+        // and redirect before falling back to GroupChatScreen.
+        final resolvedTab =
+        await _resolveEventTab(chatId, tab, messageId: messageId);
+        await _openGroupOrEventChat(context, chatId, initialTab: resolvedTab);
       }
     });
+  }
+
+  /// Resolve which event-chat tab a notification tap should land on.
+  ///
+  /// Priority:
+  ///   1. The exact message doc (`messages/{messageId}`) referenced by the
+  ///      notification — most accurate, and prevents stale tab values from
+  ///      opening General Chat messages in Announcements.
+  ///   2. Explicit `tab` from the FCM payload.
+  ///   3. Fallback: the newest message in the chat.
+  ///   4. Default to 'general' if everything fails.
+  Future<String?> _resolveEventTab(String chatId, String? tab,
+      {String? messageId}) async {
+    // 1. Try the exact message document first.
+    if (messageId != null && messageId.isNotEmpty) {
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection('group_chats')
+            .doc(chatId)
+            .collection('messages')
+            .doc(messageId)
+            .get();
+        if (doc.exists) {
+          final d = doc.data() ?? {};
+          final isBroadcast = d['is_broadcast'] == true ||
+              (d['type'] ?? '').toString() == 'broadcast';
+          return isBroadcast ? 'announcements' : 'general';
+        }
+      } catch (e) {
+        debugPrint('[FCM] _resolveEventTab message fetch error: $e');
+      }
+    }
+
+    // 2. Use the explicit tab only after the exact message doc check, because
+    // backend payloads can occasionally carry a stale/default tab value.
+    if (tab != null && tab.isNotEmpty) return tab;
+
+    // 3. Fallback: inspect only the newest message. Do not scan several recent
+    // messages, because an older broadcast would incorrectly force a new
+    // General Chat notification to open Announcements.
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('group_chats')
+          .doc(chatId)
+          .collection('messages')
+          .orderBy('sent_at', descending: true)
+          .limit(1)
+          .get();
+      if (snap.docs.isEmpty) return 'general';
+
+      final d = snap.docs.first.data();
+      final isBroadcast = d['is_broadcast'] == true ||
+          (d['type'] ?? '').toString() == 'broadcast';
+      return isBroadcast ? 'announcements' : 'general';
+    } catch (e) {
+      debugPrint('[FCM] _resolveEventTab error: $e');
+      return tab ?? 'general';
+    }
   }
 
   Future<void> _openIndividualChat(BuildContext context, String chatId) async {
@@ -315,11 +646,32 @@ class NotificationService {
     }
   }
 
-  Future<void> _openGroupChat(BuildContext context, String chatId) async {
+  /// Decides between EventChatScreen and GroupChatScreen for a `group_chats`
+  /// doc. Event chats are identified by `chat_type == 'event'` or the
+  /// "event_" chatId convention.
+  Future<void> _openGroupOrEventChat(BuildContext context, String chatId,
+      {String? initialTab}) async {
     try {
-      final doc = await FirebaseFirestore.instance.collection('group_chats').doc(chatId).get();
+      final doc = await FirebaseFirestore.instance
+          .collection('group_chats').doc(chatId).get();
       if (!doc.exists) return;
       final data = doc.data() ?? {};
+
+      if (EventChatService.isEventChat(chatId, data)) {
+        final eventId = EventChatService.resolveEventId(chatId, data);
+        final eventData = await EventChatService.fetchEventData(eventId);
+        if (!context.mounted) return;
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => EventChatScreen(
+              chatId: chatId,
+              eventData: eventData,
+              initialTab: initialTab,
+            ),
+          ),
+        );
+        return;
+      }
 
       if (!context.mounted) return;
       Navigator.of(context).push(
@@ -331,7 +683,32 @@ class NotificationService {
         ),
       );
     } catch (e) {
-      debugPrint('[FCM] _openGroupChat error: $e');
+      debugPrint('[FCM] _openGroupOrEventChat error: $e');
+    }
+  }
+
+  Future<void> _openEventChat(BuildContext context, String chatId,
+      {String? initialTab}) async {
+    try {
+      final chatDoc = await FirebaseFirestore.instance
+          .collection('group_chats').doc(chatId).get();
+      final chatData = chatDoc.data() ?? {};
+
+      final eventId = EventChatService.resolveEventId(chatId, chatData);
+      final eventData = await EventChatService.fetchEventData(eventId);
+
+      if (!context.mounted) return;
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => EventChatScreen(
+            chatId: chatId,
+            eventData: eventData,
+            initialTab: initialTab,
+          ),
+        ),
+      );
+    } catch (e) {
+      debugPrint('[FCM] _openEventChat error: $e');
     }
   }
 }
