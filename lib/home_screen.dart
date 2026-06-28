@@ -498,7 +498,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           height: 132,
           child: Image.asset('assets/pikuru_logo.png', fit: BoxFit.contain),
         ),
-        centerTitle: true,
+        centerTitle: false,
+        titleSpacing: 16,
         actions: [
           // ── EN / JP language toggle ─────────────────────────────────────
           Padding(
