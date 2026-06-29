@@ -59,6 +59,7 @@ class GroupCardList extends ConsumerStatefulWidget {
 class _GroupCardListState extends ConsumerState<GroupCardList> {
   // 'none' | 'interested' | 'active'
   String  _membershipStatus = 'none';
+  bool    _isFavorite       = false;
   bool    _checkingStatus   = true;
 
   @override
@@ -93,7 +94,7 @@ class _GroupCardListState extends ConsumerState<GroupCardList> {
 
     final me = FirebaseAuth.instance.currentUser;
     if (me == null || _orgId.isEmpty) {
-      if (mounted) setState(() { _membershipStatus = 'none'; _checkingStatus = false; });
+      if (mounted) setState(() { _membershipStatus = 'none'; _isFavorite = false; _checkingStatus = false; });
       return;
     }
     try {
@@ -102,15 +103,21 @@ class _GroupCardListState extends ConsumerState<GroupCardList> {
           .doc('${me.uid}_$_orgId')
           .get();
       if (mounted) {
-        setState(() {
-          _membershipStatus = doc.exists
-              ? (doc.data()?['status']?.toString() ?? 'none')
-              : 'none';
-          _checkingStatus = false;
-        });
+        if (doc.exists) {
+          final data = doc.data()!;
+          final status = data['status']?.toString() ?? 'none';
+          final isFav = data['is_favorite'] == true;
+          setState(() {
+            _membershipStatus = status;
+            _isFavorite = status == 'interested' || isFav;
+            _checkingStatus = false;
+          });
+        } else {
+          setState(() { _membershipStatus = 'none'; _isFavorite = false; _checkingStatus = false; });
+        }
       }
     } catch (_) {
-      if (mounted) setState(() { _membershipStatus = 'none'; _checkingStatus = false; });
+      if (mounted) setState(() { _membershipStatus = 'none'; _isFavorite = false; _checkingStatus = false; });
     }
   }
 
@@ -123,7 +130,7 @@ class _GroupCardListState extends ConsumerState<GroupCardList> {
     _checkMembership();
   }
 
-  // ── Show Join confirm modal then Success modal ────────────────────────────
+  // ── Show Join confirm modal then Success modal ──────────────────────────────
   Future<void> _showJoinModal(String lang) async {
     HapticFeedback.lightImpact();
     final joined = await showDialog<bool>(
@@ -133,7 +140,7 @@ class _GroupCardListState extends ConsumerState<GroupCardList> {
           onJoined: () => setState(() => _membershipStatus = 'active')),
     );
     if (joined == true && mounted) {
-      setState(() => _membershipStatus = 'active');
+      await _checkMembership();
       _showSuccessModal(lang);
     }
   }
@@ -363,7 +370,7 @@ class _GroupCardListState extends ConsumerState<GroupCardList> {
     }
 
     final isActive     = _membershipStatus == 'active';
-    final isInterested = _membershipStatus == 'interested';
+    final isInterested = _isFavorite;
     final isCreator    = _isCreator;
 
     // Build the trailing action widget for the bottom-right of the card.
@@ -376,7 +383,7 @@ class _GroupCardListState extends ConsumerState<GroupCardList> {
       );
     } else if (isCreator) {
       // Creator/organizer — show Organizer label, no join button.
-      // If also "interested", show the Interested badge alongside.
+      // If also favorited, show the Favorited badge alongside.
       actionWidget = isInterested
           ? Row(
         mainAxisSize: MainAxisSize.min,
@@ -388,9 +395,19 @@ class _GroupCardListState extends ConsumerState<GroupCardList> {
       )
           : _organizerBadge(lang);
     } else if (isActive) {
-      actionWidget = _joinedPill(lang);
+      // Joined — show Joined pill, plus Favorited badge if also favorited
+      actionWidget = isInterested
+          ? Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _interestedBadge(lang),
+          const SizedBox(width: 6),
+          _joinedPill(lang),
+        ],
+      )
+          : _joinedPill(lang);
     } else if (isInterested) {
-      // Show "Interested" badge AND still keep the JOIN button.
+      // Favorited but not joined — show Favorited badge AND Join button.
       actionWidget = Row(
         mainAxisSize: MainAxisSize.min,
         children: [

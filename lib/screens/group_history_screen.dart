@@ -168,7 +168,8 @@ class _GroupList extends StatefulWidget {
 }
 
 class _GroupListState extends State<_GroupList> {
-  Stream<QuerySnapshot<Map<String, dynamic>>>? _stream;
+  Stream<QuerySnapshot<Map<String, dynamic>>>? _stream;          // joined tab
+  Stream<List<QueryDocumentSnapshot<Map<String, dynamic>>>>? _favStream; // favorited tab
   String? _uid;
 
   @override
@@ -189,11 +190,16 @@ class _GroupListState extends State<_GroupList> {
           .where('status', whereIn: ['active', 'pending', 'approved', 'rejected', 'removed'])
           .snapshots();
     } else {
-      _stream = FirebaseFirestore.instance
+      // Favorited tab: fetch all user's records and filter client-side so we
+      // catch both legacy (status == 'interested') and new (is_favorite == true) entries.
+      _favStream = FirebaseFirestore.instance
           .collection('user_groups')
           .where('user_id', isEqualTo: uid)
-          .where('status', isEqualTo: 'interested')
-          .snapshots();
+          .snapshots()
+          .map((snap) => snap.docs.where((d) {
+                final data = d.data();
+                return data['status'] == 'interested' || data['is_favorite'] == true;
+              }).toList());
     }
   }
 
@@ -205,6 +211,43 @@ class _GroupListState extends State<_GroupList> {
     return 0;
   }
 
+  Widget _buildList(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    if (docs.isEmpty) {
+      return _EmptyState(
+        icon: widget.tab == 'joined'
+            ? Icons.groups_outlined
+            : Icons.favorite_border_rounded,
+        title: widget.tab == 'joined'
+            ? _t(widget.lang, 'noJoined')
+            : _t(widget.lang, 'noInterested'),
+        subtitle: widget.tab == 'joined'
+            ? _t(widget.lang, 'noJoinedSub')
+            : _t(widget.lang, 'noInterestedSub'),
+        lang: widget.lang,
+        showBrowse: true,
+      );
+    }
+    final sortedDocs = docs.toList()
+      ..sort((a, b) {
+        final aMs = _sortMillis(a.data());
+        final bMs = _sortMillis(b.data());
+        return bMs.compareTo(aMs);
+      });
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+      itemCount: sortedDocs.length,
+      itemBuilder: (context, i) {
+        final docSnap = sortedDocs[i];
+        return _GroupHistoryCard(
+          data: docSnap.data(),
+          docId: docSnap.id,
+          uid: _uid!,
+          lang: widget.lang,
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_uid == null) {
@@ -213,6 +256,29 @@ class _GroupListState extends State<_GroupList> {
           _t(widget.lang, 'notSignedIn'),
           style: const TextStyle(color: Colors.black54),
         ),
+      );
+    }
+
+    if (widget.tab == 'interested') {
+      // Use dedicated list stream for the Favorited tab
+      return StreamBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+        stream: _favStream,
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting && !snap.hasData) {
+            return const Center(
+                child: CircularProgressIndicator(
+                    color: AppColors.primary, strokeWidth: 2));
+          }
+          if (snap.hasError) {
+            return _EmptyState(
+              icon: Icons.error_outline_rounded,
+              title: _t(widget.lang, 'errLoad'),
+              subtitle: snap.error.toString(),
+              lang: widget.lang,
+            );
+          }
+          return _buildList(snap.data ?? []);
+        },
       );
     }
 
@@ -232,45 +298,7 @@ class _GroupListState extends State<_GroupList> {
             lang: widget.lang,
           );
         }
-
-        final docs = snap.data?.docs ?? [];
-        if (docs.isEmpty) {
-          return _EmptyState(
-            icon: widget.tab == 'joined'
-                ? Icons.groups_outlined
-                : Icons.favorite_border_rounded,
-            title: widget.tab == 'joined'
-                ? _t(widget.lang, 'noJoined')
-                : _t(widget.lang, 'noInterested'),
-            subtitle: widget.tab == 'joined'
-                ? _t(widget.lang, 'noJoinedSub')
-                : _t(widget.lang, 'noInterestedSub'),
-            lang: widget.lang,
-            showBrowse: true,
-          );
-        }
-
-        // Sort items locally
-        final sortedDocs = docs.toList()
-          ..sort((a, b) {
-            final aMs = _sortMillis(a.data());
-            final bMs = _sortMillis(b.data());
-            return bMs.compareTo(aMs);
-          });
-
-        return ListView.builder(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
-          itemCount: sortedDocs.length,
-          itemBuilder: (context, i) {
-            final docSnap = sortedDocs[i];
-            return _GroupHistoryCard(
-              data: docSnap.data(),
-              docId: docSnap.id,
-              uid: _uid!,
-              lang: widget.lang,
-            );
-          },
-        );
+        return _buildList(snap.data?.docs ?? []);
       },
     );
   }

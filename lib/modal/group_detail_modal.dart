@@ -175,6 +175,8 @@ class GroupDetailModals {
     showSpinner();
     bool writeOk = false;
     try {
+      final snap = await docRef.get();
+      final bool currentlyFavorite = snap.exists && (snap.data()?['status'] == 'interested' || snap.data()?['is_favorite'] == true);
       await docRef.set({
         'user_id':               user.uid,
         'group_id':              groupId,
@@ -182,6 +184,7 @@ class GroupDetailModals {
         'group_image':           group['org_image'] ?? '',
         'joined_at':             FieldValue.serverTimestamp(),
         'status':                'active',
+        'is_favorite':           currentlyFavorite,
         'notifications_enabled': true,
       }, SetOptions(merge: true));
       writeOk = true;
@@ -230,6 +233,7 @@ class GroupDetailModals {
       Map<String, dynamic> group, {
         String lang = kLangEn,
         required String currentStatus,
+        required bool isFavorite,
       }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -238,8 +242,8 @@ class GroupDetailModals {
     }
 
     // Already interested → show un-favorite dialog (toggle off)
-    if (currentStatus == 'interested') {
-      return showUnfavorite(context, group, lang: lang);
+    if (isFavorite) {
+      return showUnfavorite(context, group, lang: lang, currentStatus: currentStatus);
     }
 
     // Show confirm dialog (works for both 'none' AND 'active')
@@ -252,7 +256,7 @@ class GroupDetailModals {
     );
     if (shouldMark != true || !context.mounted) return null;
 
-    // Write status → 'interested' (downgrades active too — mirrors web)
+    // Write status → 'interested' or keep 'active' if already joined
     final groupId = resolveGroupId(group);
     final docRef  = FirebaseFirestore.instance
         .collection('user_groups')
@@ -280,6 +284,7 @@ class GroupDetailModals {
 
     showSpinner();
     bool writeOk = false;
+    final newStatus = currentStatus == 'active' ? 'active' : 'interested';
     try {
       await docRef.set({
         'user_id':    user.uid,
@@ -287,7 +292,8 @@ class GroupDetailModals {
         'group_name': group['org_name'] ?? 'Unnamed Group',
         'group_image': group['org_image'] ?? '',
         'marked_at':  FieldValue.serverTimestamp(),
-        'status':     'interested',
+        'status':     newStatus,
+        'is_favorite': true,
       }, SetOptions(merge: true));
       writeOk = true;
     } catch (e) {
@@ -302,19 +308,20 @@ class GroupDetailModals {
         isError: !writeOk,
       );
     }
-    return writeOk ? 'interested' : null;
+    return writeOk ? newStatus : null;
   }
 
   // ─────────────────────────────────────────────────────────────────────────
   // UN-FAVORITE flow
   // Called when the user taps the Favorite button while already favorited.
-  // Shows a confirm dialog, then deletes the user_groups doc.
-  // Returns 'none' on success, null on cancel/error.
+  // Shows a confirm dialog, then deletes the user_groups doc (or clears favorite if active).
+  // Returns the new status string on success, null on cancel/error.
   // ─────────────────────────────────────────────────────────────────────────
   static Future<String?> showUnfavorite(
       BuildContext context,
       Map<String, dynamic> group, {
         String lang = kLangEn,
+        required String currentStatus,
       }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return null;
@@ -356,7 +363,13 @@ class GroupDetailModals {
     showSpinner();
     bool deleteOk = false;
     try {
-      await docRef.delete();
+      if (currentStatus == 'active') {
+        await docRef.set({
+          'is_favorite': false,
+        }, SetOptions(merge: true));
+      } else {
+        await docRef.delete();
+      }
       deleteOk = true;
     } catch (e) {
       debugPrint('❌ showUnfavorite error: $e');
@@ -370,7 +383,7 @@ class GroupDetailModals {
         isError: !deleteOk,
       );
     }
-    return deleteOk ? 'none' : null;
+    return deleteOk ? (currentStatus == 'active' ? 'active' : 'none') : null;
   }
 
   // ── Toast ─────────────────────────────────────────────────────────────────

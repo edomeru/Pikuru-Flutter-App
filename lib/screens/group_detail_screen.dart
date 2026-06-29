@@ -194,6 +194,7 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
 
   // null = loading, 'none' | 'interested' | 'active'
   String? _membershipStatus;
+  bool _isFavorite = false;
 
   late AnimationController _animController;
   late Animation<double>   _fadeAnim;
@@ -219,12 +220,39 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
   Future<void> _loadMembershipStatus() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      if (mounted) setState(() => _membershipStatus = 'none');
+      if (mounted) {
+        setState(() {
+          _membershipStatus = 'none';
+          _isFavorite = false;
+        });
+      }
       return;
     }
-    final status =
-    await GroupDetailModals.getMembershipStatus(user.uid, widget.group);
-    if (mounted) setState(() => _membershipStatus = status ?? 'none');
+    final groupId = GroupDetailModals.resolveGroupId(widget.group);
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('user_groups')
+          .doc('${user.uid}_$groupId')
+          .get();
+      if (mounted) {
+        if (snap.exists) {
+          final data = snap.data();
+          final status = data?['status']?.toString() ?? 'none';
+          final isFav = data?['is_favorite'] == true;
+          setState(() {
+            _membershipStatus = status;
+            _isFavorite = status == 'interested' || isFav;
+          });
+        } else {
+          setState(() {
+            _membershipStatus = 'none';
+            _isFavorite = false;
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('_loadMembershipStatus error: $e');
+    }
   }
 
   Future<void> _launchUrl(String url) async {
@@ -250,22 +278,27 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
     if (_membershipStatus == 'active') return;
     final result = await GroupDetailModals.showJoin(
         context, widget.group, lang: lang);
-    if (result != null && mounted) setState(() => _membershipStatus = result);
+    if (result != null && mounted) {
+      _loadMembershipStatus();
+    }
   }
 
   // ── INTERESTED handler ────────────────────────────────────────────────────
   // Works as a TOGGLE:
-  //   active     → confirm → writes 'interested' → Join turns green again
-  //   none       → confirm → writes 'interested'
-  //   interested → shows un-favorite confirm dialog → deletes doc → resets to 'none'
+  //   active     → confirms → marks as favorite
+  //   none       → confirms → marks as favorite
+  //   interested → shows un-favorite confirm dialog → deletes doc or sets is_favorite to false
   Future<void> _handleInterested(String lang) async {
     final result = await GroupDetailModals.showInterested(
       context,
       widget.group,
       lang: lang,
       currentStatus: _membershipStatus ?? 'none',
+      isFavorite: _isFavorite,
     );
-    if (result != null && mounted) setState(() => _membershipStatus = result);
+    if (result != null && mounted) {
+      _loadMembershipStatus();
+    }
   }
 
   @override
@@ -306,7 +339,7 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
 
     // ── Button state derivations ──────────────────────────────────────────
     final isActive     = _membershipStatus == 'active';
-    final isInterested = _membershipStatus == 'interested';
+    final isInterested = _isFavorite;
     final isLoading    = _membershipStatus == null;
 
     // Join:       green & tappable when NOT active; gray when active

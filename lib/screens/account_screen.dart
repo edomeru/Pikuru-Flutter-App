@@ -366,11 +366,8 @@ class _AccountScreenState extends ConsumerState<AccountScreen>
                                   ),
                                   const SizedBox(width: 12),
                                   Expanded(
-                                    child: _StatBanner(
+                                    child: _FavStatBanner(
                                       uid: user?.uid ?? '',
-                                      collection: 'user_groups',
-                                      userField: 'user_id',
-                                      statusFilter: 'interested',
                                       icon: Icons.favorite_rounded,
                                       label: t('interestedGroups'),
                                       emptyLabel: t('noneYet'),
@@ -681,6 +678,133 @@ class _StatBanner extends StatelessWidget {
           .snapshots(),
       builder: (context, snapshot) {
         final count = snapshot.data?.docs.length ?? 0;
+        return _card(context, count);
+      },
+    );
+  }
+
+  Widget _card(BuildContext context, int count) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.primary.withOpacity(0.15)),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withOpacity(0.07),
+              blurRadius: 14,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(icon, color: AppColors.primary, size: 22),
+                ),
+                const Spacer(),
+                Text(
+                  '$count',
+                  style: TextStyle(
+                    fontSize: count == 0 ? 20 : 24,
+                    fontWeight: FontWeight.w900,
+                    color: count == 0 ? Colors.black26 : AppColors.primary,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.black54,
+                letterSpacing: 0.1,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              count == 0 ? emptyLabel : '',
+              style: const TextStyle(fontSize: 11, color: Colors.black38),
+            ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(buttonIcon, color: AppColors.primary, size: 13),
+                  const SizedBox(width: 4),
+                  Text(
+                    buttonLabel,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Favorite-aware stat banner (counts is_favorite OR status=='interested') ───
+class _FavStatBanner extends StatelessWidget {
+  final String uid;
+  final IconData icon;
+  final String label;
+  final String emptyLabel;
+  final String buttonLabel;
+  final IconData buttonIcon;
+  final VoidCallback onTap;
+
+  const _FavStatBanner({
+    required this.uid,
+    required this.icon,
+    required this.label,
+    required this.emptyLabel,
+    required this.buttonLabel,
+    required this.buttonIcon,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (uid.isEmpty) return _card(context, 0);
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance
+          .collection('user_groups')
+          .where('user_id', isEqualTo: uid)
+          .snapshots(),
+      builder: (context, snapshot) {
+        final docs = snapshot.data?.docs ?? [];
+        final count = docs.where((d) {
+          final data = d.data();
+          return data['status'] == 'interested' || data['is_favorite'] == true;
+        }).length;
         return _card(context, count);
       },
     );
