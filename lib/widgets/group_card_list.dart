@@ -24,7 +24,7 @@ const _L = {
     'errJoin':      'Failed to join group. Please try again.',
     'joined':       'Joined ✓',
     'joinBtn':      'JOIN',
-    'interested':   'Interested',
+    'interested':   'Favorited',
     'organizer':    'Organizer',
   },
   kLangJa: {
@@ -39,7 +39,7 @@ const _L = {
     'errJoin':      'グループへの参加に失敗しました。',
     'joined':       '参加済み ✓',
     'joinBtn':      '参加',
-    'interested':   '興味あり',
+    'interested':   'お気に入り',
     'organizer':    'オーガナイザー',
   },
 };

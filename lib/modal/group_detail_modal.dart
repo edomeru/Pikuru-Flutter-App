@@ -47,12 +47,17 @@ const _L = {
     'errJoin':            'Failed to join group. Please try again.',
     'signInNeeded':       'Please sign in to join groups',
     'alreadyJoined':      'You have already joined this group',
-    'interestTitle':      'Mark as Interested?',
-    'interestSub':        'Save this group to your interests and stay updated on their events.',
-    'interestMark':       'Mark',
-    'errInterest':        'Failed to mark as interested.',
-    'errAlreadyInterest': 'You have already marked this group as interested.',
-    'toastInterest':      'Group added to your interests!',
+    'interestTitle':      'Add to Favorites?',
+    'interestSub':        'Save this group to your favorites and stay updated on their events.',
+    'interestMark':       'Favorite',
+    'errInterest':        'Failed to add to favorites.',
+    'errAlreadyInterest': 'You have already added this group to favorites.',
+    'toastInterest':      'Group added to your favorites!',
+    'unfavoriteTitle':    'Remove from Favorites?',
+    'unfavoriteSub':      'This group will be removed from your favorites list.',
+    'unfavoriteConfirm':  'Remove',
+    'toastUnfavorite':    'Removed from favorites.',
+    'errUnfavorite':      'Failed to remove from favorites.',
   },
   kLangJa: {
     'joinTitle':          'グループに参加しますか？',
@@ -66,12 +71,12 @@ const _L = {
     'errJoin':            'グループへの参加に失敗しました。もう一度お試しください。',
     'signInNeeded':       'グループに参加するにはログインしてください',
     'alreadyJoined':      'すでにこのグループに参加しています',
-    'interestTitle':      '興味ありにしますか？',
-    'interestSub':        'このグループを興味リストに保存し、イベント情報を受け取ることができます。',
-    'interestMark':       'マークする',
-    'errInterest':        '「興味あり」の追加に失敗しました。',
-    'errAlreadyInterest': 'このグループはすでに「興味あり」に設定されています。',
-    'toastInterest':      '興味のあるグループに追加しました！',
+    'interestTitle':      'お気に入りに追加しますか？',
+    'interestSub':        'このグループをお気に入りに登録して、イベントの最新情報を受け取りましょう。',
+    'interestMark':       'お気に入り',
+    'errInterest':        'お気に入りの追加に失敗しました。',
+    'errAlreadyInterest': 'このグループはすでにお気に入りに登録されています。',
+    'toastInterest':      'お気に入りグループに追加しました！',
   },
 };
 
@@ -216,7 +221,7 @@ class GroupDetailModals {
   // Works as a TOGGLE with Join — can be called even when status is 'active'.
   // When active → downgrades to 'interested' (re-enables Join button).
   // When none   → sets 'interested'.
-  // When already interested → shows toast, no write.
+  // When already interested → shows UN-FAVORITE dialog to remove.
   // Mirrors web handleInterest() exactly.
   // Returns the new status string, or null on cancel/error.
   // ─────────────────────────────────────────────────────────────────────────
@@ -232,10 +237,9 @@ class GroupDetailModals {
       return null;
     }
 
-    // Already interested — idempotent toast, no dialog
+    // Already interested → show un-favorite dialog (toggle off)
     if (currentStatus == 'interested') {
-      _showToast(context, _t(lang, 'errAlreadyInterest'), isError: false);
-      return 'interested';
+      return showUnfavorite(context, group, lang: lang);
     }
 
     // Show confirm dialog (works for both 'none' AND 'active')
@@ -299,6 +303,74 @@ class GroupDetailModals {
       );
     }
     return writeOk ? 'interested' : null;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // UN-FAVORITE flow
+  // Called when the user taps the Favorite button while already favorited.
+  // Shows a confirm dialog, then deletes the user_groups doc.
+  // Returns 'none' on success, null on cancel/error.
+  // ─────────────────────────────────────────────────────────────────────────
+  static Future<String?> showUnfavorite(
+      BuildContext context,
+      Map<String, dynamic> group, {
+        String lang = kLangEn,
+      }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return null;
+
+    if (!context.mounted) return null;
+    final shouldRemove = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: Colors.black.withOpacity(0.55),
+      builder: (_) => _UnfavoriteConfirmDialog(lang: lang),
+    );
+    if (shouldRemove != true || !context.mounted) return null;
+
+    final groupId = resolveGroupId(group);
+    final docRef  = FirebaseFirestore.instance
+        .collection('user_groups')
+        .doc('${user.uid}_$groupId');
+
+    bool spinnerActive = false;
+    final nav = Navigator.of(context, rootNavigator: false);
+
+    void showSpinner() {
+      spinnerActive = true;
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        barrierColor: Colors.black.withOpacity(0.4),
+        builder: (_) => const Center(
+          child: CircularProgressIndicator(
+              color: Color(0xFFF58C46), strokeWidth: 3),
+        ),
+      );
+    }
+
+    void dismissSpinner() {
+      if (spinnerActive) { spinnerActive = false; if (nav.canPop()) nav.pop(); }
+    }
+
+    showSpinner();
+    bool deleteOk = false;
+    try {
+      await docRef.delete();
+      deleteOk = true;
+    } catch (e) {
+      debugPrint('❌ showUnfavorite error: $e');
+    }
+    dismissSpinner();
+
+    if (context.mounted) {
+      _showToast(
+        context,
+        deleteOk ? _t(lang, 'toastUnfavorite') : _t(lang, 'errUnfavorite'),
+        isError: !deleteOk,
+      );
+    }
+    return deleteOk ? 'none' : null;
   }
 
   // ── Toast ─────────────────────────────────────────────────────────────────
@@ -567,6 +639,95 @@ class _InterestConfirmDialog extends StatelessWidget {
                       style: const TextStyle(fontSize: 16,
                           fontWeight: FontWeight.w700,
                           color: _C.interestBtnText)),
+                ),
+              ),
+            ),
+          ]),
+        ]),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _UnfavoriteConfirmDialog
+// ─────────────────────────────────────────────────────────────────────────────
+class _UnfavoriteConfirmDialog extends StatelessWidget {
+  final String lang;
+  const _UnfavoriteConfirmDialog({required this.lang});
+
+  static const _orange = Color(0xFFF58C46);
+  static const _orangeBg = Color(0xFFFFF4EC);
+  static const _orangeBtn = Color(0xFFC0440A);
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(28, 36, 28, 28),
+        decoration: BoxDecoration(
+          color: _C.white,
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.18),
+                blurRadius: 40, offset: const Offset(0, 16)),
+          ],
+        ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 72, height: 72,
+            decoration: const BoxDecoration(
+                color: _orangeBg, shape: BoxShape.circle),
+            child: const Icon(Icons.favorite_border_rounded,
+                color: _orange, size: 32),
+          ),
+          const SizedBox(height: 24),
+          Text(_t(lang, 'unfavoriteTitle'),
+              style: const TextStyle(
+                  fontSize: 22, fontWeight: FontWeight.w800,
+                  color: _C.titleColor, letterSpacing: -0.3, height: 1.2),
+              textAlign: TextAlign.center),
+          const SizedBox(height: 12),
+          Text(_t(lang, 'unfavoriteSub'),
+              style: const TextStyle(
+                  fontSize: 15, color: _C.subtitleColor, height: 1.55),
+              textAlign: TextAlign.center),
+          const SizedBox(height: 32),
+          Row(children: [
+            Expanded(
+              child: GestureDetector(
+                onTap: () => Navigator.pop(context, false),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  decoration: BoxDecoration(
+                      color: _C.cancelBg,
+                      borderRadius: BorderRadius.circular(50)),
+                  alignment: Alignment.center,
+                  child: Text(_t(lang, 'cancel'),
+                      style: const TextStyle(fontSize: 16,
+                          fontWeight: FontWeight.w700, color: _C.cancelText)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: GestureDetector(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  Navigator.pop(context, true);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  decoration: BoxDecoration(
+                      color: _orangeBtn,
+                      borderRadius: BorderRadius.circular(50)),
+                  alignment: Alignment.center,
+                  child: Text(_t(lang, 'unfavoriteConfirm'),
+                      style: const TextStyle(fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white)),
                 ),
               ),
             ),

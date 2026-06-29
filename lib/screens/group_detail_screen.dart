@@ -10,6 +10,7 @@ import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:pikuru/utils/date_formatter.dart';
 import 'package:pikuru/modal/group_detail_modal.dart';
 import 'package:pikuru/modal/share_group_modal.dart';
+import 'package:pikuru/screens/group_chat_screen.dart';
 
 // ── Data helpers ──────────────────────────────────────────────────────────────
 
@@ -256,7 +257,7 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
   // Works as a TOGGLE:
   //   active     → confirm → writes 'interested' → Join turns green again
   //   none       → confirm → writes 'interested'
-  //   interested → toast only (already marked)
+  //   interested → shows un-favorite confirm dialog → deletes doc → resets to 'none'
   Future<void> _handleInterested(String lang) async {
     final result = await GroupDetailModals.showInterested(
       context,
@@ -633,9 +634,8 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
                           const SizedBox(width: 16),
 
                           // ── INTERESTED ────────────────────────────────
-                          // Disabled ONLY when already interested.
-                          // When active (joined), tapping this DOWNGRADES
-                          // to interested and re-enables the Join button.
+                          // Always tappable. When already favorited, shows
+                          // un-favorite confirm dialog to remove.
                           Expanded(
                             child: isLoading
                                 ? Container(
@@ -647,16 +647,14 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
                               ),
                             )
                                 : GestureDetector(
-                              onTap: isInterested
-                                  ? null
-                                  : () => _handleInterested(lang),
+                              onTap: () => _handleInterested(lang),
                               child: AnimatedContainer(
                                 duration: const Duration(milliseconds: 200),
                                 height: 52,
                                 decoration: BoxDecoration(
                                   border: Border.all(
                                     color: isInterested
-                                        ? Colors.grey.shade300
+                                        ? const Color(0xFFF58C46)
                                         : AppColors.primary,
                                     width: 2,
                                   ),
@@ -665,13 +663,13 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
                                 alignment: Alignment.center,
                                 child: Text(
                                   isInterested
-                                      ? _tr(lang, 'Interested ✓', '興味あり ✓')
-                                      : _tr(lang, 'Interested', '興味あり'),
+                                      ? _tr(lang, 'Favorited ✓', 'お気に入り ✓')
+                                      : _tr(lang, 'Favorite', 'お気に入り'),
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.bold,
                                     color: isInterested
-                                        ? Colors.grey.shade400
+                                        ? const Color(0xFFF58C46)
                                         : AppColors.primary,
                                   ),
                                 ),
@@ -679,6 +677,55 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
                             ),
                           ),
                         ]),
+
+                        // Open Chat Group button — shown to active members only
+                        if (isActive) ...[
+                          const SizedBox(height: 12),
+                          GestureDetector(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => GroupChatScreen(group: widget.group),
+                                ),
+                              );
+                            },
+                            child: Container(
+                              height: 52,
+                              decoration: BoxDecoration(
+                                gradient: const LinearGradient(
+                                  colors: [Color(0xFF2d6a3f), Color(0xFF4a9c5e)],
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                ),
+                                borderRadius: BorderRadius.circular(12),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: AppColors.primary.withOpacity(0.3),
+                                    blurRadius: 16,
+                                    offset: const Offset(0, 6),
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const Icon(Icons.chat_bubble_outline_rounded,
+                                      color: Colors.white, size: 20),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    _tr(lang, 'Open Chat Group', 'チャットグループを開く'),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
 
                         // Joined banner — only when active
                         if (isActive) ...[

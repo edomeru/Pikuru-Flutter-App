@@ -10,6 +10,7 @@ import 'package:pikuru/screens/resources_screen.dart';
 import 'package:pikuru/screens/edit_profile_screen.dart';
 import 'package:pikuru/screens/settings_screen.dart';
 import 'package:pikuru/screens/organizer_dashboard_screen.dart'; // ← new import
+import 'package:pikuru/screens/group_history_screen.dart';
 import 'package:pikuru/services/notification_service.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
@@ -21,7 +22,7 @@ const _L = {
     'groupsJoined': 'Groups Joined',
     'noGroups': 'No groups',
     'join': 'Join',
-    'interestedGroups': 'Interested Groups',
+    'interestedGroups': 'Favorited Groups',
     'noneYet': 'None yet',
     'browse': 'Browse',
     'eventsJoined': 'Events Joined',
@@ -32,6 +33,8 @@ const _L = {
     'explore': 'Explore',
     'sectionAccount': 'Account',
     'editProfile': 'Edit Profile',
+    'joinedGroups': 'Joined Groups',
+    'joinedGroupsSub': 'View your joined and favorited groups',
     'eventsHistory': 'Events History',
     'resources': 'Resources',
     'organizerDashboard': 'Organizer Dashboard',
@@ -48,7 +51,7 @@ const _L = {
     'groupsJoined': '参加グループ',
     'noGroups': 'グループなし',
     'join': '参加',
-    'interestedGroups': '興味あるグループ',
+    'interestedGroups': 'お気に入り',
     'noneYet': 'まだなし',
     'browse': '探す',
     'eventsJoined': '参加イベント',
@@ -59,6 +62,8 @@ const _L = {
     'explore': '探索',
     'sectionAccount': 'アカウント',
     'editProfile': 'プロフィール編集',
+    'joinedGroups': '参加グループ',
+    'joinedGroupsSub': '参加・お気に入りのグループを確認',
     'eventsHistory': 'イベント履歴',
     'resources': 'リソース',
     'organizerDashboard': '主催者ダッシュボード',
@@ -433,6 +438,16 @@ class _AccountScreenState extends ConsumerState<AccountScreen>
                                     ),
                                   ),
                                   _MenuItem(
+                                    icon: Icons.groups_outlined,
+                                    label: t('joinedGroups'),
+                                    onTap: () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => const GroupHistoryScreen(),
+                                      ),
+                                    ),
+                                  ),
+                                  _MenuItem(
                                     icon: Icons.history_rounded,
                                     label: t('eventsHistory'),
                                     onTap: () => _goToEventHistory(),
@@ -611,12 +626,12 @@ class _AccountScreenState extends ConsumerState<AccountScreen>
     );
 
     if (shouldSignOut == true) {
+      await NotificationService.instance.removeToken();
+      await _clearGoogleSession();
       try {
         await FirebaseFirestore.instance.terminate();
         await FirebaseFirestore.instance.clearPersistence();
       } catch (_) {}
-      await NotificationService.instance.removeToken();
-      await _clearGoogleSession();
       await FirebaseAuth.instance.signOut();
       if (context.mounted) {
         Navigator.pushAndRemoveUntil(

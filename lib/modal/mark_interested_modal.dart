@@ -9,24 +9,24 @@ import 'package:pikuru/providers/app_language_provider.dart';
 // ─────────────────────────────────────────────────────────────────────────────
 const _L = {
   kLangEn: {
-    'alreadyInterested': 'You have already marked this group as interested',
-    'markTitle':         'Mark as Interested?',
-    'markBody':          'Save this group to your interests and stay updated on their events.',
+    'alreadyInterested': 'You have already added this group to favorites',
+    'markTitle':         'Add to Favorites?',
+    'markBody':          'Save this group to your favorites and stay updated on their events.',
     'cancel':            'Cancel',
-    'mark':              'Mark',
-    'pleaseSignIn':      'Please sign in to mark groups as interested',
-    'failedMark':        'Failed to mark as interested. Please try again.',
-    'successMsg':        'Group added to your interests!',
+    'mark':              'Favorite',
+    'pleaseSignIn':      'Please sign in to add groups to favorites',
+    'failedMark':        'Failed to add to favorites. Please try again.',
+    'successMsg':        'Group added to your favorites!',
   },
   kLangJa: {
-    'alreadyInterested': 'このグループはすでに興味ありに設定されています',
-    'markTitle':         '興味ありにしますか？',
-    'markBody':          'このグループを興味リストに保存し、イベント情報を受け取ることができます。',
+    'alreadyInterested': 'このグループはすでにお気に入りに登録されています',
+    'markTitle':         'お気に入りに追加しますか？',
+    'markBody':          'このグループをお気に入りに登録して、イベントの最新情報を受け取りましょう。',
     'cancel':            'キャンセル',
-    'mark':              '設定する',
-    'pleaseSignIn':      'グループに興味ありを設定するにはサインインしてください',
-    'failedMark':        '興味ありの設定に失敗しました。もう一度お試しください。',
-    'successMsg':        'グループを興味リストに追加しました！',
+    'mark':              'お気に入り',
+    'pleaseSignIn':      'グループをお気に入りに追加するにはサインインしてください',
+    'failedMark':        'お気に入りの追加に失敗しました。もう一度お試しください。',
+    'successMsg':        'グループをお気に入りに追加しました！',
   },
 };
 
