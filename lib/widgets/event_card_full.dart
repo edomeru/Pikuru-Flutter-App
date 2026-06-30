@@ -71,7 +71,7 @@ class EventCardFull extends ConsumerWidget {
     final tags = _buildTagStrings();
     final regClosed = _isRegistrationClosed();
 
-    return GestureDetector(
+    return PressScale(
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => EventDetailScreen(event: event)),
@@ -405,5 +405,35 @@ class EventCardFull extends ConsumerWidget {
       'Other':                   'その他',
     };
     return m[key] ?? key;
+  }
+}
+
+// ── Custom Interactive Tap Scaling Wrapper ─────────────────────────────────
+class PressScale extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+  const PressScale({super.key, required this.child, required this.onTap});
+
+  @override
+  State<PressScale> createState() => _PressScaleState();
+}
+
+class _PressScaleState extends State<PressScale> {
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _isPressed = true),
+      onTapUp: (_) => setState(() => _isPressed = false),
+      onTapCancel: () => setState(() => _isPressed = false),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        scale: _isPressed ? 0.965 : 1.0,
+        duration: const Duration(milliseconds: 90),
+        curve: Curves.easeOut,
+        child: widget.child,
+      ),
+    );
   }
 }

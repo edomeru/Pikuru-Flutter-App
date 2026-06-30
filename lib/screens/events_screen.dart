@@ -189,6 +189,9 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
   bool _loadingEvents = true;
   String? _loadError;
 
+  int _currentPage = 1;
+  static const int _itemsPerPage = 10;
+
   static const Color _bg         = Color(0xFFF7F8FA);
   static const Color _surface    = Color(0xFFFFFFFF);
   static const Color _cardBg     = Color(0xFFF0F4F1);
@@ -1331,6 +1334,23 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
       );
     }
 
+    final totalPages = (filtered.length / _itemsPerPage).ceil();
+    if (_currentPage > totalPages) {
+      _currentPage = totalPages > 0 ? 1 : 0;
+    }
+    if (_currentPage < 1 && totalPages > 0) {
+      _currentPage = 1;
+    }
+
+    final startIndex = (_currentPage - 1) * _itemsPerPage;
+    final endIndex = startIndex + _itemsPerPage;
+    final pageItems = totalPages > 0
+        ? filtered.sublist(
+            startIndex,
+            endIndex > filtered.length ? filtered.length : endIndex,
+          )
+        : <Map<String, dynamic>>[];
+
     return RefreshIndicator(
       onRefresh: _loadEventsDirectly,
       color: _green,
@@ -1339,9 +1359,12 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
         controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 110),
-        itemCount: filtered.length,
+        itemCount: pageItems.length + (totalPages > 1 ? 1 : 0),
         itemBuilder: (context, index) {
-          final event = filtered[index];
+          if (index == pageItems.length) {
+            return _buildPaginationRow(totalPages);
+          }
+          final event = pageItems[index];
           return EventCardFull(
             event: event,
             lang: isJa ? 'ja' : 'en',
@@ -1408,5 +1431,130 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
         ),
       ),
     ]);
+  }
+
+  Widget _buildPaginationRow(int totalPages) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12, bottom: 20),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Previous button
+          GestureDetector(
+            onTap: _currentPage <= 1
+                ? null
+                : () {
+                    setState(() => _currentPage--);
+                    _scrollController.animateTo(
+                      0,
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOut,
+                    );
+                  },
+            child: Opacity(
+              opacity: _currentPage <= 1 ? 0.35 : 1.0,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: _greenLight,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: _green.withOpacity(0.15)),
+                ),
+                child: Text(
+                  s.isJa ? '前へ' : 'Prev',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: _green,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // Page indicators / bubbles
+          ...List.generate(totalPages, (index) {
+            final page = index + 1;
+            final isCurrent = page == _currentPage;
+            return GestureDetector(
+              onTap: () {
+                setState(() => _currentPage = page);
+                _scrollController.animateTo(
+                  0,
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOut,
+                );
+              },
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: isCurrent ? _green : _greenLight,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: isCurrent ? _green : _green.withOpacity(0.1),
+                    width: 1,
+                  ),
+                  boxShadow: isCurrent
+                      ? [
+                          BoxShadow(
+                            color: _green.withOpacity(0.3),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          )
+                        ]
+                      : null,
+                ),
+                alignment: Alignment.center,
+                child: Text(
+                  '$page',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: isCurrent ? Colors.white : _green,
+                  ),
+                ),
+              ),
+            );
+          }),
+          const SizedBox(width: 8),
+
+          // Next button
+          GestureDetector(
+            onTap: _currentPage >= totalPages
+                ? null
+                : () {
+                    setState(() => _currentPage++);
+                    _scrollController.animateTo(
+                      0,
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeOut,
+                    );
+                  },
+            child: Opacity(
+              opacity: _currentPage >= totalPages ? 0.35 : 1.0,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color: _greenLight,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: _green.withOpacity(0.15)),
+                ),
+                child: Text(
+                  s.isJa ? '次へ' : 'Next',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: _green,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

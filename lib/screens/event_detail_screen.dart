@@ -846,7 +846,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
                     final orgName = s.isJa
                         ? (org['org_name_jp'] ?? org['org_name'] ?? '').toString()
                         : (org['org_name'] ?? '').toString();
-                    final orgLogo = (org['org_logo'] ?? '').toString();
+                    final orgLogo = (org['org_image'] ?? org['org_logo'] ?? '').toString();
                     if (orgName.isEmpty) return const SizedBox.shrink();
                     return _card(child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
