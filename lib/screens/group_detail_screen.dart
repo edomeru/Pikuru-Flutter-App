@@ -301,6 +301,19 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
     }
   }
 
+  // ── LEAVE handler ──────────────────────────────────────────────────────────
+  Future<void> _handleLeave(String lang) async {
+    final result = await GroupDetailModals.showLeave(
+      context,
+      widget.group,
+      lang: lang,
+      isFavorite: _isFavorite,
+    );
+    if (result != null && mounted) {
+      _loadMembershipStatus();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final lang = ref.watch(appLangProvider);
@@ -711,54 +724,96 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
                           ),
                         ]),
 
-                        // Open Chat Group button — shown to active members only
+                        // Open Chat Group + more-options popup — shown to active members only
                         if (isActive) ...[
                           const SizedBox(height: 12),
-                          GestureDetector(
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => GroupChatScreen(group: widget.group),
-                                ),
-                              );
-                            },
-                            child: Container(
-                              height: 52,
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  colors: [Color(0xFF2d6a3f), Color(0xFF4a9c5e)],
-                                  begin: Alignment.centerLeft,
-                                  end: Alignment.centerRight,
-                                ),
-                                borderRadius: BorderRadius.circular(12),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: AppColors.primary.withOpacity(0.3),
-                                    blurRadius: 16,
-                                    offset: const Offset(0, 6),
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  const Icon(Icons.chat_bubble_outline_rounded,
-                                      color: Colors.white, size: 20),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    _tr(lang, 'Open Chat Group', 'チャットグループを開く'),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
+                          Row(
+                            children: [
+                              // ── Open Chat Group ──────────────────────────
+                              Expanded(
+                                child: GestureDetector(
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => GroupChatScreen(group: widget.group),
+                                      ),
+                                    );
+                                  },
+                                  child: Container(
+                                    height: 52,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.primary,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        const Icon(Icons.chat_bubble_outline_rounded,
+                                            color: Colors.white, size: 20),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          _tr(lang, 'Open Chat Group', 'チャットグループを開く'),
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                ],
+                                ),
                               ),
-                            ),
+                              const SizedBox(width: 8),
+                              // ── More-options (⋮) popup ───────────────────
+                              PopupMenuButton<String>(
+                                onSelected: (value) {
+                                  if (value == 'leave') _handleLeave(lang);
+                                },
+                                tooltip: '',
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    side: BorderSide(color: Colors.grey.shade200, width: 1)),
+                                color: Colors.white,
+                                elevation: 4,
+                                itemBuilder: (_) => [
+                                  PopupMenuItem<String>(
+                                    value: 'leave',
+                                    child: Row(children: [
+                                      const Icon(Icons.logout_rounded,
+                                          color: Color(0xFFEF4444), size: 18),
+                                      const SizedBox(width: 10),
+                                      Text(
+                                        _tr(lang, 'Leave Group', 'グループから退会する'),
+                                        style: const TextStyle(
+                                          color: Color(0xFFEF4444),
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ]),
+                                  ),
+                                ],
+                                child: Container(
+                                  width: 52,
+                                  height: 52,
+                                  decoration: BoxDecoration(
+                                    color: Colors.transparent,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: AppColors.primary,
+                                      width: 2,
+                                    ),
+                                  ),
+                                  child: const Icon(Icons.more_vert_rounded,
+                                      color: AppColors.primary, size: 22),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
+
 
                         // Joined banner — only when active
                         if (isActive) ...[

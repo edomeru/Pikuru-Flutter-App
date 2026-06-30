@@ -29,6 +29,9 @@ class _C {
   static const toastError        = Color(0xFF4A1111);
   static const toastAccent       = Color(0xFF6ABF7A);
   static const toastErrAcc       = Color(0xFFFF4D4D);
+  static const leaveIconBg       = Color(0xFFFFECEB);
+  static const leaveIconColor    = Color(0xFFEF4444);
+  static const leaveBtnBg        = Color(0xFFEF4444);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -58,6 +61,11 @@ const _L = {
     'unfavoriteConfirm':  'Remove',
     'toastUnfavorite':    'Removed from favorites.',
     'errUnfavorite':      'Failed to remove from favorites.',
+    'leaveTitle':         'Leave the Group?',
+    'leaveSub':           "You will no longer be able to access the group's chat room.",
+    'leaveConfirm':       'Leave',
+    'toastLeave':         'You have left the group.',
+    'errLeave':           'Failed to leave the group.',
   },
   kLangJa: {
     'joinTitle':          'グループに参加しますか？',
@@ -77,6 +85,16 @@ const _L = {
     'errInterest':        'お気に入りの追加に失敗しました。',
     'errAlreadyInterest': 'このグループはすでにお気に入りに登録されています。',
     'toastInterest':      'お気に入りグループに追加しました！',
+    'unfavoriteTitle':    'お気に入りから削除しますか？',
+    'unfavoriteSub':      'このグループをお気に入りリストから削除します。',
+    'unfavoriteConfirm':  '削除',
+    'toastUnfavorite':    'お気に入りから削除しました。',
+    'errUnfavorite':      'お気に入りの削除に失敗しました。',
+    'leaveTitle':         'グループから退会しますか？',
+    'leaveSub':           'グループのチャットルームにアクセスできなくなります。',
+    'leaveConfirm':       '退会する',
+    'toastLeave':         'グループから退会しました。',
+    'errLeave':           '退会の処理に失敗しました。',
   },
 };
 
@@ -384,6 +402,82 @@ class GroupDetailModals {
       );
     }
     return deleteOk ? (currentStatus == 'active' ? 'active' : 'none') : null;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // LEAVE flow
+  // Writes status → 'none' (or deletes doc if is_favorite is false).
+  // Returns 'none' on success, null otherwise.
+  // ─────────────────────────────────────────────────────────────────────────
+  static Future<String?> showLeave(
+      BuildContext context,
+      Map<String, dynamic> group, {
+        String lang = kLangEn,
+        required bool isFavorite,
+      }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return null;
+
+    final groupId = resolveGroupId(group);
+    final docRef  = FirebaseFirestore.instance
+        .collection('user_groups')
+        .doc('${user.uid}_$groupId');
+
+    if (!context.mounted) return null;
+
+    // Step 1: confirm dialog
+    final shouldLeave = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: Colors.black.withOpacity(0.55),
+      builder: (_) => _LeaveConfirmDialog(lang: lang),
+    );
+    if (shouldLeave != true || !context.mounted) return null;
+
+    // Step 2: write / delete
+    bool spinnerActive = false;
+    final nav = Navigator.of(context, rootNavigator: false);
+
+    void showSpinner() {
+      spinnerActive = true;
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        barrierColor: Colors.black.withOpacity(0.4),
+        builder: (_) => const Center(
+          child: CircularProgressIndicator(color: _C.leaveBtnBg, strokeWidth: 3),
+        ),
+      );
+    }
+
+    void dismissSpinner() {
+      if (spinnerActive) { spinnerActive = false; if (nav.canPop()) nav.pop(); }
+    }
+
+    showSpinner();
+    bool writeOk = false;
+    try {
+      if (isFavorite) {
+        await docRef.set({
+          'status': 'none',
+        }, SetOptions(merge: true));
+      } else {
+        await docRef.delete();
+      }
+      writeOk = true;
+    } catch (e) {
+      debugPrint('❌ showLeave error: $e');
+    }
+    dismissSpinner();
+
+    if (context.mounted) {
+      _showToast(
+        context,
+        writeOk ? _t(lang, 'toastLeave') : _t(lang, 'errLeave'),
+        isError: !writeOk,
+      );
+    }
+    return writeOk ? 'none' : null;
   }
 
   // ── Toast ─────────────────────────────────────────────────────────────────
@@ -825,6 +919,90 @@ class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// _LeaveConfirmDialog
+// ─────────────────────────────────────────────────────────────────────────────
+class _LeaveConfirmDialog extends StatelessWidget {
+  final String lang;
+  const _LeaveConfirmDialog({required this.lang});
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 28),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(28, 36, 28, 28),
+        decoration: BoxDecoration(
+          color: _C.white,
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withOpacity(0.18),
+                blurRadius: 40, offset: const Offset(0, 16)),
+          ],
+        ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 72, height: 72,
+            decoration: const BoxDecoration(
+                color: _C.leaveIconBg, shape: BoxShape.circle),
+            child: const Icon(Icons.logout_rounded,
+                color: _C.leaveIconColor, size: 32),
+          ),
+          const SizedBox(height: 24),
+          Text(_t(lang, 'leaveTitle'),
+              style: const TextStyle(
+                  fontSize: 22, fontWeight: FontWeight.w800,
+                  color: _C.titleColor, letterSpacing: -0.3, height: 1.2),
+              textAlign: TextAlign.center),
+          const SizedBox(height: 12),
+          Text(_t(lang, 'leaveSub'),
+              style: const TextStyle(
+                  fontSize: 15, color: _C.subtitleColor, height: 1.55),
+              textAlign: TextAlign.center),
+          const SizedBox(height: 32),
+          Row(children: [
+            Expanded(
+              child: GestureDetector(
+                onTap: () => Navigator.pop(context, false),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  decoration: BoxDecoration(
+                      color: _C.cancelBg,
+                      borderRadius: BorderRadius.circular(50)),
+                  alignment: Alignment.center,
+                  child: Text(_t(lang, 'cancel'),
+                      style: const TextStyle(fontSize: 16,
+                          fontWeight: FontWeight.w700, color: _C.cancelText)),
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: GestureDetector(
+                onTap: () {
+                  HapticFeedback.lightImpact();
+                  Navigator.pop(context, true);
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  decoration: BoxDecoration(
+                      color: _C.leaveBtnBg,
+                      borderRadius: BorderRadius.circular(50)),
+                  alignment: Alignment.center,
+                  child: Text(_t(lang, 'leaveConfirm'),
+                      style: const TextStyle(fontSize: 16,
+                          fontWeight: FontWeight.w700, color: Colors.white)),
+                ),
+              ),
+            ),
+          ]),
+        ]),
       ),
     );
   }
