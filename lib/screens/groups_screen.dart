@@ -297,6 +297,9 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
     with AutomaticKeepAliveClientMixin {
   final TextEditingController _searchController = TextEditingController();
   GroupFilter _filter = const GroupFilter(orgCountry: 'Japan', orgPrefecture: 'Tokyo');
+  int _currentPage = 1;
+  static const int _pageSize = 10;
+  final ScrollController _scrollController = ScrollController();
 
   @override
   bool get wantKeepAlive => false;
@@ -312,6 +315,7 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
   @override
   void dispose() {
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -598,14 +602,86 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
           '_lang':              lang,
         }).toList();
 
+        // ── Pagination ────────────────────────────────────────────────
+        final totalPages = (enriched.length / _pageSize).ceil().clamp(1, 9999);
+        final safePage   = _currentPage.clamp(1, totalPages);
+        final startIdx   = (safePage - 1) * _pageSize;
+        final pageItems  = enriched.skip(startIdx).take(_pageSize).toList();
+
         return _PickleballRefresh(
           onRefresh: _refresh,
           child: ListView.builder(
-            key: ValueKey(lang),
+            key: ValueKey('$lang-$safePage'),
+            controller: _scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 110),
-            itemCount: enriched.length,
-            itemBuilder: (context, i) => GroupCardList(group: enriched[i]),
+            itemCount: pageItems.length + (totalPages > 1 ? 1 : 0),
+            itemBuilder: (context, i) {
+              if (i < pageItems.length) {
+                return _PressScaleGroup(child: GroupCardList(group: pageItems[i]));
+              }
+              // ── Page Bubble Controls ──────────────────────────────
+              return Padding(
+                padding: const EdgeInsets.only(top: 12, bottom: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Prev arrow
+                    _PageArrowBtn(
+                      enabled: safePage > 1,
+                      forward: false,
+                      onTap: () => _goToPage(safePage - 1),
+                    ),
+                    const SizedBox(width: 6),
+                    // Page number bubbles
+                    ...List.generate(totalPages, (idx) {
+                      final p = idx + 1;
+                      final isActive = p == safePage;
+                      final show = p == 1 || p == totalPages || (p - safePage).abs() <= 1;
+                      if (!show) return const SizedBox.shrink();
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        child: GestureDetector(
+                          onTap: () => _goToPage(p),
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 200),
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: isActive ? AppColors.primary : AppColors.primary.withOpacity(0.08),
+                              border: Border.all(
+                                color: isActive ? AppColors.primary : AppColors.primary.withOpacity(0.2),
+                              ),
+                              boxShadow: isActive
+                                  ? [BoxShadow(color: AppColors.primary.withOpacity(0.35), blurRadius: 10, offset: const Offset(0, 4))]
+                                  : [],
+                            ),
+                            child: Center(
+                              child: Text(
+                                '$p',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: isActive ? Colors.white : AppColors.primary.withOpacity(0.6),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                    const SizedBox(width: 6),
+                    // Next arrow
+                    _PageArrowBtn(
+                      enabled: safePage < totalPages,
+                      forward: true,
+                      onTap: () => _goToPage(safePage + 1),
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
         );
       },
@@ -679,6 +755,21 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
       ),
     ]);
   }
+
+  // ── Pagination helper ───────────────────────────────────────
+  void _goToPage(int page) {
+    setState(() => _currentPage = page);
+    // Scroll back to top of the list
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          0,
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeOutCubic,
+        );
+      }
+    });
+  }
 }
 
 // ── _LangButton ───────────────────────────────────────────────────────────────
@@ -706,9 +797,69 @@ class _LangButton extends StatelessWidget {
   }
 }
 
-// ── _Chip ─────────────────────────────────────────────────────────────────────
+// ── _Chip ─────────────────────────────────────────────────────────────────────────────
 class _Chip {
   final String label;
   final VoidCallback onRemove;
   const _Chip({required this.label, required this.onRemove});
+}
+
+// ── _PressScaleGroup: tactile press-scale wrapper for group cards ──────────────
+class _PressScaleGroup extends StatefulWidget {
+  final Widget child;
+  const _PressScaleGroup({required this.child});
+  @override
+  State<_PressScaleGroup> createState() => _PressScaleGroupState();
+}
+
+class _PressScaleGroupState extends State<_PressScaleGroup> {
+  bool _pressed = false;
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
+      behavior: HitTestBehavior.translucent,
+      child: AnimatedScale(
+        scale: _pressed ? 0.965 : 1.0,
+        duration: const Duration(milliseconds: 90),
+        curve: Curves.easeOut,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+// ── _PageArrowBtn: prev/next arrow button for pagination ────────────────────
+class _PageArrowBtn extends StatelessWidget {
+  final bool enabled;
+  final bool forward;
+  final VoidCallback onTap;
+  const _PageArrowBtn({required this.enabled, required this.forward, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      child: AnimatedOpacity(
+        opacity: enabled ? 1.0 : 0.25,
+        duration: const Duration(milliseconds: 200),
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppColors.primary.withOpacity(0.08),
+            border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+          ),
+          child: Icon(
+            forward ? Icons.chevron_right_rounded : Icons.chevron_left_rounded,
+            size: 20,
+            color: AppColors.primary,
+          ),
+        ),
+      ),
+    );
+  }
 }
