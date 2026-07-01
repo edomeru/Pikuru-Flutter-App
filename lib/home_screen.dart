@@ -6,7 +6,9 @@ import 'package:pikuru/widgets/group_card.dart';
 import 'package:pikuru/widgets/court_card.dart';
 import 'package:pikuru/providers/providers.dart';
 import 'package:pikuru/providers/app_language_provider.dart';
+import 'package:pikuru/providers/notification_provider.dart';
 import 'package:pikuru/screens/chats_screen.dart';
+import 'package:pikuru/screens/notifications_screen.dart';
 import 'package:pikuru/screens/what_is_pikuru_screen.dart';
 import 'package:pikuru/screens/about_pikuru_screen.dart';
 import 'package:pikuru/screens/event_detail_screen.dart';
@@ -15,6 +17,7 @@ import 'package:pikuru/screens/search_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Localised strings (mirrors the web app's T map)
@@ -488,6 +491,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final lang = ref.watch(appLangProvider);
+    final notificationsAsync = ref.watch(notificationProvider);
+    final notificationCount = notificationsAsync.valueOrNull?.length ?? 0;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -525,6 +530,65 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     onTap: () =>
                         ref.read(appLangProvider.notifier).setLang(kLangJa),
                   ),
+                ],
+              ),
+            ),
+          ),
+          // ── Notification bell icon with badge ───────────────────────────
+          Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: GestureDetector(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+              ),
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.notifications_none_rounded,
+                        color: AppColors.primary, size: 22),
+                  ),
+                  if (notificationCount > 0)
+                    Positioned(
+                      top: -4,
+                      right: -4,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 1),
+                        constraints: const BoxConstraints(
+                            minWidth: 18, minHeight: 18),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade500,
+                          borderRadius: BorderRadius.circular(10),
+                          border:
+                          Border.all(color: Colors.white, width: 1.5),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.red.withOpacity(0.4),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Text(
+                          notificationCount > 99 ? '99+' : '$notificationCount',
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            height: 1.2,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
