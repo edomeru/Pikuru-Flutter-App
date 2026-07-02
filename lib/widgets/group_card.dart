@@ -4,12 +4,14 @@ import 'package:pikuru/theme/material.dart';
 class GroupCard extends StatelessWidget {
   final String imageUrl;
   final String name;
+  final String description;
   final String location;
 
   const GroupCard({
     super.key,
     required this.imageUrl,
     required this.name,
+    this.description = '',
     required this.location,
   });
 
@@ -65,19 +67,19 @@ class GroupCard extends StatelessWidget {
                 child: ClipOval(
                   child: imageUrl.isNotEmpty
                       ? Image.network(
-                    imageUrl,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const Icon(
-                      Icons.groups,
-                      size: 36,
-                      color: AppColors.primary,
-                    ),
-                  )
+                          imageUrl,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => const Icon(
+                            Icons.groups,
+                            size: 36,
+                            color: AppColors.primary,
+                          ),
+                        )
                       : const Icon(
-                    Icons.groups,
-                    size: 36,
-                    color: AppColors.primary,
-                  ),
+                          Icons.groups,
+                          size: 36,
+                          color: AppColors.primary,
+                        ),
                 ),
               ),
             ),
@@ -110,6 +112,19 @@ class GroupCard extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
+                if (description.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    description,
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      color: Colors.black54,
+                      height: 1.25,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
                 const SizedBox(height: 6),
                 Row(
                   children: [

@@ -16,11 +16,12 @@ typedef Lang = String; // 'en' | 'ja'
 // buildLocMap
 // ─────────────────────────────────────────────────────────────────────────────
 Map<String, Map<String, dynamic>> buildLocMap(
-    List<Map<String, dynamic>> locations) {
+  List<Map<String, dynamic>> locations,
+) {
   final map = <String, Map<String, dynamic>>{};
   for (final d in locations) {
     final docId = (d['_doc_id'] ?? '').toString();
-    final locId = (d['loc_id']  ?? '').toString();
+    final locId = (d['loc_id'] ?? '').toString();
     if (docId.isNotEmpty) map[docId] = d;
     if (locId.isNotEmpty) map[locId] = d;
   }
@@ -31,54 +32,66 @@ Map<String, Map<String, dynamic>> buildLocMap(
 // resolveLocation
 // ─────────────────────────────────────────────────────────────────────────────
 String resolveLocation(
-    Map<String, dynamic> g,
-    Map<String, Map<String, dynamic>> locMap,
-    Lang lang,
-    ) {
+  Map<String, dynamic> g,
+  Map<String, Map<String, dynamic>> locMap,
+  Lang lang,
+) {
   String cityEn = '', city = '', prefEn = '', pref = '', country = '';
   final locId = (g['org_loc_id'] ?? '').toString();
   if (locId.isNotEmpty && locMap.containsKey(locId)) {
     final d = locMap[locId]!;
-    cityEn  = (d['loc_city_en']      ?? '').toString().trim();
-    city    = (d['loc_city']          ?? '').toString().trim();
-    prefEn  = (d['loc_prefecture_en'] ?? '').toString().trim();
-    pref    = (d['loc_prefecture']    ?? '').toString().trim();
-    country = (d['loc_country']       ?? '').toString().trim();
+    cityEn = (d['loc_city_en'] ?? '').toString().trim();
+    city = (d['loc_city'] ?? '').toString().trim();
+    prefEn = (d['loc_prefecture_en'] ?? '').toString().trim();
+    pref = (d['loc_prefecture'] ?? '').toString().trim();
+    country = (d['loc_country'] ?? '').toString().trim();
   }
   if (lang == 'ja') {
     if (prefEn.isEmpty && pref.isEmpty)
-      pref = (g['org_prefecture_jp'] ?? g['org_prefecture'] ?? '').toString().trim();
+      pref = (g['org_prefecture_jp'] ?? g['org_prefecture'] ?? '')
+          .toString()
+          .trim();
     if (cityEn.isEmpty && city.isEmpty)
       city = (g['org_city_jp'] ?? g['org_city'] ?? '').toString().trim();
   } else {
     if (prefEn.isEmpty) prefEn = (g['org_prefecture'] ?? '').toString().trim();
-    if (cityEn.isEmpty) cityEn = (g['org_city']       ?? '').toString().trim();
+    if (cityEn.isEmpty) cityEn = (g['org_city'] ?? '').toString().trim();
   }
   if (country.isEmpty) country = (g['org_country'] ?? '').toString().trim();
 
-  final c = lang == 'ja' ? (city.isNotEmpty ? city : cityEn) : (cityEn.isNotEmpty ? cityEn : city);
-  final p = lang == 'ja' ? (pref.isNotEmpty ? pref : prefEn) : (prefEn.isNotEmpty ? prefEn : pref);
+  final c = lang == 'ja'
+      ? (city.isNotEmpty ? city : cityEn)
+      : (cityEn.isNotEmpty ? cityEn : city);
+  final p = lang == 'ja'
+      ? (pref.isNotEmpty ? pref : prefEn)
+      : (prefEn.isNotEmpty ? prefEn : pref);
 
   String loc;
-  if (c.isNotEmpty && p.isNotEmpty)            loc = '$c, $p';
-  else if (c.isNotEmpty && country.isNotEmpty) loc = '$c, $country';
-  else                                         loc = c.isNotEmpty ? c : (p.isNotEmpty ? p : country);
+  if (c.isNotEmpty && p.isNotEmpty)
+    loc = '$c, $p';
+  else if (c.isNotEmpty && country.isNotEmpty)
+    loc = '$c, $country';
+  else
+    loc = c.isNotEmpty ? c : (p.isNotEmpty ? p : country);
 
   final venue = (g['org_venue_loc_name'] ?? '').toString().trim();
   if (venue.isNotEmpty && loc.isNotEmpty) return '$venue - $loc';
-  if (venue.isNotEmpty)                   return venue;
+  if (venue.isNotEmpty) return venue;
   return loc;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // resolveCity — always EN, used only for sorting
 // ─────────────────────────────────────────────────────────────────────────────
-String resolveCity(Map<String, dynamic> g, Map<String, Map<String, dynamic>> locMap) {
+String resolveCity(
+  Map<String, dynamic> g,
+  Map<String, Map<String, dynamic>> locMap,
+) {
   final locId = (g['org_loc_id'] ?? '').toString();
   if (locId.isNotEmpty && locMap.containsKey(locId)) {
-    final d  = locMap[locId]!;
+    final d = locMap[locId]!;
     final en = (d['loc_city_en'] ?? '').toString().trim();
-    final ja = (d['loc_city']    ?? '').toString().trim();
+    final ja = (d['loc_city'] ?? '').toString().trim();
     if (en.isNotEmpty) return en;
     if (ja.isNotEmpty) return ja;
   }
@@ -96,38 +109,77 @@ String resolveGroupName(Map<String, dynamic> g, Lang lang) {
   return (g['org_name'] ?? '').toString().trim();
 }
 
+String resolveGroupDescription(Map<String, dynamic> g, Lang lang) {
+  if (lang == 'ja') {
+    final jp = (g['org_description_jp'] ?? '').toString().trim();
+    if (jp.isNotEmpty && jp != 'null') return jp;
+  }
+  final en = (g['org_description'] ?? '').toString().trim();
+  return en == 'null' ? '' : en;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Localised strings
 // ─────────────────────────────────────────────────────────────────────────────
 class _T {
-  final String searchHint, title, noResults, noMatch, noMatchSub, addGroup, langEn, langJa;
+  final String searchHint,
+      title,
+      noResults,
+      noMatch,
+      noMatchSub,
+      addGroup,
+      langEn,
+      langJa;
   final bool isJa;
-  const _T({required this.searchHint, required this.title, required this.noResults,
-    required this.noMatch, required this.noMatchSub, required this.addGroup,
-    required this.langEn, required this.langJa, required this.isJa});
+  const _T({
+    required this.searchHint,
+    required this.title,
+    required this.noResults,
+    required this.noMatch,
+    required this.noMatchSub,
+    required this.addGroup,
+    required this.langEn,
+    required this.langJa,
+    required this.isJa,
+  });
 
-  static const en = _T(searchHint: 'Search local groups...', title: 'Groups',
-      noResults: 'No groups found.', noMatch: 'No groups match your search or filters.',
-      noMatchSub: 'Try adjusting your filters.', addGroup: 'Add a Group',
-      langEn: 'EN', langJa: '日本語', isJa: false);
-  static const ja = _T(searchHint: '地元のグループを検索...', title: 'グループ',
-      noResults: 'グループが見つかりませんでした。', noMatch: '検索やフィルターに一致するグループがありません。',
-      noMatchSub: 'フィルターを調整してみてください。', addGroup: 'グループ作成',
-      langEn: 'EN', langJa: '日本語', isJa: true);
+  static const en = _T(
+    searchHint: 'Search local groups...',
+    title: 'Groups',
+    noResults: 'No groups found.',
+    noMatch: 'No groups match your search or filters.',
+    noMatchSub: 'Try adjusting your filters.',
+    addGroup: 'Add a Group',
+    langEn: 'EN',
+    langJa: '日本語',
+    isJa: false,
+  );
+  static const ja = _T(
+    searchHint: '地元のグループを検索...',
+    title: 'グループ',
+    noResults: 'グループが見つかりませんでした。',
+    noMatch: '検索やフィルターに一致するグループがありません。',
+    noMatchSub: 'フィルターを調整してみてください。',
+    addGroup: 'グループ作成',
+    langEn: 'EN',
+    langJa: '日本語',
+    isJa: true,
+  );
   static _T of(Lang lang) => lang == 'ja' ? ja : en;
 
-  String get chipBeginner     => isJa ? '初級'     : 'Beginner';
-  String get chipIntermediate => isJa ? '中級'     : 'Intermediate';
-  String get chipAdvanced     => isJa ? '上級'     : 'Advanced';
-  String get chipJuniors      => isJa ? 'ジュニア' : 'Juniors';
-  String get chipStudents     => isJa ? '学生'     : 'Students';
-  String get chipAdults       => isJa ? '大人'     : 'Adults';
-  String get chipSeniors      => isJa ? 'シニア'   : 'Seniors';
-  String get chipMornings     => isJa ? '午前'     : 'Mornings';
-  String get chipAfternoons   => isJa ? '午後'     : 'Afternoons';
-  String get chipEvenings     => isJa ? '夜間'     : 'Evenings';
-  List<String> get chipDays   => isJa ? ['日','月','火','水','木','金','土']
-      : ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  String get chipBeginner => isJa ? '初級' : 'Beginner';
+  String get chipIntermediate => isJa ? '中級' : 'Intermediate';
+  String get chipAdvanced => isJa ? '上級' : 'Advanced';
+  String get chipJuniors => isJa ? 'ジュニア' : 'Juniors';
+  String get chipStudents => isJa ? '学生' : 'Students';
+  String get chipAdults => isJa ? '大人' : 'Adults';
+  String get chipSeniors => isJa ? 'シニア' : 'Seniors';
+  String get chipMornings => isJa ? '午前' : 'Mornings';
+  String get chipAfternoons => isJa ? '午後' : 'Afternoons';
+  String get chipEvenings => isJa ? '夜間' : 'Evenings';
+  List<String> get chipDays => isJa
+      ? ['日', '月', '火', '水', '木', '金', '土']
+      : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -139,10 +191,7 @@ class _PickleballRefresh extends StatefulWidget {
   final Widget child;
   final Future<void> Function() onRefresh;
 
-  const _PickleballRefresh({
-    required this.child,
-    required this.onRefresh,
-  });
+  const _PickleballRefresh({required this.child, required this.onRefresh});
 
   @override
   State<_PickleballRefresh> createState() => _PickleballRefreshState();
@@ -152,15 +201,15 @@ class _PickleballRefreshState extends State<_PickleballRefresh>
     with SingleTickerProviderStateMixin {
   static const double _triggerDistance = 80.0;
   // spinner size inside the white circle (matches Material RefreshIndicator)
-  static const double _spinnerSize     = 22.0;
+  static const double _spinnerSize = 22.0;
   // white circle diameter (matches Material RefreshIndicator pill size)
-  static const double _circleSize      = 40.0;
+  static const double _circleSize = 40.0;
 
   late AnimationController _spinController;
 
-  double  _dragOffset   = 0.0;
-  bool    _isRefreshing = false;
-  bool    _triggered    = false;
+  double _dragOffset = 0.0;
+  bool _isRefreshing = false;
+  bool _triggered = false;
 
   @override
   void initState() {
@@ -182,8 +231,10 @@ class _PickleballRefreshState extends State<_PickleballRefresh>
 
     if (notification is OverscrollNotification && notification.overscroll < 0) {
       setState(() {
-        _dragOffset = (_dragOffset - notification.overscroll)
-            .clamp(0.0, _triggerDistance * 1.4);
+        _dragOffset = (_dragOffset - notification.overscroll).clamp(
+          0.0,
+          _triggerDistance * 1.4,
+        );
         _triggered = _dragOffset >= _triggerDistance;
       });
       if (_triggered && !_spinController.isAnimating) {
@@ -205,7 +256,7 @@ class _PickleballRefreshState extends State<_PickleballRefresh>
   Future<void> _startRefresh() async {
     setState(() {
       _isRefreshing = true;
-      _dragOffset   = _triggerDistance;
+      _dragOffset = _triggerDistance;
     });
     if (!_spinController.isAnimating) _spinController.repeat();
     await widget.onRefresh();
@@ -215,15 +266,15 @@ class _PickleballRefreshState extends State<_PickleballRefresh>
   void _resetDrag() {
     _spinController.stop();
     setState(() {
-      _dragOffset   = 0.0;
+      _dragOffset = 0.0;
       _isRefreshing = false;
-      _triggered    = false;
+      _triggered = false;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final progress         = (_dragOffset / _triggerDistance).clamp(0.0, 1.0);
+    final progress = (_dragOffset / _triggerDistance).clamp(0.0, 1.0);
     final indicatorVisible = _dragOffset > 4.0;
 
     return NotificationListener<ScrollNotification>(
@@ -234,7 +285,9 @@ class _PickleballRefreshState extends State<_PickleballRefresh>
             duration: _isRefreshing
                 ? const Duration(milliseconds: 200)
                 : Duration.zero,
-            padding: EdgeInsets.only(top: _dragOffset.clamp(0.0, _triggerDistance)),
+            padding: EdgeInsets.only(
+              top: _dragOffset.clamp(0.0, _triggerDistance),
+            ),
             child: widget.child,
           ),
           if (indicatorVisible)
@@ -249,7 +302,7 @@ class _PickleballRefreshState extends State<_PickleballRefresh>
                     opacity: progress.clamp(0.2, 1.0),
                     // ── White circle card — identical to RefreshIndicator's pill ──
                     child: Container(
-                      width:  _circleSize,
+                      width: _circleSize,
                       height: _circleSize,
                       decoration: BoxDecoration(
                         color: Colors.white,
@@ -264,12 +317,14 @@ class _PickleballRefreshState extends State<_PickleballRefresh>
                       ),
                       child: Center(
                         child: SizedBox(
-                          width:  _spinnerSize,
+                          width: _spinnerSize,
                           height: _spinnerSize,
                           child: CircularProgressIndicator(
                             color: AppColors.primary,
                             strokeWidth: 2.5,
-                            value: _isRefreshing || _triggered ? null : progress,
+                            value: _isRefreshing || _triggered
+                                ? null
+                                : progress,
                           ),
                         ),
                       ),
@@ -296,7 +351,10 @@ class GroupsScreen extends ConsumerStatefulWidget {
 class _GroupsScreenState extends ConsumerState<GroupsScreen>
     with AutomaticKeepAliveClientMixin {
   final TextEditingController _searchController = TextEditingController();
-  GroupFilter _filter = const GroupFilter(orgCountry: 'Japan', orgPrefecture: 'Tokyo');
+  GroupFilter _filter = const GroupFilter(
+    orgCountry: 'Japan',
+    orgPrefecture: 'Tokyo',
+  );
   int _currentPage = 1;
   static const int _pageSize = 10;
   final ScrollController _scrollController = ScrollController();
@@ -342,7 +400,10 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => GroupFilterModal(
-        currentFilter: _filter, allGroups: allGroups, locMap: locMap, lang: lang,
+        currentFilter: _filter,
+        allGroups: allGroups,
+        locMap: locMap,
+        lang: lang,
       ),
     );
     if (result != null && mounted) setState(() => _filter = result);
@@ -350,46 +411,104 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
 
   List<_Chip> _activeChips(_T t) {
     final chips = <_Chip>[];
-    void add(String label, VoidCallback remove) => chips.add(_Chip(label: label, onRemove: remove));
+    void add(String label, VoidCallback remove) =>
+        chips.add(_Chip(label: label, onRemove: remove));
 
     if (_filter.orgPrefecture != null)
-      add(_filter.orgPrefecture!, () => setState(() => _filter = _filter.copyWith(orgPrefecture: null, orgCity: null)));
+      add(
+        _filter.orgPrefecture!,
+        () => setState(
+          () => _filter = _filter.copyWith(orgPrefecture: null, orgCity: null),
+        ),
+      );
     if (_filter.orgCity != null)
-      add(_filter.orgCity!, () => setState(() => _filter = _filter.copyWith(orgCity: null)));
+      add(
+        _filter.orgCity!,
+        () => setState(() => _filter = _filter.copyWith(orgCity: null)),
+      );
     if (_filter.orgSkillBeginner)
-      add(t.chipBeginner, () => setState(() => _filter = _filter.copyWith(orgSkillBeginner: false)));
+      add(
+        t.chipBeginner,
+        () =>
+            setState(() => _filter = _filter.copyWith(orgSkillBeginner: false)),
+      );
     if (_filter.orgSkillIntermediate)
-      add(t.chipIntermediate, () => setState(() => _filter = _filter.copyWith(orgSkillIntermediate: false)));
+      add(
+        t.chipIntermediate,
+        () => setState(
+          () => _filter = _filter.copyWith(orgSkillIntermediate: false),
+        ),
+      );
     if (_filter.orgSkillAdvance)
-      add(t.chipAdvanced, () => setState(() => _filter = _filter.copyWith(orgSkillAdvance: false)));
+      add(
+        t.chipAdvanced,
+        () =>
+            setState(() => _filter = _filter.copyWith(orgSkillAdvance: false)),
+      );
     if (_filter.orgAgeJuniors)
-      add(t.chipJuniors, () => setState(() => _filter = _filter.copyWith(orgAgeJuniors: false)));
+      add(
+        t.chipJuniors,
+        () => setState(() => _filter = _filter.copyWith(orgAgeJuniors: false)),
+      );
     if (_filter.orgAgeStudents)
-      add(t.chipStudents, () => setState(() => _filter = _filter.copyWith(orgAgeStudents: false)));
+      add(
+        t.chipStudents,
+        () => setState(() => _filter = _filter.copyWith(orgAgeStudents: false)),
+      );
     if (_filter.orgAgeAdult)
-      add(t.chipAdults, () => setState(() => _filter = _filter.copyWith(orgAgeAdult: false)));
+      add(
+        t.chipAdults,
+        () => setState(() => _filter = _filter.copyWith(orgAgeAdult: false)),
+      );
     if (_filter.orgAgeSeniors)
-      add(t.chipSeniors, () => setState(() => _filter = _filter.copyWith(orgAgeSeniors: false)));
+      add(
+        t.chipSeniors,
+        () => setState(() => _filter = _filter.copyWith(orgAgeSeniors: false)),
+      );
 
-    final days    = t.chipDays;
-    final getters = [_filter.orgMeetupSun, _filter.orgMeetupMon, _filter.orgMeetupTues,
-      _filter.orgMeetupWeds, _filter.orgMeetupThurs, _filter.orgMeetupFri, _filter.orgMeetupSat];
-    final setters = <VoidCallback>[
-          () => setState(() => _filter = _filter.copyWith(orgMeetupSun:   false)),
-          () => setState(() => _filter = _filter.copyWith(orgMeetupMon:   false)),
-          () => setState(() => _filter = _filter.copyWith(orgMeetupTues:  false)),
-          () => setState(() => _filter = _filter.copyWith(orgMeetupWeds:  false)),
-          () => setState(() => _filter = _filter.copyWith(orgMeetupThurs: false)),
-          () => setState(() => _filter = _filter.copyWith(orgMeetupFri:   false)),
-          () => setState(() => _filter = _filter.copyWith(orgMeetupSat:   false)),
+    final days = t.chipDays;
+    final getters = [
+      _filter.orgMeetupSun,
+      _filter.orgMeetupMon,
+      _filter.orgMeetupTues,
+      _filter.orgMeetupWeds,
+      _filter.orgMeetupThurs,
+      _filter.orgMeetupFri,
+      _filter.orgMeetupSat,
     ];
-    for (var i = 0; i < 7; i++) { if (getters[i]) add(days[i], setters[i]); }
+    final setters = <VoidCallback>[
+      () => setState(() => _filter = _filter.copyWith(orgMeetupSun: false)),
+      () => setState(() => _filter = _filter.copyWith(orgMeetupMon: false)),
+      () => setState(() => _filter = _filter.copyWith(orgMeetupTues: false)),
+      () => setState(() => _filter = _filter.copyWith(orgMeetupWeds: false)),
+      () => setState(() => _filter = _filter.copyWith(orgMeetupThurs: false)),
+      () => setState(() => _filter = _filter.copyWith(orgMeetupFri: false)),
+      () => setState(() => _filter = _filter.copyWith(orgMeetupSat: false)),
+    ];
+    for (var i = 0; i < 7; i++) {
+      if (getters[i]) add(days[i], setters[i]);
+    }
     if (_filter.orgMeetupTimeMornings)
-      add(t.chipMornings, () => setState(() => _filter = _filter.copyWith(orgMeetupTimeMornings: false)));
+      add(
+        t.chipMornings,
+        () => setState(
+          () => _filter = _filter.copyWith(orgMeetupTimeMornings: false),
+        ),
+      );
     if (_filter.orgMeetupTimeAfternoons)
-      add(t.chipAfternoons, () => setState(() => _filter = _filter.copyWith(orgMeetupTimeAfternoons: false)));
+      add(
+        t.chipAfternoons,
+        () => setState(
+          () => _filter = _filter.copyWith(orgMeetupTimeAfternoons: false),
+        ),
+      );
     if (_filter.orgMeetupTimeEvenings)
-      add(t.chipEvenings, () => setState(() => _filter = _filter.copyWith(orgMeetupTimeEvenings: false)));
+      add(
+        t.chipEvenings,
+        () => setState(
+          () => _filter = _filter.copyWith(orgMeetupTimeEvenings: false),
+        ),
+      );
     return chips;
   }
 
@@ -397,37 +516,60 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
   Widget build(BuildContext context) {
     super.build(context);
 
-    final lang          = ref.watch(appLangProvider);
-    final t             = _T.of(lang);
+    final lang = ref.watch(appLangProvider);
+    final t = _T.of(lang);
     final showAddButton = ref.watch(showAddGroupButtonProvider);
-    final groupsAsync   = ref.watch(organizationsProvider);
-    final locMap        = buildLocMap(ref.watch(locationsProvider).asData?.value ?? []);
-    final allGroups     = groupsAsync.asData?.value ?? [];
+    final groupsAsync = ref.watch(organizationsProvider);
+    final locMap = buildLocMap(
+      ref.watch(locationsProvider).asData?.value ?? [],
+    );
+    final allGroups = groupsAsync.asData?.value ?? [];
 
-    final validGroups = allGroups.where((g) {
-      if (g['org_type']           != 'Local Group') return false;
-      if (g['org_public']         != true)          return false;
-      if (g['org_pending_review'] == true)          return false;
-      return true;
-    }).toList()
-      ..sort((a, b) {
-        final ca = resolveCity(a, locMap).toLowerCase();
-        final cb = resolveCity(b, locMap).toLowerCase();
-        return ca.compareTo(cb);
-      });
+    final validGroups =
+        allGroups.where((g) {
+          if (g['org_type'] != 'Local Group') return false;
+          if (g['org_public'] != true) return false;
+          if (g['org_pending_review'] == true) return false;
+          return true;
+        }).toList()..sort((a, b) {
+          final ca = resolveCity(a, locMap).toLowerCase();
+          final cb = resolveCity(b, locMap).toLowerCase();
+          return ca.compareTo(cb);
+        });
 
     return Scaffold(
       backgroundColor: const Color(0xFFF7F8FA),
       body: SafeArea(
-        child: Stack(children: [
-          Column(children: [
-            _buildHeader(t: t, lang: lang, allGroups: validGroups, locMap: locMap),
-            Expanded(child: _buildGroupsList(t, groupsAsync, validGroups, locMap, lang)),
-          ]),
-          if (showAddButton)
-            Positioned(bottom: 24, left: 0, right: 0,
-                child: Center(child: _buildAddGroupButton(t))),
-        ]),
+        child: Stack(
+          children: [
+            Column(
+              children: [
+                _buildHeader(
+                  t: t,
+                  lang: lang,
+                  allGroups: validGroups,
+                  locMap: locMap,
+                ),
+                Expanded(
+                  child: _buildGroupsList(
+                    t,
+                    groupsAsync,
+                    validGroups,
+                    locMap,
+                    lang,
+                  ),
+                ),
+              ],
+            ),
+            if (showAddButton)
+              Positioned(
+                bottom: 24,
+                left: 0,
+                right: 0,
+                child: Center(child: _buildAddGroupButton(t)),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -442,93 +584,187 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Expanded(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(t.title, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w800,
-                  color: Color(0xFF0D0D0D), letterSpacing: -0.5)),
-              if (_filter.orgPrefecture != null)
-                Padding(padding: const EdgeInsets.only(top: 2),
-                  child: Row(children: [
-                    Icon(Icons.location_on_rounded, size: 12, color: AppColors.primary),
-                    const SizedBox(width: 3),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      [_filter.orgPrefecture, if (_filter.orgCity != null) _filter.orgCity]
-                          .whereType<String>().join(', '),
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.primary),
+                      t.title,
+                      style: const TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF0D0D0D),
+                        letterSpacing: -0.5,
+                      ),
                     ),
-                  ]),
+                    if (_filter.orgPrefecture != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.location_on_rounded,
+                              size: 12,
+                              color: AppColors.primary,
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              [
+                                _filter.orgPrefecture,
+                                if (_filter.orgCity != null) _filter.orgCity,
+                              ].whereType<String>().join(', '),
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
                 ),
-            ]),
-          ),
-          Row(mainAxisSize: MainAxisSize.min, children: [
-            GestureDetector(
-              onTap: () => _openFilter(allGroups: allGroups, locMap: locMap, lang: lang),
-              child: Stack(clipBehavior: Clip.none, children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: 42, height: 42,
-                  decoration: BoxDecoration(
-                    color: _hasActiveFilter ? AppColors.primary : AppColors.primary.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(Icons.tune_rounded,
-                      color: _hasActiveFilter ? Colors.white : AppColors.primary, size: 20),
-                ),
-                if (_hasActiveFilter)
-                  Positioned(top: -3, right: -3,
-                      child: Container(width: 10, height: 10,
-                          decoration: const BoxDecoration(color: Colors.orangeAccent, shape: BoxShape.circle))),
-              ]),
-            ),
-            const SizedBox(width: 10),
-            Container(
-              decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.10),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: AppColors.primary.withOpacity(0.18)),
               ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                _LangButton(label: t.langEn, selected: lang == 'en',
-                    onTap: () => ref.read(appLangProvider.notifier).setLang('en')),
-                _LangButton(label: t.langJa, selected: lang == 'ja',
-                    onTap: () => ref.read(appLangProvider.notifier).setLang('ja')),
-              ]),
-            ),
-          ]),
-        ]),
-        const SizedBox(height: 14),
-        Container(
-          height: 48,
-          decoration: BoxDecoration(color: const Color(0xFFF2F3F5), borderRadius: BorderRadius.circular(14)),
-          child: TextField(
-            controller: _searchController,
-            onChanged: (_) => setState(() {}),
-            style: const TextStyle(fontSize: 15, color: Color(0xFF0D0D0D)),
-            decoration: InputDecoration(
-              hintText: t.searchHint,
-              hintStyle: TextStyle(color: Colors.black.withOpacity(0.35), fontSize: 15, fontWeight: FontWeight.w400),
-              prefixIcon: Icon(Icons.search_rounded, color: Colors.black.withOpacity(0.35), size: 22),
-              suffixIcon: _searchController.text.isNotEmpty
-                  ? GestureDetector(onTap: () => setState(() => _searchController.clear()),
-                  child: Icon(Icons.close_rounded, color: Colors.black.withOpacity(0.35), size: 20))
-                  : null,
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  GestureDetector(
+                    onTap: () => _openFilter(
+                      allGroups: allGroups,
+                      locMap: locMap,
+                      lang: lang,
+                    ),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: _hasActiveFilter
+                                ? AppColors.primary
+                                : AppColors.primary.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            Icons.tune_rounded,
+                            color: _hasActiveFilter
+                                ? Colors.white
+                                : AppColors.primary,
+                            size: 20,
+                          ),
+                        ),
+                        if (_hasActiveFilter)
+                          Positioned(
+                            top: -3,
+                            right: -3,
+                            child: Container(
+                              width: 10,
+                              height: 10,
+                              decoration: const BoxDecoration(
+                                color: Colors.orangeAccent,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.10),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: AppColors.primary.withOpacity(0.18),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _LangButton(
+                          label: t.langEn,
+                          selected: lang == 'en',
+                          onTap: () =>
+                              ref.read(appLangProvider.notifier).setLang('en'),
+                        ),
+                        _LangButton(
+                          label: t.langJa,
+                          selected: lang == 'ja',
+                          onTap: () =>
+                              ref.read(appLangProvider.notifier).setLang('ja'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ),
-        ),
-        const SizedBox(height: 10),
-        if (chips.isNotEmpty) ...[
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(children: [...chips.map((c) => _buildFilterChip(c)), const SizedBox(width: 4)]),
+          const SizedBox(height: 14),
+          Container(
+            height: 48,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF2F3F5),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: TextField(
+              controller: _searchController,
+              onChanged: (_) => setState(() {}),
+              style: const TextStyle(fontSize: 15, color: Color(0xFF0D0D0D)),
+              decoration: InputDecoration(
+                hintText: t.searchHint,
+                hintStyle: TextStyle(
+                  color: Colors.black.withOpacity(0.35),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w400,
+                ),
+                prefixIcon: Icon(
+                  Icons.search_rounded,
+                  color: Colors.black.withOpacity(0.35),
+                  size: 22,
+                ),
+                suffixIcon: _searchController.text.isNotEmpty
+                    ? GestureDetector(
+                        onTap: () => setState(() => _searchController.clear()),
+                        child: Icon(
+                          Icons.close_rounded,
+                          color: Colors.black.withOpacity(0.35),
+                          size: 20,
+                        ),
+                      )
+                    : null,
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
+              ),
+            ),
           ),
           const SizedBox(height: 10),
+          if (chips.isNotEmpty) ...[
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  ...chips.map((c) => _buildFilterChip(c)),
+                  const SizedBox(width: 4),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+          Container(height: 1, color: const Color(0xFFEEEFF1)),
         ],
-        Container(height: 1, color: const Color(0xFFEEEFF1)),
-      ]),
+      ),
     );
   }
 
@@ -541,12 +777,28 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: AppColors.primary.withOpacity(0.3)),
       ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Text(chip.label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.primary)),
-        const SizedBox(width: 4),
-        GestureDetector(onTap: chip.onRemove,
-            child: Icon(Icons.close_rounded, size: 13, color: AppColors.primary)),
-      ]),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            chip.label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(width: 4),
+          GestureDetector(
+            onTap: chip.onRemove,
+            child: Icon(
+              Icons.close_rounded,
+              size: 13,
+              color: AppColors.primary,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -554,9 +806,12 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
   // GROUPS LIST — wrapped in _PickleballRefresh for all states
   // ─────────────────────────────────────────────────────────────────────────
   Widget _buildGroupsList(
-      _T t, AsyncValue<List<Map<String, dynamic>>> groupsAsync,
-      List<Map<String, dynamic>> validGroups,
-      Map<String, Map<String, dynamic>> locMap, Lang lang) {
+    _T t,
+    AsyncValue<List<Map<String, dynamic>>> groupsAsync,
+    List<Map<String, dynamic>> validGroups,
+    Map<String, Map<String, dynamic>> locMap,
+    Lang lang,
+  ) {
     return groupsAsync.when(
       data: (_) {
         if (validGroups.isEmpty) {
@@ -573,11 +828,24 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
         }
 
         final query = _searchController.text.toLowerCase().trim();
-        var filtered = query.isEmpty ? validGroups : validGroups.where((g) {
-          final nameEn = (g['org_name']    ?? '').toString().toLowerCase();
-          final nameJp = (g['org_name_jp'] ?? '').toString().toLowerCase();
-          return nameEn.contains(query) || nameJp.contains(query);
-        }).toList();
+        var filtered = query.isEmpty
+            ? validGroups
+            : validGroups.where((g) {
+                final nameEn = (g['org_name'] ?? '').toString().toLowerCase();
+                final nameJp = (g['org_name_jp'] ?? '')
+                    .toString()
+                    .toLowerCase();
+                final descEn = (g['org_description'] ?? '')
+                    .toString()
+                    .toLowerCase();
+                final descJp = (g['org_description_jp'] ?? '')
+                    .toString()
+                    .toLowerCase();
+                return nameEn.contains(query) ||
+                    nameJp.contains(query) ||
+                    descEn.contains(query) ||
+                    descJp.contains(query);
+              }).toList();
         filtered = filtered.where((g) => _filter.matches(g, locMap)).toList();
 
         if (filtered.isEmpty) {
@@ -587,26 +855,33 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
               physics: const AlwaysScrollableScrollPhysics(),
               child: SizedBox(
                 height: 400,
-                child: _empty(Icons.search_off_rounded,
-                    query.isNotEmpty ? 'No groups match "$query".' : t.noMatch,
-                    sub: t.noMatchSub),
+                child: _empty(
+                  Icons.search_off_rounded,
+                  query.isNotEmpty ? 'No groups match "$query".' : t.noMatch,
+                  sub: t.noMatchSub,
+                ),
               ),
             ),
           );
         }
 
-        final enriched = filtered.map((g) => {
-          ...g,
-          '_resolved_name':     resolveGroupName(g, lang),
-          '_resolved_location': resolveLocation(g, locMap, lang),
-          '_lang':              lang,
-        }).toList();
+        final enriched = filtered
+            .map(
+              (g) => {
+                ...g,
+                '_resolved_name': resolveGroupName(g, lang),
+                '_resolved_description': resolveGroupDescription(g, lang),
+                '_resolved_location': resolveLocation(g, locMap, lang),
+                '_lang': lang,
+              },
+            )
+            .toList();
 
         // ── Pagination ────────────────────────────────────────────────
         final totalPages = (enriched.length / _pageSize).ceil().clamp(1, 9999);
-        final safePage   = _currentPage.clamp(1, totalPages);
-        final startIdx   = (safePage - 1) * _pageSize;
-        final pageItems  = enriched.skip(startIdx).take(_pageSize).toList();
+        final safePage = _currentPage.clamp(1, totalPages);
+        final startIdx = (safePage - 1) * _pageSize;
+        final pageItems = enriched.skip(startIdx).take(_pageSize).toList();
 
         return _PickleballRefresh(
           onRefresh: _refresh,
@@ -618,7 +893,9 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
             itemCount: pageItems.length + (totalPages > 1 ? 1 : 0),
             itemBuilder: (context, i) {
               if (i < pageItems.length) {
-                return _PressScaleGroup(child: GroupCardList(group: pageItems[i]));
+                return _PressScaleGroup(
+                  child: GroupCardList(group: pageItems[i]),
+                );
               }
               // ── Page Bubble Controls ──────────────────────────────
               return Padding(
@@ -637,7 +914,10 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
                     ...List.generate(totalPages, (idx) {
                       final p = idx + 1;
                       final isActive = p == safePage;
-                      final show = p == 1 || p == totalPages || (p - safePage).abs() <= 1;
+                      final show =
+                          p == 1 ||
+                          p == totalPages ||
+                          (p - safePage).abs() <= 1;
                       if (!show) return const SizedBox.shrink();
                       return Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 3),
@@ -649,12 +929,24 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
                             height: 36,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: isActive ? AppColors.primary : AppColors.primary.withOpacity(0.08),
+                              color: isActive
+                                  ? AppColors.primary
+                                  : AppColors.primary.withOpacity(0.08),
                               border: Border.all(
-                                color: isActive ? AppColors.primary : AppColors.primary.withOpacity(0.2),
+                                color: isActive
+                                    ? AppColors.primary
+                                    : AppColors.primary.withOpacity(0.2),
                               ),
                               boxShadow: isActive
-                                  ? [BoxShadow(color: AppColors.primary.withOpacity(0.35), blurRadius: 10, offset: const Offset(0, 4))]
+                                  ? [
+                                      BoxShadow(
+                                        color: AppColors.primary.withOpacity(
+                                          0.35,
+                                        ),
+                                        blurRadius: 10,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ]
                                   : [],
                             ),
                             child: Center(
@@ -663,7 +955,9 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
                                 style: TextStyle(
                                   fontSize: 13,
                                   fontWeight: FontWeight.w700,
-                                  color: isActive ? Colors.white : AppColors.primary.withOpacity(0.6),
+                                  color: isActive
+                                      ? Colors.white
+                                      : AppColors.primary.withOpacity(0.6),
                                 ),
                               ),
                             ),
@@ -686,7 +980,10 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
         );
       },
       loading: () => Center(
-        child: CircularProgressIndicator(color: AppColors.primary, strokeWidth: 2.5),
+        child: CircularProgressIndicator(
+          color: AppColors.primary,
+          strokeWidth: 2.5,
+        ),
       ),
       error: (e, _) => _PickleballRefresh(
         onRefresh: _refresh,
@@ -697,9 +994,11 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
             child: Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: Text('Something went wrong.\n$e',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: Colors.black45, fontSize: 14)),
+                child: Text(
+                  'Something went wrong.\n$e',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.black45, fontSize: 14),
+                ),
               ),
             ),
           ),
@@ -709,51 +1008,108 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
   }
 
   Widget _empty(IconData icon, String msg, {String? sub}) {
-    return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Icon(icon, size: 52, color: Colors.black.withOpacity(0.1)),
-      const SizedBox(height: 14),
-      Text(msg, style: TextStyle(fontSize: 16, color: Colors.black.withOpacity(0.35),
-          fontWeight: FontWeight.w500), textAlign: TextAlign.center),
-      if (sub != null) ...[
-        const SizedBox(height: 6),
-        Text(sub, style: TextStyle(fontSize: 13, color: Colors.black.withOpacity(0.25))),
-      ],
-    ]));
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 52, color: Colors.black.withOpacity(0.1)),
+          const SizedBox(height: 14),
+          Text(
+            msg,
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.black.withOpacity(0.35),
+              fontWeight: FontWeight.w500,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          if (sub != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              sub,
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.black.withOpacity(0.25),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   Widget _buildAddGroupButton(_T t) {
-    return Stack(clipBehavior: Clip.none, children: [
-      GestureDetector(
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AddGroupScreen())),
-        child: Container(
-          height: 54,
-          padding: const EdgeInsets.symmetric(horizontal: 36),
-          decoration: BoxDecoration(
-            color: const Color(0xFF0D0D0D),
-            borderRadius: BorderRadius.circular(30),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.22), blurRadius: 20, offset: const Offset(0, 8))],
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        GestureDetector(
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const AddGroupScreen()),
           ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.add_rounded, color: Colors.white, size: 20),
-            const SizedBox(width: 8),
-            Text(t.addGroup, style: const TextStyle(color: Colors.white, fontSize: 15,
-                fontWeight: FontWeight.w700, letterSpacing: 0.2)),
-          ]),
-        ),
-      ),
-      Positioned(top: -8, right: -8,
-        child: GestureDetector(
-          onTap: () => ref.read(showAddGroupButtonProvider.notifier).state = false,
           child: Container(
-            width: 28, height: 28,
-            decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle,
-                border: Border.all(color: const Color(0xFF0D0D0D), width: 1.5),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 6, offset: const Offset(0, 2))]),
-            child: const Icon(Icons.close_rounded, size: 16, color: Color(0xFF0D0D0D)),
+            height: 54,
+            padding: const EdgeInsets.symmetric(horizontal: 36),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0D0D0D),
+              borderRadius: BorderRadius.circular(30),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.22),
+                  blurRadius: 20,
+                  offset: const Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.add_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  t.addGroup,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
-      ),
-    ]);
+        Positioned(
+          top: -8,
+          right: -8,
+          child: GestureDetector(
+            onTap: () =>
+                ref.read(showAddGroupButtonProvider.notifier).state = false,
+            child: Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFF0D0D0D), width: 1.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.12),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: const Icon(
+                Icons.close_rounded,
+                size: 16,
+                color: Color(0xFF0D0D0D),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   // ── Pagination helper ───────────────────────────────────────
@@ -777,7 +1133,11 @@ class _LangButton extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
-  const _LangButton({required this.label, required this.selected, required this.onTap});
+  const _LangButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -790,8 +1150,14 @@ class _LangButton extends StatelessWidget {
           color: selected ? AppColors.primary : Colors.transparent,
           borderRadius: BorderRadius.circular(18),
         ),
-        child: Text(label, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-            color: selected ? Colors.white : AppColors.primary.withOpacity(0.6))),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: selected ? Colors.white : AppColors.primary.withOpacity(0.6),
+          ),
+        ),
       ),
     );
   }
@@ -836,7 +1202,11 @@ class _PageArrowBtn extends StatelessWidget {
   final bool enabled;
   final bool forward;
   final VoidCallback onTap;
-  const _PageArrowBtn({required this.enabled, required this.forward, required this.onTap});
+  const _PageArrowBtn({
+    required this.enabled,
+    required this.forward,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {

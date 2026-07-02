@@ -18,74 +18,74 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Localised strings (mirrors the web app's T map)
 // ─────────────────────────────────────────────────────────────────────────────
 const _L = {
   kLangEn: {
-    'upcomingEvents':    'Upcoming events',
-    'localGroups':       'Local groups',
-    'pickleballCourts':  'Pickleball courts',
-    'seeAll':            'See all',
-    'whatIsPickleball':  'What is Pickleball?',
-    'aboutPikuru':       'About Pikuru',
-    'findCourts':        'Find courts near you',
-    'browseEvents':      'Browse upcoming events',
-    'welcomeTitle':      'Welcome to\nPikuru!',
-    'welcomeSub':        'Find courts, join events, and connect\nwith players across Japan.',
-    'badgeLabel':        "Japan's #1 Pickleball App",
-    'noEvents':          'No events yet',
-    'noGroups':          'No groups yet',
-    'noCourts':          'No courts yet',
-    'unknownLocation':   'Unknown location',
-    'dateTbd':           'Date TBD',
-    'langEn':            'EN',
-    'langJa':            '日本語',
-    'searchHint':        'Search courts, events, groups…',
+    'upcomingEvents': 'Upcoming events',
+    'localGroups': 'Local groups',
+    'pickleballCourts': 'Pickleball courts',
+    'seeAll': 'See all',
+    'whatIsPickleball': 'What is Pickleball?',
+    'aboutPikuru': 'About Pikuru',
+    'findCourts': 'Find courts near you',
+    'browseEvents': 'Browse upcoming events',
+    'welcomeTitle': 'Welcome to\nPikuru!',
+    'welcomeSub':
+        'Find courts, join events, and connect\nwith players across Japan.',
+    'badgeLabel': "Japan's #1 Pickleball App",
+    'noEvents': 'No events yet',
+    'noGroups': 'No groups yet',
+    'noCourts': 'No courts yet',
+    'unknownLocation': 'Unknown location',
+    'dateTbd': 'Date TBD',
+    'langEn': 'EN',
+    'langJa': '日本語',
+    'searchHint': 'Search courts, events, groups…',
   },
   kLangJa: {
-    'upcomingEvents':    '開催予定のイベント',
-    'localGroups':       'ローカルグループ',
-    'pickleballCourts':  'ピックルボールコート',
-    'seeAll':            'すべて見る',
-    'whatIsPickleball':  'ピックルボールとは？',
-    'aboutPikuru':       'Pikuruについて',
-    'findCourts':        '近くのコートを探す',
-    'browseEvents':      '開催予定のイベントを見る',
-    'welcomeTitle':      'Pikuruへ\nようこそ！',
-    'welcomeSub':        '日本全国のコート、イベント、\nプレイヤーとつながろう。',
-    'badgeLabel':        '日本No.1ピックルボールアプリ',
-    'noEvents':          'イベントはまだありません',
-    'noGroups':          'グループはまだありません',
-    'noCourts':          'コートはまだありません',
-    'unknownLocation':   '場所不明',
-    'dateTbd':           '日時未定',
-    'langEn':            'EN',
-    'langJa':            '日本語',
-    'searchHint':        'コート、イベント、グループを検索…',
+    'upcomingEvents': '開催予定のイベント',
+    'localGroups': 'ローカルグループ',
+    'pickleballCourts': 'ピックルボールコート',
+    'seeAll': 'すべて見る',
+    'whatIsPickleball': 'ピックルボールとは？',
+    'aboutPikuru': 'Pikuruについて',
+    'findCourts': '近くのコートを探す',
+    'browseEvents': '開催予定のイベントを見る',
+    'welcomeTitle': 'Pikuruへ\nようこそ！',
+    'welcomeSub': '日本全国のコート、イベント、\nプレイヤーとつながろう。',
+    'badgeLabel': '日本No.1ピックルボールアプリ',
+    'noEvents': 'イベントはまだありません',
+    'noGroups': 'グループはまだありません',
+    'noCourts': 'コートはまだありません',
+    'unknownLocation': '場所不明',
+    'dateTbd': '日時未定',
+    'langEn': 'EN',
+    'langJa': '日本語',
+    'searchHint': 'コート、イベント、グループを検索…',
   },
 };
 
-String _t(String lang, String key) =>
-    _L[lang]?[key] ?? _L[kLangEn]![key]!;
+String _t(String lang, String key) => _L[lang]?[key] ?? _L[kLangEn]![key]!;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Direct Firestore provider for home screen events
 // ─────────────────────────────────────────────────────────────────────────────
-final _homeEventsProvider =
-FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  final now   = DateTime.now();
+final _homeEventsProvider = FutureProvider<List<Map<String, dynamic>>>((
+  ref,
+) async {
+  final now = DateTime.now();
   final today = DateTime(now.year, now.month, now.day);
-  final in30  = today.add(const Duration(days: 30));
+  final in30 = today.add(const Duration(days: 30));
 
   final snap = await FirebaseFirestore.instance
       .collection('events')
-      .where('event_active',         isEqualTo: true)
-      .where('event_checked',        isEqualTo: true)
+      .where('event_active', isEqualTo: true)
+      .where('event_checked', isEqualTo: true)
       .where('event_pending_review', isEqualTo: false)
       .where('event_date', isGreaterThanOrEqualTo: Timestamp.fromDate(today))
-      .where('event_date', isLessThanOrEqualTo:    Timestamp.fromDate(in30))
+      .where('event_date', isLessThanOrEqualTo: Timestamp.fromDate(in30))
       .orderBy('event_date')
       .limit(50)
       .get();
@@ -96,16 +96,21 @@ FutureProvider<List<Map<String, dynamic>>>((ref) async {
 
   final enriched = await Future.wait(raw.map(_resolveEventLocation));
 
-  return enriched.where((e) {
-    final pref = (e['_pref'] ?? '').toString().toLowerCase();
-    return pref.contains('tokyo') || pref.contains('東京');
-  }).take(8).toList();
+  return enriched
+      .where((e) {
+        final pref = (e['_pref'] ?? '').toString().toLowerCase();
+        return pref.contains('tokyo') || pref.contains('東京');
+      })
+      .take(8)
+      .toList();
 });
 
 Future<Map<String, dynamic>> _resolveEventLocation(
-    Map<String, dynamic> event) async {
-  final locId =
-  (event['event_loc_id'] ?? event['loc_id'] ?? '').toString().trim();
+  Map<String, dynamic> event,
+) async {
+  final locId = (event['event_loc_id'] ?? event['loc_id'] ?? '')
+      .toString()
+      .trim();
   Map<String, dynamic> locDoc = {};
 
   if (locId.isNotEmpty) {
@@ -122,14 +127,22 @@ Future<Map<String, dynamic>> _resolveEventLocation(
   String get(String key) =>
       ((locDoc[key] ?? event[key] ?? '')).toString().trim();
 
-  final cityEn = [get('loc_city_en'), get('loc_city')].firstWhere(
-          (v) => v.isNotEmpty, orElse: () => '');
-  final prefEn = [get('loc_prefecture_en'), get('loc_prefecture')].firstWhere(
-          (v) => v.isNotEmpty, orElse: () => '');
-  final cityJp = [get('loc_city_jp'), get('loc_city')].firstWhere(
-          (v) => v.isNotEmpty, orElse: () => '');
-  final prefJp = [get('loc_prefecture_jp'), get('loc_prefecture')].firstWhere(
-          (v) => v.isNotEmpty, orElse: () => '');
+  final cityEn = [
+    get('loc_city_en'),
+    get('loc_city'),
+  ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
+  final prefEn = [
+    get('loc_prefecture_en'),
+    get('loc_prefecture'),
+  ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
+  final cityJp = [
+    get('loc_city_jp'),
+    get('loc_city'),
+  ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
+  final prefJp = [
+    get('loc_prefecture_jp'),
+    get('loc_prefecture'),
+  ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
   final country = get('loc_country');
 
   String locEn = cityEn.isNotEmpty && prefEn.isNotEmpty
@@ -150,12 +163,7 @@ Future<Map<String, dynamic>> _resolveEventLocation(
       ? prefJp
       : country;
 
-  return {
-    ...event,
-    'location':    locEn,
-    'location_jp': locJp,
-    '_pref':       prefEn,
-  };
+  return {...event, 'location': locEn, 'location_jp': locJp, '_pref': prefEn};
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -165,10 +173,7 @@ class _PickleballRefresh extends StatefulWidget {
   final Widget child;
   final Future<void> Function() onRefresh;
 
-  const _PickleballRefresh({
-    required this.child,
-    required this.onRefresh,
-  });
+  const _PickleballRefresh({required this.child, required this.onRefresh});
 
   @override
   State<_PickleballRefresh> createState() => _PickleballRefreshState();
@@ -177,13 +182,13 @@ class _PickleballRefresh extends StatefulWidget {
 class _PickleballRefreshState extends State<_PickleballRefresh>
     with SingleTickerProviderStateMixin {
   static const double _triggerDistance = 80.0;
-  static const double _ballSize        = 44.0;
+  static const double _ballSize = 44.0;
 
   late AnimationController _spinController;
 
-  double _dragOffset   = 0.0;
-  bool   _isRefreshing = false;
-  bool   _triggered    = false;
+  double _dragOffset = 0.0;
+  bool _isRefreshing = false;
+  bool _triggered = false;
 
   @override
   void initState() {
@@ -205,8 +210,10 @@ class _PickleballRefreshState extends State<_PickleballRefresh>
 
     if (notification is OverscrollNotification && notification.overscroll < 0) {
       setState(() {
-        _dragOffset = (_dragOffset - notification.overscroll)
-            .clamp(0.0, _triggerDistance * 1.4);
+        _dragOffset = (_dragOffset - notification.overscroll).clamp(
+          0.0,
+          _triggerDistance * 1.4,
+        );
         _triggered = _dragOffset >= _triggerDistance;
       });
       if (_triggered && !_spinController.isAnimating) {
@@ -228,7 +235,7 @@ class _PickleballRefreshState extends State<_PickleballRefresh>
   Future<void> _startRefresh() async {
     setState(() {
       _isRefreshing = true;
-      _dragOffset   = _triggerDistance;
+      _dragOffset = _triggerDistance;
     });
     if (!_spinController.isAnimating) _spinController.repeat();
     await widget.onRefresh();
@@ -238,15 +245,15 @@ class _PickleballRefreshState extends State<_PickleballRefresh>
   void _resetDrag() {
     _spinController.stop();
     setState(() {
-      _dragOffset   = 0.0;
+      _dragOffset = 0.0;
       _isRefreshing = false;
-      _triggered    = false;
+      _triggered = false;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final progress         = (_dragOffset / _triggerDistance).clamp(0.0, 1.0);
+    final progress = (_dragOffset / _triggerDistance).clamp(0.0, 1.0);
     final indicatorVisible = _dragOffset > 4.0;
 
     return NotificationListener<ScrollNotification>(
@@ -257,7 +264,9 @@ class _PickleballRefreshState extends State<_PickleballRefresh>
             duration: _isRefreshing
                 ? const Duration(milliseconds: 200)
                 : Duration.zero,
-            padding: EdgeInsets.only(top: _dragOffset.clamp(0.0, _triggerDistance)),
+            padding: EdgeInsets.only(
+              top: _dragOffset.clamp(0.0, _triggerDistance),
+            ),
             child: widget.child,
           ),
           if (indicatorVisible)
@@ -276,7 +285,7 @@ class _PickleballRefreshState extends State<_PickleballRefresh>
                           : AlwaysStoppedAnimation(progress * 1.5),
                       child: Image.asset(
                         'assets/pickleball_ball_no_bg_1.png',
-                        width:  _ballSize * (0.6 + 0.4 * progress),
+                        width: _ballSize * (0.6 + 0.4 * progress),
                         height: _ballSize * (0.6 + 0.4 * progress),
                       ),
                     ),
@@ -304,9 +313,9 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   // ── Unread count streams ───────────────────────────────────────────────────
-  int _unreadCount      = 0;
+  int _unreadCount = 0;
   int _individualUnread = 0;
-  int _groupUnread      = 0;
+  int _groupUnread = 0;
 
   @override
   void initState() {
@@ -324,35 +333,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         .where('participants', arrayContains: me.uid)
         .snapshots()
         .listen((snap) {
-      int count = 0;
-      for (final doc in snap.docs) {
-        final d = doc.data();
-        final lastMsg = (d['last_message'] ?? '').toString();
-        if (lastMsg.isEmpty) continue;
-        if ((d['last_message_by'] ?? '') == me.uid) continue;
-        final lastReadMap = d['last_read'] as Map<String, dynamic>?;
-        final myLastRead  = lastReadMap != null
-            ? (lastReadMap[me.uid] as Timestamp?)?.toDate()
-            : null;
-        final lastMsgAt = (d['last_message_at'] as Timestamp?)?.toDate();
-        if (lastMsgAt != null &&
-            (myLastRead == null || lastMsgAt.isAfter(myLastRead))) {
-          count++;
-        }
-      }
-      if (mounted) {
-        setState(() {
-          _individualUnread = count;
-          _unreadCount = _individualUnread + _groupUnread;
+          int count = 0;
+          for (final doc in snap.docs) {
+            final d = doc.data();
+            final lastMsg = (d['last_message'] ?? '').toString();
+            if (lastMsg.isEmpty) continue;
+            if ((d['last_message_by'] ?? '') == me.uid) continue;
+            final lastReadMap = d['last_read'] as Map<String, dynamic>?;
+            final myLastRead = lastReadMap != null
+                ? (lastReadMap[me.uid] as Timestamp?)?.toDate()
+                : null;
+            final lastMsgAt = (d['last_message_at'] as Timestamp?)?.toDate();
+            if (lastMsgAt != null &&
+                (myLastRead == null || lastMsgAt.isAfter(myLastRead))) {
+              count++;
+            }
+          }
+          if (mounted) {
+            setState(() {
+              _individualUnread = count;
+              _unreadCount = _individualUnread + _groupUnread;
+            });
+          }
         });
-      }
-    });
 
     // ── Group chats ────────────────────────────────────────────────────────────
-    FirebaseFirestore.instance
-        .collection('group_chats')
-        .snapshots()
-        .listen((snap) async {
+    FirebaseFirestore.instance.collection('group_chats').snapshots().listen((
+      snap,
+    ) async {
       int count = 0;
       for (final doc in snap.docs) {
         final d = doc.data();
@@ -366,8 +374,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               .doc(me.uid)
               .get();
           if (!pDoc.exists) continue;
-          final lastRead =
-          (pDoc.data()?['last_read_at'] as Timestamp?)?.toDate();
+          final lastRead = (pDoc.data()?['last_read_at'] as Timestamp?)
+              ?.toDate();
           final lastMsg = (d['last_message_at'] as Timestamp?)?.toDate();
           if (lastMsg != null &&
               (lastRead == null || lastMsg.isAfter(lastRead))) {
@@ -391,7 +399,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ref.invalidate(_homeEventsProvider);
     ref.invalidate(organizationsProvider);
     ref.invalidate(locationsProvider);
-    await ref.read(_homeEventsProvider.future).catchError((_) => <Map<String, dynamic>>[]);
+    await ref
+        .read(_homeEventsProvider.future)
+        .catchError((_) => <Map<String, dynamic>>[]);
   }
 
   // ── Open search screen ────────────────────────────────────────────────────
@@ -428,6 +438,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (jp.isNotEmpty) return jp;
     }
     return (data['org_name'] ?? 'Unnamed Group').toString();
+  }
+
+  String _groupDescription(Map<String, dynamic> data, String lang) {
+    if (lang == kLangJa) {
+      final jp = (data['org_description_jp'] ?? '').toString().trim();
+      if (jp.isNotEmpty && jp != 'null') return jp;
+    }
+    final en = (data['org_description'] ?? '').toString().trim();
+    return en == 'null' ? '' : en;
   }
 
   String _courtName(Map<String, dynamic> data, String lang) {
@@ -552,8 +571,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       color: AppColors.primary.withOpacity(0.08),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(Icons.notifications_none_rounded,
-                        color: AppColors.primary, size: 22),
+                    child: const Icon(
+                      Icons.notifications_none_rounded,
+                      color: AppColors.primary,
+                      size: 22,
+                    ),
                   ),
                   if (notificationCount > 0)
                     Positioned(
@@ -561,14 +583,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       right: -4,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 4, vertical: 1),
+                          horizontal: 4,
+                          vertical: 1,
+                        ),
                         constraints: const BoxConstraints(
-                            minWidth: 18, minHeight: 18),
+                          minWidth: 18,
+                          minHeight: 18,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.red.shade500,
                           borderRadius: BorderRadius.circular(10),
-                          border:
-                          Border.all(color: Colors.white, width: 1.5),
+                          border: Border.all(color: Colors.white, width: 1.5),
                           boxShadow: [
                             BoxShadow(
                               color: Colors.red.withOpacity(0.4),
@@ -597,12 +622,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: GestureDetector(
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const ChatsScreen()),
-              ).then((_) {
-                if (mounted) _listenUnread();
-              }),
+              onTap: () =>
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const ChatsScreen()),
+                  ).then((_) {
+                    if (mounted) _listenUnread();
+                  }),
               child: Stack(
                 clipBehavior: Clip.none,
                 children: [
@@ -613,8 +639,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       color: AppColors.primary.withOpacity(0.08),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(Icons.chat_bubble_outline_rounded,
-                        color: AppColors.primary, size: 22),
+                    child: const Icon(
+                      Icons.chat_bubble_outline_rounded,
+                      color: AppColors.primary,
+                      size: 22,
+                    ),
                   ),
                   if (_unreadCount > 0)
                     Positioned(
@@ -622,14 +651,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       right: -4,
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 4, vertical: 1),
+                          horizontal: 4,
+                          vertical: 1,
+                        ),
                         constraints: const BoxConstraints(
-                            minWidth: 18, minHeight: 18),
+                          minWidth: 18,
+                          minHeight: 18,
+                        ),
                         decoration: BoxDecoration(
                           color: Colors.red.shade500,
                           borderRadius: BorderRadius.circular(10),
-                          border:
-                          Border.all(color: Colors.white, width: 1.5),
+                          border: Border.all(color: Colors.white, width: 1.5),
                           boxShadow: [
                             BoxShadow(
                               color: Colors.red.withOpacity(0.4),
@@ -745,39 +777,44 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ],
         ),
-        child: Row(children: [
-          const SizedBox(width: 14),
-          Icon(Icons.search_rounded, size: 20,
-              color: AppColors.primary.withOpacity(0.6)),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              _t(lang, 'searchHint'),
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w400,
-                color: Colors.black.withOpacity(0.35),
+        child: Row(
+          children: [
+            const SizedBox(width: 14),
+            Icon(
+              Icons.search_rounded,
+              size: 20,
+              color: AppColors.primary.withOpacity(0.6),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _t(lang, 'searchHint'),
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w400,
+                  color: Colors.black.withOpacity(0.35),
+                ),
               ),
             ),
-          ),
-          Container(
-            margin: const EdgeInsets.only(right: 10),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: AppColors.primary.withOpacity(0.15)),
-            ),
-            child: Text(
-              lang == kLangJa ? '検索' : '⌘K',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                color: AppColors.primary.withOpacity(0.7),
+            Container(
+              margin: const EdgeInsets.only(right: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: AppColors.primary.withOpacity(0.15)),
+              ),
+              child: Text(
+                lang == kLangJa ? '検索' : '⌘K',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.primary.withOpacity(0.7),
+                ),
               ),
             ),
-          ),
-        ]),
+          ],
+        ),
       ),
     );
   }
@@ -809,28 +846,40 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       child: Stack(
         children: [
           Positioned(
-            right: -30, top: -30,
+            right: -30,
+            top: -30,
             child: Container(
-                width: 140, height: 140,
-                decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withOpacity(0.06))),
+              width: 140,
+              height: 140,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withOpacity(0.06),
+              ),
+            ),
           ),
           Positioned(
-            right: 30, bottom: -20,
+            right: 30,
+            bottom: -20,
             child: Container(
-                width: 90, height: 90,
-                decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withOpacity(0.05))),
+              width: 90,
+              height: 90,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withOpacity(0.05),
+              ),
+            ),
           ),
           Positioned(
-            left: -20, bottom: 20,
+            left: -20,
+            bottom: 20,
             child: Container(
-                width: 70, height: 70,
-                decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withOpacity(0.04))),
+              width: 70,
+              height: 70,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withOpacity(0.04),
+              ),
+            ),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(28, 32, 28, 28),
@@ -838,41 +887,48 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 5,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(
-                        color: Colors.white.withOpacity(0.25), width: 1),
+                      color: Colors.white.withOpacity(0.25),
+                      width: 1,
+                    ),
                   ),
                   child: Text(
                     '🎾  ${_t(lang, 'badgeLabel')}',
                     style: const TextStyle(
-                        fontSize: 11.5,
-                        color: Colors.white,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.3),
+                      fontSize: 11.5,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.3,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 18),
                 Text(
                   _t(lang, 'welcomeTitle'),
                   style: const TextStyle(
-                      fontSize: 34,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white,
-                      height: 1.15,
-                      letterSpacing: -1.0),
+                    fontSize: 34,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    height: 1.15,
+                    letterSpacing: -1.0,
+                  ),
                 ),
                 const SizedBox(height: 10),
                 Text(
                   _t(lang, 'welcomeSub'),
                   style: TextStyle(
-                      fontSize: 14.5,
-                      color: Colors.white.withOpacity(0.75),
-                      height: 1.55,
-                      letterSpacing: 0.1),
+                    fontSize: 14.5,
+                    color: Colors.white.withOpacity(0.75),
+                    height: 1.55,
+                    letterSpacing: 0.1,
+                  ),
                 ),
                 const SizedBox(height: 24),
 
@@ -898,7 +954,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (_) => const WhatIsPikuruScreen()),
+                            builder: (_) => const WhatIsPikuruScreen(),
+                          ),
                         ),
                       ),
                     ),
@@ -910,7 +967,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                              builder: (_) => const AboutPikuruScreen()),
+                            builder: (_) => const AboutPikuruScreen(),
+                          ),
                         ),
                       ),
                     ),
@@ -936,8 +994,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.12),
           borderRadius: BorderRadius.circular(16),
-          border:
-          Border.all(color: Colors.white.withOpacity(0.18), width: 1),
+          border: Border.all(color: Colors.white.withOpacity(0.18), width: 1),
         ),
         child: Row(
           children: [
@@ -952,15 +1009,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
             const SizedBox(width: 14),
             Expanded(
-              child: Text(label,
-                  style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                      letterSpacing: -0.2)),
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                  letterSpacing: -0.2,
+                ),
+              ),
             ),
-            Icon(Icons.arrow_forward_ios_rounded,
-                color: Colors.white.withOpacity(0.5), size: 14),
+            Icon(
+              Icons.arrow_forward_ios_rounded,
+              color: Colors.white.withOpacity(0.5),
+              size: 14,
+            ),
           ],
         ),
       ),
@@ -981,24 +1044,27 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           borderRadius: BorderRadius.circular(14),
           border: isPrimary
               ? null
-              : Border.all(
-              color: Colors.white.withOpacity(0.3), width: 1.2),
+              : Border.all(color: Colors.white.withOpacity(0.3), width: 1.2),
           boxShadow: isPrimary
               ? [
-            BoxShadow(
-                color: Colors.black.withOpacity(0.12),
-                blurRadius: 12,
-                offset: const Offset(0, 4))
-          ]
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.12),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ]
               : null,
         ),
-        child: Text(label,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: isPrimary ? AppColors.primary : Colors.white,
-                letterSpacing: -0.2)),
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: isPrimary ? AppColors.primary : Colors.white,
+            letterSpacing: -0.2,
+          ),
+        ),
       ),
     );
   }
@@ -1018,13 +1084,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           clipBehavior: Clip.none,
           itemCount: events.length,
           itemBuilder: (context, index) {
-            final data              = events[index];
-            final imageUrl          = (data['event_pic'] ??
-                data['event_pic_thumbnail'] ??
-                data['event_image'] ??
-                '')
-                .toString();
-            final title             = _eventTitle(data, lang);
+            final data = events[index];
+            final imageUrl =
+                (data['event_pic'] ??
+                        data['event_pic_thumbnail'] ??
+                        data['event_image'] ??
+                        '')
+                    .toString();
+            final title = _eventTitle(data, lang);
             final formattedDateTime = _formatEventDateTime(data, lang);
             final location = lang == kLangJa
                 ? (data['location_jp'] ?? data['location'] ?? '').toString()
@@ -1084,20 +1151,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           clipBehavior: Clip.none,
           itemCount: orgs.length,
           itemBuilder: (context, index) {
-            final data     = orgs[index];
-            final name     = _groupName(data, lang);
+            final data = orgs[index];
+            final name = _groupName(data, lang);
+            final desc = _groupDescription(data, lang);
             final orgLocId = (data['org_loc_id'] ?? '').toString();
 
             return Consumer(
               builder: (context, ref, child) {
-                final locationAsync =
-                ref.watch(locationResolverProvider(orgLocId));
+                final locationAsync = ref.watch(
+                  locationResolverProvider(orgLocId),
+                );
                 return locationAsync.when(
                   data: (locationEn) {
                     final location = lang == kLangJa
                         ? (data['location_jp'] as String? ?? '').isNotEmpty
-                        ? (data['location_jp'] as String)
-                        : locationEn
+                              ? (data['location_jp'] as String)
+                              : locationEn
                         : locationEn;
                     return GestureDetector(
                       onTap: () => Navigator.push(
@@ -1107,20 +1176,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         ),
                       ),
                       child: GroupCard(
-                          imageUrl:
-                          (data['org_image'] ?? '').toString(),
-                          name: name,
-                          location: location),
+                        imageUrl: (data['org_image'] ?? '').toString(),
+                        name: name,
+                        description: desc,
+                        location: location,
+                      ),
                     );
                   },
                   loading: () => GroupCard(
-                      imageUrl: (data['org_image'] ?? '').toString(),
-                      name: name,
-                      location: '...'),
+                    imageUrl: (data['org_image'] ?? '').toString(),
+                    name: name,
+                    description: desc,
+                    location: '...',
+                  ),
                   error: (_, __) => GroupCard(
-                      imageUrl: (data['org_image'] ?? '').toString(),
-                      name: name,
-                      location: _t(lang, 'unknownLocation')),
+                    imageUrl: (data['org_image'] ?? '').toString(),
+                    name: name,
+                    description: desc,
+                    location: _t(lang, 'unknownLocation'),
+                  ),
                 );
               },
             );
@@ -1154,8 +1228,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           clipBehavior: Clip.none,
           itemCount: courts.length,
           itemBuilder: (context, index) {
-            final data     = courts[index];
-            final name     = _courtName(data, lang);
+            final data = courts[index];
+            final name = _courtName(data, lang);
             final location = _courtLocation(data, lang);
 
             return GestureDetector(
@@ -1186,21 +1260,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   // UI helpers
   // ─────────────────────────────────────────────────────────────────────────
   Widget _sectionHeader(
-      String title, {
-        required VoidCallback onSeeAll,
-        required String lang,
-      }) {
+    String title, {
+    required VoidCallback onSeeAll,
+    required String lang,
+  }) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(title,
-            style: const TextStyle(
-                fontSize: 18, fontWeight: FontWeight.bold)),
+        Text(
+          title,
+          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        ),
         GestureDetector(
           onTap: onSeeAll,
           child: Container(
-            padding:
-            const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
             decoration: BoxDecoration(
               color: AppColors.primary.withOpacity(0.08),
               borderRadius: BorderRadius.circular(20),
@@ -1242,8 +1316,7 @@ class _LangButton extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding:
-        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
           color: selected ? AppColors.primary : Colors.transparent,
           borderRadius: BorderRadius.circular(18),
@@ -1251,11 +1324,10 @@ class _LangButton extends StatelessWidget {
         child: Text(
           label,
           style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: selected
-                  ? Colors.white
-                  : AppColors.primary.withOpacity(0.6)),
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: selected ? Colors.white : AppColors.primary.withOpacity(0.6),
+          ),
         ),
       ),
     );
