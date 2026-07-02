@@ -25,6 +25,33 @@ const _redLt     = Color(0xFFFFEBEE);
 const _textDark  = Color(0xFF111827);
 const _textMid   = Color(0xFF4B5563);
 const _textLight = Color(0xFF9CA3AF);
+const _pickleballBallAsset = 'assets/pickleball_ball_no_bg_1.png';
+
+class _PickleballImageFallback extends StatelessWidget {
+  const _PickleballImageFallback();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF0D1F14), Color(0xFF1A3D27)],
+        ),
+      ),
+      child: Center(
+        child: Image.asset(
+          _pickleballBallAsset,
+          width: 96,
+          height: 96,
+          fit: BoxFit.contain,
+          opacity: const AlwaysStoppedAnimation(0.9),
+        ),
+      ),
+    );
+  }
+}
 
 class _S {
   final String lang;
@@ -601,15 +628,13 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
             flexibleSpace: FlexibleSpaceBar(
               background: Stack(fit: StackFit.expand, children: [
                 imageUrl.isNotEmpty
-                    ? Image.network(imageUrl, fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      color: _green.withOpacity(0.15),
-                      child: Icon(Icons.event_rounded, size: 80, color: _green.withOpacity(0.3)),
-                    ))
-                    : Container(
-                  color: _green.withOpacity(0.15),
-                  child: Icon(Icons.event_rounded, size: 80, color: _green.withOpacity(0.3)),
-                ),
+                    ? Image.network(
+                        imageUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) =>
+                            const _PickleballImageFallback(),
+                      )
+                    : const _PickleballImageFallback(),
                 Container(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(

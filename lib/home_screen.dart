@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pikuru/theme/material.dart';
@@ -316,6 +318,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   int _unreadCount = 0;
   int _individualUnread = 0;
   int _groupUnread = 0;
+  int _eventUnread = 0;
+  StreamSubscription? _individualUnreadSub;
+  StreamSubscription? _groupUnreadSub;
 
   @override
   void initState() {
@@ -326,13 +331,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _listenUnread() {
     final me = FirebaseAuth.instance.currentUser;
     if (me == null) return;
+    _individualUnreadSub?.cancel();
+    _groupUnreadSub?.cancel();
 
     // ── Individual chats ──────────────────────────────────────────────────────
-    FirebaseFirestore.instance
+    _individualUnreadSub = FirebaseFirestore.instance
         .collection('individual_chats')
         .where('participants', arrayContains: me.uid)
         .snapshots()
-        .listen((snap) {
+        .listen((snap) async {
           int count = 0;
           for (final doc in snap.docs) {
             final d = doc.data();
@@ -346,52 +353,107 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             final lastMsgAt = (d['last_message_at'] as Timestamp?)?.toDate();
             if (lastMsgAt != null &&
                 (myLastRead == null || lastMsgAt.isAfter(myLastRead))) {
-              count++;
+              count += await _countUnreadMessages(
+                collectionName: 'individual_chats',
+                chatId: doc.id,
+                lastReadAt: myLastRead,
+                fallbackCount: 1,
+              );
             }
           }
           if (mounted) {
             setState(() {
               _individualUnread = count;
-              _unreadCount = _individualUnread + _groupUnread;
+              _unreadCount = _individualUnread + _groupUnread + _eventUnread;
             });
           }
         });
 
-    // ── Group chats ────────────────────────────────────────────────────────────
-    FirebaseFirestore.instance.collection('group_chats').snapshots().listen((
-      snap,
-    ) async {
-      int count = 0;
-      for (final doc in snap.docs) {
-        final d = doc.data();
-        if ((d['last_message'] ?? '').toString().isEmpty) continue;
-        if ((d['last_message_by'] ?? '') == me.uid) continue;
-        try {
-          final pDoc = await FirebaseFirestore.instance
-              .collection('group_chats')
-              .doc(doc.id)
-              .collection('participants')
-              .doc(me.uid)
-              .get();
-          if (!pDoc.exists) continue;
-          final lastRead = (pDoc.data()?['last_read_at'] as Timestamp?)
-              ?.toDate();
-          final lastMsg = (d['last_message_at'] as Timestamp?)?.toDate();
-          if (lastMsg != null &&
-              (lastRead == null || lastMsg.isAfter(lastRead))) {
-            count++;
+    // ── Group + event chats ───────────────────────────────────────────────────
+    _groupUnreadSub = FirebaseFirestore.instance
+        .collection('group_chats')
+        .snapshots()
+        .listen((snap) async {
+          int groupCount = 0;
+          int eventCount = 0;
+          for (final doc in snap.docs) {
+            final d = doc.data();
+            if ((d['last_message'] ?? '').toString().isEmpty) continue;
+            if ((d['last_message_by'] ?? '') == me.uid) continue;
+            final isEvent = (d['type'] ?? '').toString() == 'event';
+            try {
+              final pDoc = await FirebaseFirestore.instance
+                  .collection('group_chats')
+                  .doc(doc.id)
+                  .collection('participants')
+                  .doc(me.uid)
+                  .get();
+              if (!pDoc.exists && !isEvent) continue;
+              final lastRead = (pDoc.data()?['last_read_at'] as Timestamp?)
+                  ?.toDate();
+              final lastMsg = (d['last_message_at'] as Timestamp?)?.toDate();
+              if (lastMsg != null &&
+                  (lastRead == null || lastMsg.isAfter(lastRead))) {
+                final unreadMessages = await _countUnreadMessages(
+                  collectionName: 'group_chats',
+                  chatId: doc.id,
+                  lastReadAt: lastRead,
+                  fallbackCount: 1,
+                );
+                if (isEvent) {
+                  eventCount += unreadMessages;
+                } else {
+                  groupCount += unreadMessages;
+                }
+              }
+            } catch (_) {
+              continue;
+            }
           }
-        } catch (_) {
-          continue;
-        }
-      }
-      if (mounted) {
-        setState(() {
-          _groupUnread = count;
-          _unreadCount = _individualUnread + _groupUnread;
+          if (mounted) {
+            setState(() {
+              _groupUnread = groupCount;
+              _eventUnread = eventCount;
+              _unreadCount = _individualUnread + _groupUnread + _eventUnread;
+            });
+          }
         });
+  }
+
+  Future<int> _countUnreadMessages({
+    required String collectionName,
+    required String chatId,
+    required DateTime? lastReadAt,
+    required int fallbackCount,
+  }) async {
+    final me = FirebaseAuth.instance.currentUser;
+    if (me == null) return 0;
+    try {
+      Query<Map<String, dynamic>> query = FirebaseFirestore.instance
+          .collection(collectionName)
+          .doc(chatId)
+          .collection('messages');
+      if (lastReadAt != null) {
+        query = query.where(
+          'sent_at',
+          isGreaterThan: Timestamp.fromDate(lastReadAt),
+        );
       }
-    });
+      final snap = await query.get();
+      return snap.docs.where((doc) {
+        final data = doc.data();
+        return (data['sender_id'] ?? '').toString() != me.uid;
+      }).length;
+    } catch (_) {
+      return fallbackCount;
+    }
+  }
+
+  @override
+  void dispose() {
+    _individualUnreadSub?.cancel();
+    _groupUnreadSub?.cancel();
+    super.dispose();
   }
 
   // ── Refresh: invalidate all three home-screen providers ──────────────────

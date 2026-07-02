@@ -22,6 +22,34 @@ bool _isTruthy(dynamic v) {
   return s == 'true' || s == '1' || s == 't' || s == 'yes';
 }
 
+const _pickleballBallAsset = 'assets/pickleball_ball_no_bg_1.png';
+
+class _PickleballImageFallback extends StatelessWidget {
+  const _PickleballImageFallback();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF0D1F14), Color(0xFF1A3D27)],
+        ),
+      ),
+      child: Center(
+        child: Image.asset(
+          _pickleballBallAsset,
+          width: 96,
+          height: 96,
+          fit: BoxFit.contain,
+          opacity: const AlwaysStoppedAnimation(0.9),
+        ),
+      ),
+    );
+  }
+}
+
 // ── Lang-aware resolvers ──────────────────────────────────────────────────────
 
 String _field(Map<String, dynamic> g, String enKey, String jpKey, String lang) {

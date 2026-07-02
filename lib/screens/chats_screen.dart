@@ -18,6 +18,7 @@ class _ChatItem {
   final String lastMessage;
   final DateTime? lastMessageAt;
   final bool hasUnread;
+  final int unreadCount;
   final bool isGroup;
   final bool isEvent;
   final bool? repliesAllowed;
@@ -30,6 +31,7 @@ class _ChatItem {
     required this.lastMessage,
     required this.lastMessageAt,
     required this.hasUnread,
+    required this.unreadCount,
     required this.isGroup,
     this.isEvent = false,
     this.repliesAllowed,
@@ -43,6 +45,7 @@ class _ChatItem {
     lastMessage: lastMessage,
     lastMessageAt: lastMessageAt,
     hasUnread: hasUnread,
+    unreadCount: unreadCount,
     isGroup: isGroup,
     isEvent: isEvent,
     repliesAllowed: repliesAllowed,
@@ -66,7 +69,8 @@ ImageProvider? _resolveImage(String av) {
     if (av.startsWith('http')) return NetworkImage(av);
     if (av.startsWith('data:')) {
       final comma = av.indexOf(',');
-      if (comma != -1) return MemoryImage(base64Decode(av.substring(comma + 1)));
+      if (comma != -1)
+        return MemoryImage(base64Decode(av.substring(comma + 1)));
     }
     return MemoryImage(base64Decode(av));
   } catch (_) {
@@ -109,8 +113,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
   @override
   void initState() {
     super.initState();
-    _searchCtrl
-        .addListener(() => setState(() => _searchQuery = _searchCtrl.text.toLowerCase()));
+    _searchCtrl.addListener(
+      () => setState(() => _searchQuery = _searchCtrl.text.toLowerCase()),
+    );
     _subscribeGroupChats();
     _subscribeIndividualChats();
     _subscribeEventChannels();
@@ -162,22 +167,22 @@ class _ChatsScreenState extends State<ChatsScreen> {
         .doc(userId)
         .snapshots()
         .listen((snap) {
-      if (!snap.exists) return;
-      final d = snap.data()!;
-      final rawImg = (d['profile_img'] ?? '').toString();
-      final nick = (d['nickname'] ?? '').toString().trim();
-      final first = (d['firstName'] ?? '').toString().trim();
-      final last = (d['lastName'] ?? '').toString().trim();
-      final name = nick.isNotEmpty
-          ? nick
-          : (first.isNotEmpty && last.isNotEmpty)
-          ? '$first $last'
-          : first.isNotEmpty
-          ? first
-          : '';
-      _profileCache[userId] = {'name': name, 'avatar': _toImgSrc(rawImg)};
-      if (mounted) setState(() => _applyProfilesToIndividual());
-    });
+          if (!snap.exists) return;
+          final d = snap.data()!;
+          final rawImg = (d['profile_img'] ?? '').toString();
+          final nick = (d['nickname'] ?? '').toString().trim();
+          final first = (d['firstName'] ?? '').toString().trim();
+          final last = (d['lastName'] ?? '').toString().trim();
+          final name = nick.isNotEmpty
+              ? nick
+              : (first.isNotEmpty && last.isNotEmpty)
+              ? '$first $last'
+              : first.isNotEmpty
+              ? first
+              : '';
+          _profileCache[userId] = {'name': name, 'avatar': _toImgSrc(rawImg)};
+          if (mounted) setState(() => _applyProfilesToIndividual());
+        });
     _profileSubs[userId] = sub;
   }
 
@@ -195,6 +200,39 @@ class _ChatsScreenState extends State<ChatsScreen> {
     }).toList();
   }
 
+  Future<int> _countUnreadMessages({
+    required String collectionName,
+    required String chatId,
+    required DateTime? lastReadAt,
+    required int fallbackCount,
+  }) async {
+    final me = _me;
+    if (me == null) return 0;
+
+    try {
+      Query<Map<String, dynamic>> query = FirebaseFirestore.instance
+          .collection(collectionName)
+          .doc(chatId)
+          .collection('messages');
+
+      if (lastReadAt != null) {
+        query = query.where(
+          'sent_at',
+          isGreaterThan: Timestamp.fromDate(lastReadAt),
+        );
+      }
+
+      final snap = await query.get();
+      return snap.docs.where((doc) {
+        final data = doc.data();
+        return (data['sender_id'] ?? '').toString() != me.uid;
+      }).length;
+    } catch (e) {
+      debugPrint('[unreadCount] failed for $collectionName/$chatId: $e');
+      return fallbackCount;
+    }
+  }
+
   // ── Group chats subscription ──────────────────────────────────────────
   void _subscribeGroupChats() {
     final me = _me;
@@ -205,68 +243,94 @@ class _ChatsScreenState extends State<ChatsScreen> {
         .orderBy('last_message_at', descending: true)
         .snapshots()
         .listen((snap) async {
-      final List<_ChatItem> items = [];
-      for (final doc in snap.docs) {
-        final data = doc.data();
-        // Skip event channels — handled separately
-        if ((data['type'] ?? '').toString() == 'event') continue;
+          final List<_ChatItem> items = [];
+          for (final doc in snap.docs) {
+            final data = doc.data();
+            // Skip event channels — handled separately
+            if ((data['type'] ?? '').toString() == 'event') continue;
 
-        final participantDoc = await FirebaseFirestore.instance
-            .collection('group_chats')
-            .doc(doc.id)
-            .collection('participants')
-            .doc(me.uid)
-            .get();
-        if (!participantDoc.exists) continue;
-
-        final lastMsgAt = (data['last_message_at'] as Timestamp?)?.toDate();
-        final lastReadAt =
-        (participantDoc.data()?['last_read_at'] as Timestamp?)?.toDate();
-        final hasUnread = lastMsgAt != null &&
-            (lastReadAt == null || lastMsgAt.isAfter(lastReadAt)) &&
-            (data['last_message_by'] ?? '') != me.uid &&
-            (data['last_message'] ?? '').toString().isNotEmpty;
-
-        final orgId = (data['org_id'] ?? doc.id).toString();
-        String name = 'Group Chat';
-        String avatarUrl = '';
-
-        if (orgId.isNotEmpty) {
-          try {
-            final orgDoc = await FirebaseFirestore.instance
-                .collection('organizations')
-                .doc(orgId)
+            final participantDoc = await FirebaseFirestore.instance
+                .collection('group_chats')
+                .doc(doc.id)
+                .collection('participants')
+                .doc(me.uid)
                 .get();
-            if (orgDoc.exists) {
-              name = (orgDoc.data()!['org_name'] ?? 'Group Chat').toString();
-              avatarUrl = (orgDoc.data()!['org_image'] ?? '').toString();
-            } else {
-              final orgSnap = await FirebaseFirestore.instance
-                  .collection('organizations')
-                  .where('org_id', isEqualTo: orgId)
-                  .limit(1)
-                  .get();
-              if (orgSnap.docs.isNotEmpty) {
-                name = (orgSnap.docs.first.data()['org_name'] ?? 'Group Chat').toString();
-                avatarUrl = (orgSnap.docs.first.data()['org_image'] ?? '').toString();
-              }
-            }
-          } catch (_) {}
-        }
+            if (!participantDoc.exists) continue;
 
-        items.add(_ChatItem(
-          id: doc.id,
-          name: name,
-          avatarUrl: avatarUrl,
-          lastMessage: (data['last_message'] ?? '').toString(),
-          lastMessageAt: lastMsgAt,
-          hasUnread: hasUnread,
-          isGroup: true,
-          raw: {...data, '_doc_id': doc.id, 'org_name': name, 'org_image': avatarUrl},
-        ));
-      }
-      if (mounted) setState(() { _groupItems = items; _loading = false; });
-    });
+            final lastMsgAt = (data['last_message_at'] as Timestamp?)?.toDate();
+            final lastReadAt =
+                (participantDoc.data()?['last_read_at'] as Timestamp?)
+                    ?.toDate();
+            final hasUnread =
+                lastMsgAt != null &&
+                (lastReadAt == null || lastMsgAt.isAfter(lastReadAt)) &&
+                (data['last_message_by'] ?? '') != me.uid &&
+                (data['last_message'] ?? '').toString().isNotEmpty;
+            final unreadCount = hasUnread
+                ? await _countUnreadMessages(
+                    collectionName: 'group_chats',
+                    chatId: doc.id,
+                    lastReadAt: lastReadAt,
+                    fallbackCount: 1,
+                  )
+                : 0;
+
+            final orgId = (data['org_id'] ?? doc.id).toString();
+            String name = 'Group Chat';
+            String avatarUrl = '';
+
+            if (orgId.isNotEmpty) {
+              try {
+                final orgDoc = await FirebaseFirestore.instance
+                    .collection('organizations')
+                    .doc(orgId)
+                    .get();
+                if (orgDoc.exists) {
+                  name = (orgDoc.data()!['org_name'] ?? 'Group Chat')
+                      .toString();
+                  avatarUrl = (orgDoc.data()!['org_image'] ?? '').toString();
+                } else {
+                  final orgSnap = await FirebaseFirestore.instance
+                      .collection('organizations')
+                      .where('org_id', isEqualTo: orgId)
+                      .limit(1)
+                      .get();
+                  if (orgSnap.docs.isNotEmpty) {
+                    name =
+                        (orgSnap.docs.first.data()['org_name'] ?? 'Group Chat')
+                            .toString();
+                    avatarUrl = (orgSnap.docs.first.data()['org_image'] ?? '')
+                        .toString();
+                  }
+                }
+              } catch (_) {}
+            }
+
+            items.add(
+              _ChatItem(
+                id: doc.id,
+                name: name,
+                avatarUrl: avatarUrl,
+                lastMessage: (data['last_message'] ?? '').toString(),
+                lastMessageAt: lastMsgAt,
+                hasUnread: unreadCount > 0,
+                unreadCount: unreadCount,
+                isGroup: true,
+                raw: {
+                  ...data,
+                  '_doc_id': doc.id,
+                  'org_name': name,
+                  'org_image': avatarUrl,
+                },
+              ),
+            );
+          }
+          if (mounted)
+            setState(() {
+              _groupItems = items;
+              _loading = false;
+            });
+        });
   }
 
   // ── Individual chats subscription ──────────────────────────────────────
@@ -279,54 +343,77 @@ class _ChatsScreenState extends State<ChatsScreen> {
         .where('participants', arrayContains: me.uid)
         .orderBy('last_message_at', descending: true)
         .snapshots()
-        .listen((snap) {
-      final List<_ChatItem> items = [];
-      for (final doc in snap.docs) {
-        final data = doc.data();
-        final participants = List<String>.from(data['participants'] ?? []);
-        final otherId =
-        participants.firstWhere((id) => id != me.uid, orElse: () => '');
-        if (otherId.isEmpty) continue;
+        .listen((snap) async {
+          final List<_ChatItem> items = [];
+          for (final doc in snap.docs) {
+            final data = doc.data();
+            final participants = List<String>.from(data['participants'] ?? []);
+            final otherId = participants.firstWhere(
+              (id) => id != me.uid,
+              orElse: () => '',
+            );
+            if (otherId.isEmpty) continue;
 
-        _ensureProfileSub(otherId);
+            _ensureProfileSub(otherId);
 
-        final names = Map<String, dynamic>.from(data['participant_names'] ?? {});
-        final avatars = Map<String, dynamic>.from(data['participant_avatars'] ?? {});
-        final lastMsgAt = (data['last_message_at'] as Timestamp?)?.toDate();
-        final lastReadMap = data['last_read'] as Map<String, dynamic>?;
-        final myLastRead =
-        lastReadMap != null ? (lastReadMap[me.uid] as Timestamp?)?.toDate() : null;
-        final hasUnread = (data['last_message_by'] ?? '') != me.uid &&
-            (data['last_message'] ?? '').toString().isNotEmpty &&
-            lastMsgAt != null &&
-            (myLastRead == null || lastMsgAt.isAfter(myLastRead));
+            final names = Map<String, dynamic>.from(
+              data['participant_names'] ?? {},
+            );
+            final avatars = Map<String, dynamic>.from(
+              data['participant_avatars'] ?? {},
+            );
+            final lastMsgAt = (data['last_message_at'] as Timestamp?)?.toDate();
+            final lastReadMap = data['last_read'] as Map<String, dynamic>?;
+            final myLastRead = lastReadMap != null
+                ? (lastReadMap[me.uid] as Timestamp?)?.toDate()
+                : null;
+            final hasUnread =
+                (data['last_message_by'] ?? '') != me.uid &&
+                (data['last_message'] ?? '').toString().isNotEmpty &&
+                lastMsgAt != null &&
+                (myLastRead == null || lastMsgAt.isAfter(myLastRead));
+            final unreadCount = hasUnread
+                ? await _countUnreadMessages(
+                    collectionName: 'individual_chats',
+                    chatId: doc.id,
+                    lastReadAt: myLastRead,
+                    fallbackCount: 1,
+                  )
+                : 0;
 
-        final cached = _profileCache[otherId];
-        final resolvedName = ((cached?['name'] ?? '').isNotEmpty)
-            ? cached!['name']!
-            : (names[otherId] ?? 'Unknown').toString();
-        final resolvedAvatar = ((cached?['avatar'] ?? '').isNotEmpty)
-            ? cached!['avatar']!
-            : _toImgSrc((avatars[otherId] ?? '').toString());
+            final cached = _profileCache[otherId];
+            final resolvedName = ((cached?['name'] ?? '').isNotEmpty)
+                ? cached!['name']!
+                : (names[otherId] ?? 'Unknown').toString();
+            final resolvedAvatar = ((cached?['avatar'] ?? '').isNotEmpty)
+                ? cached!['avatar']!
+                : _toImgSrc((avatars[otherId] ?? '').toString());
 
-        items.add(_ChatItem(
-          id: doc.id,
-          name: resolvedName,
-          avatarUrl: resolvedAvatar,
-          lastMessage: (data['last_message'] ?? '').toString(),
-          lastMessageAt: lastMsgAt,
-          hasUnread: hasUnread,
-          isGroup: false,
-          raw: {
-            ...data,
-            '_other_user_id': otherId,
-            '_other_user_name': resolvedName,
-            '_other_user_avatar': resolvedAvatar,
-          },
-        ));
-      }
-      if (mounted) setState(() { _individualItems = items; _loading = false; });
-    });
+            items.add(
+              _ChatItem(
+                id: doc.id,
+                name: resolvedName,
+                avatarUrl: resolvedAvatar,
+                lastMessage: (data['last_message'] ?? '').toString(),
+                lastMessageAt: lastMsgAt,
+                hasUnread: unreadCount > 0,
+                unreadCount: unreadCount,
+                isGroup: false,
+                raw: {
+                  ...data,
+                  '_other_user_id': otherId,
+                  '_other_user_name': resolvedName,
+                  '_other_user_avatar': resolvedAvatar,
+                },
+              ),
+            );
+          }
+          if (mounted)
+            setState(() {
+              _individualItems = items;
+              _loading = false;
+            });
+        });
   }
 
   // ── Event channels subscription ────────────────────────────────────────
@@ -342,92 +429,122 @@ class _ChatsScreenState extends State<ChatsScreen> {
         .orderBy('last_message_at', descending: true)
         .snapshots()
         .listen((snap) async {
-      final List<_ChatItem> items = [];
-      final List<String> eventIds = [];
+          final List<_ChatItem> items = [];
+          final List<String> eventIds = [];
 
-      for (final doc in snap.docs) {
-        final data = doc.data();
+          for (final doc in snap.docs) {
+            final data = doc.data();
 
-        // Hide cleared channels (mirrors web messages_cleared check)
-        if (data['messages_cleared'] == true) continue;
+            // Hide cleared channels (mirrors web messages_cleared check)
+            if (data['messages_cleared'] == true) continue;
 
-        final lastMsgAt = (data['last_message_at'] as Timestamp?)?.toDate();
-        // Zero-cost unread heuristic — same as web
-        final hasUnread = lastMsgAt != null &&
-            (data['last_message_by'] ?? '') != me.uid &&
-            (data['last_message'] ?? '').toString().isNotEmpty;
+            final lastMsgAt = (data['last_message_at'] as Timestamp?)?.toDate();
+            final participantDoc = await FirebaseFirestore.instance
+                .collection('group_chats')
+                .doc(doc.id)
+                .collection('participants')
+                .doc(me.uid)
+                .get();
+            final lastReadAt =
+                (participantDoc.data()?['last_read_at'] as Timestamp?)
+                    ?.toDate();
+            final hasUnread =
+                lastMsgAt != null &&
+                (lastReadAt == null || lastMsgAt.isAfter(lastReadAt)) &&
+                (data['last_message_by'] ?? '') != me.uid &&
+                (data['last_message'] ?? '').toString().isNotEmpty;
+            final unreadCount = hasUnread
+                ? await _countUnreadMessages(
+                    collectionName: 'group_chats',
+                    chatId: doc.id,
+                    lastReadAt: lastReadAt,
+                    fallbackCount: 1,
+                  )
+                : 0;
 
-        final name = (data['name'] ?? '').toString().isNotEmpty
-            ? data['name'].toString()
-            : 'Event Channel';
-        final imgUrl = (data['image'] ?? '').toString();
+            final name = (data['name'] ?? '').toString().isNotEmpty
+                ? data['name'].toString()
+                : 'Event Channel';
+            final imgUrl = (data['image'] ?? '').toString();
 
-        final eventId = (data['event_id'] ?? doc.id).toString();
-        if (eventId.isNotEmpty) eventIds.add(eventId);
+            final eventId = (data['event_id'] ?? doc.id).toString();
+            if (eventId.isNotEmpty) eventIds.add(eventId);
 
-        items.add(_ChatItem(
-          id: doc.id,
-          name: name,
-          avatarUrl: imgUrl,
-          lastMessage: (data['last_message'] ?? '').toString(),
-          lastMessageAt: lastMsgAt,
-          hasUnread: hasUnread,
-          isGroup: true,
-          isEvent: true,
-          repliesAllowed: data['replies_allowed'] != false,
-          raw: {...data, '_doc_id': doc.id, '_event_id': eventId},
-        ));
-      }
-
-      // Resolve event dates in chunks of 30 (Firestore whereIn limit)
-      final Map<String, Map<String, DateTime?>> datesMap = {};
-      try {
-        final uniqueIds = eventIds
-            .where((id) => id.trim().isNotEmpty)
-            .toSet()
-            .toList();
-        for (var i = 0; i < uniqueIds.length; i += 30) {
-          final chunk = uniqueIds.sublist(
-              i, i + 30 > uniqueIds.length ? uniqueIds.length : i + 30);
-          final evsSnap = await FirebaseFirestore.instance
-              .collection('events')
-              .where(FieldPath.documentId, whereIn: chunk)
-              .get();
-          for (final d in evsSnap.docs) {
-            final ed = d.data();
-            datesMap[d.id] = {
-              'event_date': (ed['event_date'] as Timestamp?)?.toDate(),
-              'event_date_end':
-              (ed['event_date_end'] as Timestamp?)?.toDate(),
-            };
+            items.add(
+              _ChatItem(
+                id: doc.id,
+                name: name,
+                avatarUrl: imgUrl,
+                lastMessage: (data['last_message'] ?? '').toString(),
+                lastMessageAt: lastMsgAt,
+                hasUnread: unreadCount > 0,
+                unreadCount: unreadCount,
+                isGroup: true,
+                isEvent: true,
+                repliesAllowed: data['replies_allowed'] != false,
+                raw: {...data, '_doc_id': doc.id, '_event_id': eventId},
+              ),
+            );
           }
-        }
-      } catch (e) {
-        debugPrint('[eventDates] resolve failed: $e');
-      }
 
-      for (final item in items) {
-        final evId = (item.raw['_event_id'] ?? item.id).toString();
-        final dates = datesMap[evId];
-        if (dates != null) {
-          item.raw['event_date'] = dates['event_date'];
-          item.raw['event_date_end'] = dates['event_date_end'];
-        }
-      }
+          // Resolve event dates in chunks of 30 (Firestore whereIn limit)
+          final Map<String, Map<String, DateTime?>> datesMap = {};
+          try {
+            final uniqueIds = eventIds
+                .where((id) => id.trim().isNotEmpty)
+                .toSet()
+                .toList();
+            for (var i = 0; i < uniqueIds.length; i += 30) {
+              final chunk = uniqueIds.sublist(
+                i,
+                i + 30 > uniqueIds.length ? uniqueIds.length : i + 30,
+              );
+              final evsSnap = await FirebaseFirestore.instance
+                  .collection('events')
+                  .where(FieldPath.documentId, whereIn: chunk)
+                  .get();
+              for (final d in evsSnap.docs) {
+                final ed = d.data();
+                datesMap[d.id] = {
+                  'event_date': (ed['event_date'] as Timestamp?)?.toDate(),
+                  'event_date_end': (ed['event_date_end'] as Timestamp?)
+                      ?.toDate(),
+                };
+              }
+            }
+          } catch (e) {
+            debugPrint('[eventDates] resolve failed: $e');
+          }
 
-      if (mounted) setState(() { _eventItems = items; _loading = false; });
-    });
+          for (final item in items) {
+            final evId = (item.raw['_event_id'] ?? item.id).toString();
+            final dates = datesMap[evId];
+            if (dates != null) {
+              item.raw['event_date'] = dates['event_date'];
+              item.raw['event_date_end'] = dates['event_date_end'];
+            }
+          }
+
+          if (mounted)
+            setState(() {
+              _eventItems = items;
+              _loading = false;
+            });
+        });
   }
 
   // ── Merged list (All / Unread / Groups) ───────────────────────────────
   List<_ChatItem> get _mergedItems {
     List<_ChatItem> all = [];
-    if (_filter != 'Groups' && _filter != 'Events') all.addAll(_individualItems);
+    if (_filter != 'Groups' && _filter != 'Events')
+      all.addAll(_individualItems);
     if (_filter != 'Unread' && _filter != 'Events') all.addAll(_groupItems);
     if (_filter == 'Unread') all = [..._individualItems, ..._groupItems];
 
     if (_searchQuery.isNotEmpty) {
-      all = all.where((c) => c.name.toLowerCase().contains(_searchQuery)).toList();
+      all = all
+          .where((c) => c.name.toLowerCase().contains(_searchQuery))
+          .toList();
     }
     if (_filter == 'Unread') all = all.where((c) => c.hasUnread).toList();
 
@@ -458,27 +575,47 @@ class _ChatsScreenState extends State<ChatsScreen> {
       final startRaw = item.raw['event_date'];
       DateTime? endDate;
       DateTime? startDate;
-      if (endRaw is DateTime) endDate = endRaw;
-      else if (endRaw is Timestamp) endDate = endRaw.toDate();
-      if (startRaw is DateTime) startDate = startRaw;
-      else if (startRaw is Timestamp) startDate = startRaw.toDate();
+      if (endRaw is DateTime)
+        endDate = endRaw;
+      else if (endRaw is Timestamp)
+        endDate = endRaw.toDate();
+      if (startRaw is DateTime)
+        startDate = startRaw;
+      else if (startRaw is Timestamp)
+        startDate = startRaw.toDate();
 
       bool isPast = false;
       if (endDate != null) {
         isPast = endDate.isBefore(now);
       } else if (startDate != null) {
-        final startDay = DateTime(startDate.year, startDate.month, startDate.day);
+        final startDay = DateTime(
+          startDate.year,
+          startDate.month,
+          startDate.day,
+        );
         isPast = startDay.isBefore(today);
       }
-      if (isPast) past.add(item); else current.add(item);
+      if (isPast)
+        past.add(item);
+      else
+        current.add(item);
     }
     return (current: current, past: past);
   }
 
   int get _unreadTotal {
-    return [..._individualItems, ..._groupItems, ..._eventItems]
-        .where((c) => c.hasUnread)
-        .length;
+    return [
+      ..._individualItems,
+      ..._groupItems,
+      ..._eventItems,
+    ].fold<int>(0, (total, item) => total + item.unreadCount);
+  }
+
+  int get _eventUnreadTotal {
+    return _filteredEventItems.fold<int>(
+      0,
+      (total, item) => total + item.unreadCount,
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -489,15 +626,17 @@ class _ChatsScreenState extends State<ChatsScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: Column(children: [
-          _buildHeader(),
-          const SizedBox(height: 12),
-          _buildSearchBar(),
-          const SizedBox(height: 12),
-          _buildFilterTabs(),
-          const SizedBox(height: 4),
-          Expanded(child: _buildRefreshableBody()),
-        ]),
+        child: Column(
+          children: [
+            _buildHeader(),
+            const SizedBox(height: 12),
+            _buildSearchBar(),
+            const SizedBox(height: 12),
+            _buildFilterTabs(),
+            const SizedBox(height: 4),
+            Expanded(child: _buildRefreshableBody()),
+          ],
+        ),
       ),
     );
   }
@@ -519,33 +658,77 @@ class _ChatsScreenState extends State<ChatsScreen> {
   Widget _buildHeader() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-      child: Row(children: [
-        GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: const Icon(Icons.arrow_back, color: AppColors.primary, size: 26),
-        ),
-        const SizedBox(width: 14),
-        const Text('chats',
-            style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-                color: AppColors.primary,
-                letterSpacing: -0.5)),
-        const Spacer(),
-        // Unread badge
-        if (_unreadTotal > 0)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-            decoration: BoxDecoration(
-                color: const Color(0xFFf44336).withOpacity(0.9),
-                borderRadius: BorderRadius.circular(20)),
-            child: Text('$_unreadTotal',
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800)),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: () => Navigator.pop(context),
+            child: const Icon(
+              Icons.arrow_back,
+              color: AppColors.primary,
+              size: 26,
+            ),
           ),
-      ]),
+          const SizedBox(width: 14),
+          const Text(
+            'chats',
+            style: TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+              color: AppColors.primary,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const Spacer(),
+          SizedBox(
+            width: 42,
+            height: 42,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned.fill(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0F4F0),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(
+                      Icons.notifications_none_rounded,
+                      color: AppColors.primary.withOpacity(0.9),
+                      size: 24,
+                    ),
+                  ),
+                ),
+                if (_unreadTotal > 0)
+                  Positioned(
+                    top: -5,
+                    right: -5,
+                    child: Container(
+                      constraints: const BoxConstraints(
+                        minWidth: 22,
+                        minHeight: 22,
+                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFf44336),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        '$_unreadTotal',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -556,20 +739,28 @@ class _ChatsScreenState extends State<ChatsScreen> {
       child: Container(
         height: 46,
         decoration: BoxDecoration(
-            color: const Color(0xFFF0F4F0),
-            borderRadius: BorderRadius.circular(14)),
+          color: const Color(0xFFF0F4F0),
+          borderRadius: BorderRadius.circular(14),
+        ),
         child: TextField(
           controller: _searchCtrl,
           style: const TextStyle(fontSize: 15, color: Color(0xFF1C1C1E)),
           decoration: InputDecoration(
             hintText: 'Search',
-            hintStyle:
-            TextStyle(color: Colors.black.withOpacity(0.35), fontSize: 15),
-            suffixIcon: Icon(Icons.search,
-                color: Colors.black.withOpacity(0.35), size: 20),
+            hintStyle: TextStyle(
+              color: Colors.black.withOpacity(0.35),
+              fontSize: 15,
+            ),
+            suffixIcon: Icon(
+              Icons.search,
+              color: Colors.black.withOpacity(0.35),
+              size: 20,
+            ),
             border: InputBorder.none,
-            contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 13,
+            ),
           ),
         ),
       ),
@@ -596,8 +787,10 @@ class _ChatsScreenState extends State<ChatsScreen> {
                 onTap: () => setState(() => _filter = label),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 20, vertical: 9),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 20,
+                    vertical: 9,
+                  ),
                   decoration: BoxDecoration(
                     color: selected ? activeColor : const Color(0xFFF0F4F0),
                     borderRadius: BorderRadius.circular(20),
@@ -606,38 +799,48 @@ class _ChatsScreenState extends State<ChatsScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       if (isEvent) ...[
-                        Icon(Icons.campaign_rounded,
-                            size: 13,
-                            color: selected
-                                ? Colors.white
-                                : Colors.black.withOpacity(0.45)),
+                        Icon(
+                          Icons.campaign_rounded,
+                          size: 13,
+                          color: selected
+                              ? Colors.white
+                              : Colors.black.withOpacity(0.45),
+                        ),
                         const SizedBox(width: 4),
                       ],
-                      Text(label,
-                          style: TextStyle(
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w600,
-                              color: selected
-                                  ? Colors.white
-                                  : Colors.black.withOpacity(0.45))),
-                      if (isEvent && _filteredEventItems.isNotEmpty) ...[
+                      Text(
+                        label,
+                        style: TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w600,
+                          color: selected
+                              ? Colors.white
+                              : Colors.black.withOpacity(0.45),
+                        ),
+                      ),
+                      if (isEvent && _eventUnreadTotal > 0) ...[
                         const SizedBox(width: 5),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 5, vertical: 1),
+                            horizontal: 5,
+                            vertical: 1,
+                          ),
                           decoration: BoxDecoration(
                             color: selected
                                 ? Colors.white.withOpacity(0.25)
                                 : const Color(0xFFFF9933).withOpacity(0.15),
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child: Text('${_filteredEventItems.length}',
-                              style: TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                  color: selected
-                                      ? Colors.white
-                                      : const Color(0xFFFF9933))),
+                          child: Text(
+                            '$_eventUnreadTotal',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              color: selected
+                                  ? Colors.white
+                                  : const Color(0xFFFF9933),
+                            ),
+                          ),
                         ),
                       ],
                     ],
@@ -655,8 +858,11 @@ class _ChatsScreenState extends State<ChatsScreen> {
   Widget _buildBody() {
     if (_loading) {
       return Center(
-          child: CircularProgressIndicator(
-              color: AppColors.primary, strokeWidth: 2.5));
+        child: CircularProgressIndicator(
+          color: AppColors.primary,
+          strokeWidth: 2.5,
+        ),
+      );
     }
 
     // Events tab: current event channels list + collapsible past events
@@ -667,54 +873,77 @@ class _ChatsScreenState extends State<ChatsScreen> {
       if (current.isEmpty && past.isEmpty) {
         return _buildScrollableEmpty('No event channels yet');
       }
-      return ListView(children: [
-        ...List.generate(current.length, (i) => Column(children: [
-          _buildEventTile(current[i]),
-          if (i < current.length - 1)
-            const Divider(
-                height: 1, indent: 76, endIndent: 20, color: Color(0xFFF0F0F0)),
-        ])),
-        if (past.isNotEmpty) _buildPastEventsSection(past),
-      ]);
+      return ListView(
+        children: [
+          ...List.generate(
+            current.length,
+            (i) => Column(
+              children: [
+                _buildEventTile(current[i]),
+                if (i < current.length - 1)
+                  const Divider(
+                    height: 1,
+                    indent: 76,
+                    endIndent: 20,
+                    color: Color(0xFFF0F0F0),
+                  ),
+              ],
+            ),
+          ),
+          if (past.isNotEmpty) _buildPastEventsSection(past),
+        ],
+      );
     }
 
     // All / Unread / Groups tabs
     final items = _mergedItems;
     final evs = _filteredEventItems;
+    final eventShortcutItems = _filter == 'Unread'
+        ? evs.where((e) => e.hasUnread).toList()
+        : evs;
 
-    if (items.isEmpty && evs.isEmpty) {
-      return _buildScrollableEmpty(_filter == 'Unread'
-          ? 'No unread messages'
-          : _filter == 'Groups'
-          ? 'No group chats yet'
-          : 'No chats yet');
+    if (items.isEmpty && eventShortcutItems.isEmpty) {
+      return _buildScrollableEmpty(
+        _filter == 'Unread'
+            ? 'No unread messages'
+            : _filter == 'Groups'
+            ? 'No group chats yet'
+            : 'No chats yet',
+      );
     }
 
-    return ListView(children: [
-      // ── Event Channels button (only in All/Unread) — routes to Events tab ──
-      if ((_filter == 'All' || _filter == 'Unread') && evs.isNotEmpty) ...[
-        _buildEventChannelsButton(evs),
-        if (items.isNotEmpty)
-          Divider(
+    return ListView(
+      children: [
+        // ── Event Channels button (only in All/Unread) — routes to Events tab ──
+        if ((_filter == 'All' || _filter == 'Unread') &&
+            eventShortcutItems.isNotEmpty) ...[
+          _buildEventChannelsButton(eventShortcutItems),
+          if (items.isNotEmpty)
+            Divider(
               height: 1,
               indent: 0,
               endIndent: 0,
-              color: Colors.black.withOpacity(0.04)),
-      ],
+              color: Colors.black.withOpacity(0.04),
+            ),
+        ],
 
-      // ── Regular chats ──────────────────────────────────────────────
-      ...List.generate(items.length, (i) {
-        return Column(children: [
-          _buildChatTile(items[i]),
-          if (i < items.length - 1)
-            const Divider(
-                height: 1,
-                indent: 76,
-                endIndent: 20,
-                color: Color(0xFFF0F0F0)),
-        ]);
-      }),
-    ]);
+        // ── Regular chats ──────────────────────────────────────────────
+        ...List.generate(items.length, (i) {
+          return Column(
+            children: [
+              _buildChatTile(items[i]),
+              if (i < items.length - 1)
+                const Divider(
+                  height: 1,
+                  indent: 76,
+                  endIndent: 20,
+                  color: Color(0xFFF0F0F0),
+                ),
+            ],
+          );
+        }),
+      ],
+    );
   }
 
   // ── Scrollable empty state (needed so RefreshIndicator triggers on empty lists) ──
@@ -725,16 +954,25 @@ class _ChatsScreenState extends State<ChatsScreen> {
         child: SizedBox(
           height: constraints.maxHeight,
           child: Center(
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.chat_bubble_outline,
-                  size: 52, color: Colors.black.withOpacity(0.12)),
-              const SizedBox(height: 14),
-              Text(message,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.chat_bubble_outline,
+                  size: 52,
+                  color: Colors.black.withOpacity(0.12),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  message,
                   style: TextStyle(
-                      color: Colors.black.withOpacity(0.35),
-                      fontSize: 15,
-                      fontWeight: FontWeight.w500)),
-            ]),
+                    color: Colors.black.withOpacity(0.35),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -745,8 +983,11 @@ class _ChatsScreenState extends State<ChatsScreen> {
   // Single tappable button that routes to the Events tab. Replaces the
   // previous preview-list section.
   Widget _buildEventChannelsButton(List<_ChatItem> evs) {
-    final hasUnread = evs.any((e) => e.hasUnread);
-    final count = evs.length;
+    final unreadCount = evs.fold<int>(
+      0,
+      (total, item) => total + item.unreadCount,
+    );
+    final hasUnread = unreadCount > 0;
     const orange = Color(0xFFFF9933);
 
     return Padding(
@@ -761,60 +1002,82 @@ class _ChatsScreenState extends State<ChatsScreen> {
             border: Border.all(color: orange.withOpacity(0.35), width: 1),
             borderRadius: BorderRadius.circular(16),
           ),
-          child: Row(children: [
-            Container(
-              width: 44, height: 44,
-              decoration: BoxDecoration(
-                color: orange,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(Icons.chat_bubble_outline,
-                  color: Colors.white, size: 22),
-            ),
-            const SizedBox(width: 12),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Event Channels',
-                      style: TextStyle(
-                          fontSize: 15.5,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF1C1C1E),
-                          letterSpacing: -0.2)),
-                  SizedBox(height: 2),
-                  Text('Tap to view event channels',
-                      style: TextStyle(
-                          fontSize: 12.5,
-                          color: Color(0xFF8A8A8E),
-                          fontWeight: FontWeight.w500)),
-                ],
-              ),
-            ),
-            if (hasUnread) ...[
+          child: Row(
+            children: [
               Container(
-                width: 8, height: 8,
-                decoration: const BoxDecoration(
-                    color: Color(0xFFf44336), shape: BoxShape.circle),
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: orange,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.chat_bubble_outline,
+                  color: Colors.white,
+                  size: 22,
+                ),
               ),
-              const SizedBox(width: 8),
-            ],
-            Container(
-              padding:
-              const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-              decoration: BoxDecoration(
-                color: orange.withOpacity(0.18),
-                borderRadius: BorderRadius.circular(20),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Event Channels',
+                      style: TextStyle(
+                        fontSize: 15.5,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF1C1C1E),
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Tap to view event channels',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        color: Color(0xFF8A8A8E),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              child: Text('$count',
-                  style: const TextStyle(
+              if (hasUnread) ...[
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFf44336),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
+              if (hasUnread) ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: orange.withOpacity(0.18),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '$unreadCount',
+                    style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w900,
-                      color: orange)),
-            ),
-            const SizedBox(width: 6),
-            const Icon(Icons.chevron_right, color: orange, size: 22),
-          ]),
+                      color: orange,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
+              const Icon(Icons.chevron_right, color: orange, size: 22),
+            ],
+          ),
         ),
       ),
     );
@@ -832,54 +1095,75 @@ class _ChatsScreenState extends State<ChatsScreen> {
               setState(() => _pastEventsExpanded = !_pastEventsExpanded),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
-            child: Row(children: [
-              Icon(Icons.history,
-                  size: 16, color: Colors.black.withOpacity(0.45)),
-              const SizedBox(width: 8),
-              Text('Past Events',
-                  style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.black.withOpacity(0.55),
-                      letterSpacing: -0.1)),
-              const SizedBox(width: 8),
-              Container(
-                padding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.05),
-                  borderRadius: BorderRadius.circular(20),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.history,
+                  size: 16,
+                  color: Colors.black.withOpacity(0.45),
                 ),
-                child: Text('${past.length}',
+                const SizedBox(width: 8),
+                Text(
+                  'Past Events',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.black.withOpacity(0.55),
+                    letterSpacing: -0.1,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    '${past.length}',
                     style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.black.withOpacity(0.45))),
-              ),
-              const Spacer(),
-              AnimatedRotation(
-                turns: _pastEventsExpanded ? 0.5 : 0,
-                duration: const Duration(milliseconds: 180),
-                child: Icon(Icons.keyboard_arrow_down,
-                    size: 20, color: Colors.black.withOpacity(0.45)),
-              ),
-            ]),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.black.withOpacity(0.45),
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                AnimatedRotation(
+                  turns: _pastEventsExpanded ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 180),
+                  child: Icon(
+                    Icons.keyboard_arrow_down,
+                    size: 20,
+                    color: Colors.black.withOpacity(0.45),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
         if (_pastEventsExpanded)
-          ...List.generate(past.length, (i) => Column(children: [
-            _buildEventTile(past[i]),
-            if (i < past.length - 1)
-              const Divider(
-                  height: 1,
-                  indent: 76,
-                  endIndent: 20,
-                  color: Color(0xFFF0F0F0)),
-          ])),
+          ...List.generate(
+            past.length,
+            (i) => Column(
+              children: [
+                _buildEventTile(past[i]),
+                if (i < past.length - 1)
+                  const Divider(
+                    height: 1,
+                    indent: 76,
+                    endIndent: 20,
+                    color: Color(0xFFF0F0F0),
+                  ),
+              ],
+            ),
+          ),
       ],
     );
   }
-
 
   // ── Event Channel Tile ────────────────────────────────────────────────
   Widget _buildEventTile(_ChatItem item) {
@@ -889,116 +1173,160 @@ class _ChatsScreenState extends State<ChatsScreen> {
       splashColor: const Color(0xFFFF9933).withOpacity(0.05),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 11),
-        child: Row(children: [
-          // Avatar
-          Stack(children: [
-            CircleAvatar(
-              radius: 27,
-              backgroundColor: const Color(0xFFFF9933).withOpacity(0.12),
-              backgroundImage: avatarImage,
-              child: avatarImage == null
-                  ? Text(
-                  item.name.isNotEmpty ? item.name[0].toUpperCase() : '?',
-                  style: const TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFFFF9933)))
-                  : null,
-            ),
-            // Event badge overlay
-            Positioned(
-              right: 0, bottom: 0,
-              child: Container(
-                width: 18, height: 18,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFF9933),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2),
-                ),
-                child: const Icon(Icons.campaign_rounded,
-                    size: 9, color: Colors.white),
-              ),
-            ),
-          ]),
-          const SizedBox(width: 14),
-          // Content
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
+          children: [
+            // Avatar
+            Stack(
               children: [
-                Row(children: [
-                  Expanded(
-                    child: Text(item.name,
-                        style: TextStyle(
+                CircleAvatar(
+                  radius: 27,
+                  backgroundColor: const Color(0xFFFF9933).withOpacity(0.12),
+                  backgroundImage: avatarImage,
+                  child: avatarImage == null
+                      ? Text(
+                          item.name.isNotEmpty
+                              ? item.name[0].toUpperCase()
+                              : '?',
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFFFF9933),
+                          ),
+                        )
+                      : null,
+                ),
+                // Event badge overlay
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    width: 18,
+                    height: 18,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFF9933),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
+                    child: const Icon(
+                      Icons.campaign_rounded,
+                      size: 9,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(width: 14),
+            // Content
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          item.name,
+                          style: TextStyle(
                             fontSize: 15,
                             fontWeight: item.hasUnread
                                 ? FontWeight.w700
                                 : FontWeight.w600,
                             color: const Color(0xFF1C1C1E),
-                            letterSpacing: -0.2),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
-                  ),
-                  Text(_formatTime(item.lastMessageAt),
-                      style: TextStyle(
+                            letterSpacing: -0.2,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Text(
+                        _formatTime(item.lastMessageAt),
+                        style: TextStyle(
                           fontSize: 12,
                           color: item.hasUnread
                               ? const Color(0xFFFF9933)
                               : Colors.black.withOpacity(0.35),
                           fontWeight: item.hasUnread
                               ? FontWeight.w600
-                              : FontWeight.normal)),
-                ]),
-                const SizedBox(height: 3),
-                Row(children: [
-                  // Announce-only badge
-                  if (item.repliesAllowed == false) ...[
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      margin: const EdgeInsets.only(right: 5),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFF9933).withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(6),
+                              : FontWeight.normal,
+                        ),
                       ),
-                      child: const Text('ANNOUNCE ONLY',
-                          style: TextStyle(
+                    ],
+                  ),
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      // Announce-only badge
+                      if (item.repliesAllowed == false) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          margin: const EdgeInsets.only(right: 5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFF9933).withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text(
+                            'ANNOUNCE ONLY',
+                            style: TextStyle(
                               fontSize: 8,
                               fontWeight: FontWeight.w900,
                               color: Color(0xFFFF9933),
-                              letterSpacing: 0.4)),
-                    ),
-                  ],
-                  Expanded(
-                    child: Text(
-                      item.lastMessage.isEmpty
-                          ? 'No messages yet'
-                          : item.lastMessage,
-                      style: TextStyle(
-                          fontSize: 13.5,
-                          color: item.hasUnread
-                              ? const Color(0xFF1C1C1E)
-                              : Colors.black.withOpacity(0.38),
-                          fontWeight: item.hasUnread
-                              ? FontWeight.w600
-                              : FontWeight.normal),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                      Expanded(
+                        child: Text(
+                          item.lastMessage.isEmpty
+                              ? 'No messages yet'
+                              : item.lastMessage,
+                          style: TextStyle(
+                            fontSize: 13.5,
+                            color: item.hasUnread
+                                ? const Color(0xFF1C1C1E)
+                                : Colors.black.withOpacity(0.38),
+                            fontWeight: item.hasUnread
+                                ? FontWeight.w600
+                                : FontWeight.normal,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (item.hasUnread) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          constraints: const BoxConstraints(
+                            minWidth: 22,
+                            minHeight: 22,
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFF9933).withOpacity(0.18),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            '${item.unreadCount}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w900,
+                              color: Color(0xFFFF9933),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                  if (item.hasUnread) ...[
-                    const SizedBox(width: 8),
-                    Container(
-                      width: 9, height: 9,
-                      decoration: const BoxDecoration(
-                          color: Color(0xFFFF9933), shape: BoxShape.circle),
-                    ),
-                  ],
-                ]),
-              ],
+                ],
+              ),
             ),
-          ),
-        ]),
+          ],
+        ),
       ),
     );
   }
@@ -1012,89 +1340,130 @@ class _ChatsScreenState extends State<ChatsScreen> {
       highlightColor: AppColors.primary.withOpacity(0.03),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        child: Row(children: [
-          Stack(children: [
-            CircleAvatar(
-              radius: 28,
-              backgroundColor: AppColors.primary.withOpacity(0.1),
-              backgroundImage: avatarImage,
-              child: avatarImage == null
-                  ? Text(
-                  item.name.isNotEmpty ? item.name[0].toUpperCase() : '?',
-                  style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.primary))
-                  : null,
-            ),
-            if (item.isGroup)
-              Positioned(
-                right: 0, bottom: 0,
-                child: Container(
-                  width: 18, height: 18,
-                  decoration: BoxDecoration(
-                      color: AppColors.primary,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 2)),
-                  child: const Icon(Icons.group, size: 10, color: Colors.white),
-                ),
-              ),
-          ]),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
+          children: [
+            Stack(
               children: [
-                Text(item.name,
+                CircleAvatar(
+                  radius: 28,
+                  backgroundColor: AppColors.primary.withOpacity(0.1),
+                  backgroundImage: avatarImage,
+                  child: avatarImage == null
+                      ? Text(
+                          item.name.isNotEmpty
+                              ? item.name[0].toUpperCase()
+                              : '?',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.primary,
+                          ),
+                        )
+                      : null,
+                ),
+                if (item.isGroup)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 18,
+                      height: 18,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                      child: const Icon(
+                        Icons.group,
+                        size: 10,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.name,
                     style: TextStyle(
-                        fontSize: 15,
-                        fontWeight:
-                        item.hasUnread ? FontWeight.w700 : FontWeight.w600,
-                        color: const Color(0xFF1C1C1E),
-                        letterSpacing: -0.2),
+                      fontSize: 15,
+                      fontWeight: item.hasUnread
+                          ? FontWeight.w700
+                          : FontWeight.w600,
+                      color: const Color(0xFF1C1C1E),
+                      letterSpacing: -0.2,
+                    ),
                     maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 3),
-                Text(
-                  item.lastMessage.isEmpty ? 'No messages yet' : item.lastMessage,
-                  style: TextStyle(
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    item.lastMessage.isEmpty
+                        ? 'No messages yet'
+                        : item.lastMessage,
+                    style: TextStyle(
                       fontSize: 13.5,
                       color: item.hasUnread
                           ? const Color(0xFF1C1C1E)
                           : Colors.black.withOpacity(0.38),
                       fontWeight: item.hasUnread
                           ? FontWeight.w600
-                          : FontWeight.normal),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                          : FontWeight.normal,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  _formatTime(item.lastMessageAt),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: item.hasUnread
+                        ? AppColors.primary
+                        : Colors.black.withOpacity(0.35),
+                    fontWeight: item.hasUnread
+                        ? FontWeight.w600
+                        : FontWeight.normal,
+                  ),
                 ),
+                if (item.hasUnread) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    constraints: const BoxConstraints(
+                      minWidth: 22,
+                      minHeight: 22,
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      '${item.unreadCount}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
               ],
             ),
-          ),
-          const SizedBox(width: 10),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(_formatTime(item.lastMessageAt),
-                  style: TextStyle(
-                      fontSize: 12,
-                      color: item.hasUnread
-                          ? AppColors.primary
-                          : Colors.black.withOpacity(0.35),
-                      fontWeight: item.hasUnread
-                          ? FontWeight.w600
-                          : FontWeight.normal)),
-              if (item.hasUnread) ...[
-                const SizedBox(height: 6),
-                Container(
-                    width: 9, height: 9,
-                    decoration: const BoxDecoration(
-                        color: AppColors.primary, shape: BoxShape.circle)),
-              ],
-            ],
-          ),
-        ]),
+          ],
+        ),
       ),
     );
   }
@@ -1105,15 +1474,14 @@ class _ChatsScreenState extends State<ChatsScreen> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => EventChatScreen(
-            chatId: item.id,
-            eventData: item.raw,
-          ),
+          builder: (_) => EventChatScreen(chatId: item.id, eventData: item.raw),
         ),
       );
     } else if (item.isGroup) {
-      Navigator.push(context,
-          MaterialPageRoute(builder: (_) => GroupChatScreen(group: item.raw)));
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => GroupChatScreen(group: item.raw)),
+      );
     } else {
       Navigator.push(
         context,
@@ -1130,26 +1498,41 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
   // ── Helpers ────────────────────────────────────────────────────────────
   Widget _buildEmpty(String message) => Center(
-    child: Column(mainAxisSize: MainAxisSize.min, children: [
-      Icon(Icons.chat_bubble_outline,
-          size: 52, color: Colors.black.withOpacity(0.12)),
-      const SizedBox(height: 14),
-      Text(message,
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.chat_bubble_outline,
+          size: 52,
+          color: Colors.black.withOpacity(0.12),
+        ),
+        const SizedBox(height: 14),
+        Text(
+          message,
           style: TextStyle(
-              color: Colors.black.withOpacity(0.35),
-              fontSize: 15,
-              fontWeight: FontWeight.w500)),
-    ]),
+            color: Colors.black.withOpacity(0.35),
+            fontSize: 15,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    ),
   );
 
   String _formatTime(DateTime? dt) {
     if (dt == null) return '';
     final now = DateTime.now();
-    final diff = DateTime(now.year, now.month, now.day)
-        .difference(DateTime(dt.year, dt.month, dt.day))
-        .inDays;
+    final diff = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).difference(DateTime(dt.year, dt.month, dt.day)).inDays;
     if (diff == 0) {
-      final h = dt.hour > 12 ? dt.hour - 12 : dt.hour == 0 ? 12 : dt.hour;
+      final h = dt.hour > 12
+          ? dt.hour - 12
+          : dt.hour == 0
+          ? 12
+          : dt.hour;
       final m = dt.minute.toString().padLeft(2, '0');
       return '$h:$m ${dt.hour >= 12 ? 'pm' : 'am'}';
     } else if (diff == 1) {
@@ -1159,8 +1542,18 @@ class _ChatsScreenState extends State<ChatsScreen> {
       return days[dt.weekday - 1];
     } else {
       const months = [
-        'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-        'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+        'May',
+        'Jun',
+        'Jul',
+        'Aug',
+        'Sep',
+        'Oct',
+        'Nov',
+        'Dec',
       ];
       return '${months[dt.month - 1]} ${dt.day}';
     }
