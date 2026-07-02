@@ -724,7 +724,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   lang: lang,
                 ),
                 const SizedBox(height: 16),
-                SizedBox(height: 235, child: _buildGroupsSection(ref, lang)),
+                SizedBox(height: 270, child: _buildGroupsSection(ref, lang)),
 
                 const SizedBox(height: 30),
                 _divider(),

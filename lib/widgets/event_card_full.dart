@@ -1,15 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:pikuru/theme/material.dart';
-import 'package:pikuru/providers/providers.dart';
 import 'package:pikuru/screens/event_detail_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 
-class EventCardFull extends ConsumerWidget {
+class EventCardFull extends StatelessWidget {
   final Map<String, dynamic> event;
   /// 'en' or 'ja' — drives title/type localisation.
-  /// Defaults to 'en' for backward-compatibility.
   final String lang;
 
   const EventCardFull({
@@ -20,55 +16,39 @@ class EventCardFull extends ConsumerWidget {
 
   bool get _isJa => lang == 'ja';
 
-  // ── Light-mode palette (matches EventsScreen) ─────────────────────────────
+  static const Color _cardBg     = Color(0xFFFFFFFF);
+  static const Color _border     = Color(0xFFE2EAE4);
   static const Color _green      = Color(0xFF3A7D44);
   static const Color _greenLight = Color(0xFFE8F4EB);
-  static const Color _textDark   = Color(0xFF1A1D1B);
-  static const Color _textMid    = Color(0xFF5C6B61);
-  static const Color _textLight  = Color(0xFF9EB3A3);
-  static const Color _border     = Color(0xFFE2EAE4);
-  static const Color _cardBg     = Color(0xFFFFFFFF);
+  static const Color _title      = Color(0xFF1A1D1B);
+  static const Color _dateText   = Color(0xFF1A1D1B);
+  static const Color _metaText   = Color(0xFF5C6B61);
+  static const Color _addrText   = Color(0xFF9EB3A3);
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-
-    // ── Title: prefer JP field when lang == 'ja' ──────────────────────────
+  Widget build(BuildContext context) {
     final title = _isJa
-        ? ((event['event_title_jp'] ?? event['event_title'] ?? 'Untitled Event').toString())
-        : ((event['event_title'] ?? 'Untitled Event').toString());
+        ? (event['event_title_jp'] ?? event['event_title'] ?? 'Untitled Event').toString()
+        : (event['event_title'] ?? 'Untitled Event').toString();
 
-    // ── Event type: localise for JP display ───────────────────────────────
     final rawType = (event['event_type'] ?? '').toString();
     final displayType = _isJa ? _localizeType(rawType) : rawType;
+    final tags = _buildTypeTags(displayType);
 
-    // ── Date ──────────────────────────────────────────────────────────────
-    final rawDate = event['event_date'];
-    String dateStr = '';
-    if (rawDate is Timestamp) {
-      final dt = rawDate.toDate();
-      dateStr = _isJa ? _formatDateJa(dt) : DateFormat('EEE, MMM d, yyyy').format(dt).toUpperCase();
-    } else if (rawDate is String && rawDate.isNotEmpty) {
-      try {
-        final dt = DateTime.parse(rawDate);
-        dateStr = _isJa ? _formatDateJa(dt) : DateFormat('EEE, MMM d, yyyy').format(dt).toUpperCase();
-      } catch (_) {
-        dateStr = rawDate.toUpperCase();
-      }
-    }
+    final dateStr = _formatDate(event['event_date']);
+    final timeStr = _formatTime(event['event_time']);
+    final location = _isJa
+        ? (event['location_jp'] ?? event['location'] ?? event['event_venue_name'] ?? '').toString()
+        : (event['location'] ?? event['event_venue_name'] ?? '').toString();
+    final address = _isJa
+        ? (event['event_address_jp'] ?? event['event_address'] ?? event['event_venue_address'] ?? '').toString()
+        : (event['event_address'] ?? event['event_venue_address'] ?? '').toString();
+    final orgName = _isJa
+        ? (event['org_name_jp'] ?? event['org_name'] ?? event['event_org_name'] ?? '').toString()
+        : (event['org_name'] ?? event['event_org_name'] ?? '').toString();
 
-    // ── Time ──────────────────────────────────────────────────────────────
-    final rawTime = event['event_time'];
-    String timeStr = '';
-    if (rawTime is Timestamp) {
-      final t = rawTime.toDate();
-      timeStr = _isJa
-          ? '${t.hour}:${t.minute.toString().padLeft(2, '0')}'
-          : DateFormat('h:mm a').format(t);
-    } else if (rawTime is String && rawTime.isNotEmpty) {
-      timeStr = rawTime;
-    }
-
-    final tags = _buildTagStrings();
+    final imageUrl =
+        (event['event_pic'] ?? event['event_pic_thumbnail'] ?? event['event_image'] ?? '').toString();
     final regClosed = _isRegistrationClosed();
 
     return PressScale(
@@ -81,7 +61,7 @@ class EventCardFull extends ConsumerWidget {
         decoration: BoxDecoration(
           color: _cardBg,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: _border, width: 1),
+          border: Border.all(color: _border),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.05),
@@ -93,158 +73,100 @@ class EventCardFull extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-
             // ── Hero image ────────────────────────────────────────────────
             Stack(
               children: [
                 ClipRRect(
-                  borderRadius: const BorderRadius.only(
-                    topLeft:  Radius.circular(20),
-                    topRight: Radius.circular(20),
-                  ),
-                  child: Image.network(
-                    (event['event_pic'] ?? event['event_pic_thumbnail'] ?? '').toString(),
-                    height: 190,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      height: 190,
-                      decoration: const BoxDecoration(
-                        borderRadius: BorderRadius.only(
-                          topLeft:  Radius.circular(20),
-                          topRight: Radius.circular(20),
-                        ),
-                        color: _greenLight,
-                      ),
-                      child: const Center(
-                        child: Icon(Icons.event_rounded, size: 56, color: _green),
-                      ),
-                    ),
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                  child: AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: _buildImage(imageUrl),
                   ),
                 ),
-
-                // ── Date badge overlay (top-left, matching screenshot) ────
-                if (dateStr.isNotEmpty)
-                  Positioned(
-                    top: 12, left: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: _green.withOpacity(0.92),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        const Icon(Icons.calendar_today_rounded,
-                            size: 11, color: Colors.white),
-                        const SizedBox(width: 5),
-                        Text(
-                          timeStr.isNotEmpty ? '$dateStr · $timeStr' : dateStr,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.4,
-                          ),
-                        ),
-                      ]),
-                    ),
-                  ),
-
-                // ── Event type badge top-right ────────────────────────────
-                if (displayType.isNotEmpty)
-                  Positioned(
-                    top: 12, right: 12,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.45),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        displayType.toUpperCase(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.6,
-                        ),
-                      ),
-                    ),
-                  ),
-
-                // ── Registration Closed badge (bottom-right) ──────────────
                 if (regClosed)
                   Positioned(
-                    bottom: 12, right: 12,
+                    top: 8,
+                    right: 8,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFD97706).withOpacity(0.95),
+                        color: const Color(0xE6D97706),
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.white.withOpacity(0.3)),
-                      ),
-                      child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        const Icon(Icons.lock_rounded,
-                            size: 11, color: Colors.white),
-                        const SizedBox(width: 5),
-                        Text(
-                          _isJa ? '受付終了' : 'REGISTRATION CLOSED',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.6,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.4),
+                            blurRadius: 6,
+                            offset: const Offset(0, 1),
                           ),
-                        ),
-                      ]),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.lock_rounded, size: 10, color: Colors.white),
+                          const SizedBox(width: 4),
+                          Text(
+                            _isJa ? '受付終了' : 'REGISTRATION CLOSED',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
               ],
             ),
 
-            // ── Card content ──────────────────────────────────────────────
+            // ── Card content (matches web EventCard) ──────────────────────
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-
-                  // Title
                   Text(
                     title,
                     style: const TextStyle(
-                      fontSize: 18,
+                      fontSize: 16,
                       fontWeight: FontWeight.w800,
-                      color: _textDark,
-                      height: 1.2,
+                      color: _title,
+                      height: 1.25,
                       letterSpacing: -0.3,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-
-                  const SizedBox(height: 10),
-
-                  // Location row
-                  _buildLocation(ref),
-
-                  if (tags.isNotEmpty) ...[
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: tags.map((tag) => _buildTag(tag)).toList(),
-                    ),
+                  const SizedBox(height: 8),
+                  if (dateStr.isNotEmpty)
+                    _infoRow(Icons.calendar_today_rounded, dateStr, bold: true),
+                  if (timeStr.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    _infoRow(Icons.access_time_rounded, timeStr),
                   ],
-
-                  const SizedBox(height: 12),
-
-                  // Bottom arrow
+                  if (location.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    _locationRow(location, address),
+                  ],
+                  if (orgName.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    _infoRow(Icons.person_outline_rounded, orgName, semibold: true),
+                  ],
+                  const SizedBox(height: 8),
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
                     children: [
+                      Expanded(
+                        child: Wrap(
+                          spacing: 4,
+                          runSpacing: 4,
+                          children: tags.take(2).map(_buildTypeChip).toList(),
+                        ),
+                      ),
                       Container(
-                        padding: const EdgeInsets.all(8),
+                        width: 32,
+                        height: 32,
                         decoration: BoxDecoration(
                           color: _greenLight,
                           borderRadius: BorderRadius.circular(10),
@@ -252,7 +174,7 @@ class EventCardFull extends ConsumerWidget {
                         child: const Icon(
                           Icons.arrow_forward_rounded,
                           color: _green,
-                          size: 18,
+                          size: 16,
                         ),
                       ),
                     ],
@@ -266,56 +188,170 @@ class EventCardFull extends ConsumerWidget {
     );
   }
 
-  // ── Location resolver ─────────────────────────────────────────────────────
-  Widget _buildLocation(WidgetRef ref) {
-    final eventLocId = (event['event_loc_id'] ?? '').toString();
-    final locationAsync = ref.watch(locationResolverProvider(eventLocId));
+  Widget _buildImage(String imageUrl) {
+    final url = imageUrl.trim();
+    if (url.isEmpty) return _imagePlaceholder();
 
-    return locationAsync.when(
-      data: (location) {
-        // When JP, prefer JP location fields baked into the event map
-        String displayLoc = location;
-        if (_isJa) {
-          final jpCity = (event['_city_jp'] ?? event['loc_city_jp'] ?? '').toString().trim();
-          final jpPref = (event['_prefecture_jp'] ?? event['loc_prefecture_jp'] ?? '').toString().trim();
-          if (jpCity.isNotEmpty && jpPref.isNotEmpty) {
-            displayLoc = '$jpPref$jpCity';
-          } else if (jpPref.isNotEmpty) {
-            displayLoc = jpPref;
-          } else if (jpCity.isNotEmpty) {
-            displayLoc = jpCity;
-          }
-        }
-        return Row(
-          children: [
-            const Icon(Icons.location_on_rounded, size: 13, color: _textLight),
-            const SizedBox(width: 4),
-            Expanded(
-              child: Text(
-                displayLoc,
-                style: const TextStyle(
-                    fontSize: 12, color: _textMid, fontWeight: FontWeight.w500),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
-        );
-      },
-      loading: () => const Text('…',
-          style: TextStyle(fontSize: 12, color: _textLight)),
-      error: (_, __) => const SizedBox.shrink(),
+    return Image.network(
+      url,
+      fit: BoxFit.cover,
+      width: double.infinity,
+      errorBuilder: (_, __, ___) => _imagePlaceholder(),
     );
   }
 
-  // ── Japanese date formatter (no locale initialisation needed) ────────────
+  Widget _imagePlaceholder() => Container(
+        width: double.infinity,
+        color: _greenLight,
+        alignment: Alignment.center,
+        child: Opacity(
+          opacity: 0.85,
+          child: Image.asset(
+            'assets/pickleball_ball_no_bg_1.png',
+            width: 56,
+            height: 56,
+            fit: BoxFit.contain,
+          ),
+        ),
+      );
+
+  Widget _infoRow(IconData icon, String text, {bool bold = false, bool semibold = false}) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 13, color: _green),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: bold
+                  ? FontWeight.w700
+                  : semibold
+                      ? FontWeight.w600
+                      : FontWeight.w500,
+              color: bold ? _dateText : semibold ? _metaText : _metaText,
+              letterSpacing: bold ? 0.2 : 0,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _locationRow(String location, String address) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(top: 1),
+          child: Icon(Icons.location_on_rounded, size: 13, color: _green),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                location,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: _metaText,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (address.isNotEmpty && address != location) ...[
+                const SizedBox(height: 2),
+                Text(
+                  address,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: _addrText,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTypeChip(String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: _greenLight,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _green.withOpacity(0.2)),
+      ),
+      child: Text(
+        label.toUpperCase(),
+        style: const TextStyle(
+          color: _green,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.4,
+        ),
+      ),
+    );
+  }
+
+  List<String> _buildTypeTags(String displayType) {
+    final rawTags = event['event_tags'];
+    if (rawTags is List && rawTags.isNotEmpty) {
+      return rawTags.map((t) => t.toString()).where((t) => t.isNotEmpty).toList();
+    }
+    if (displayType.isNotEmpty) return [displayType];
+    return const [];
+  }
+
+  String _formatDate(dynamic rawDate) {
+    if (rawDate == null) return '';
+    if (rawDate is Timestamp) {
+      final dt = rawDate.toDate();
+      return _isJa
+          ? _formatDateJa(dt)
+          : DateFormat('EEE, MMM d, yyyy').format(dt).toUpperCase();
+    }
+    if (rawDate is String && rawDate.isNotEmpty) {
+      try {
+        final dt = DateTime.parse(rawDate);
+        return _isJa
+            ? _formatDateJa(dt)
+            : DateFormat('EEE, MMM d, yyyy').format(dt).toUpperCase();
+      } catch (_) {
+        return rawDate.toUpperCase();
+      }
+    }
+    return '';
+  }
+
+  String _formatTime(dynamic rawTime) {
+    if (rawTime == null) return '';
+    if (rawTime is Timestamp) {
+      final t = rawTime.toDate();
+      return _isJa
+          ? '${t.hour}:${t.minute.toString().padLeft(2, '0')}'
+          : DateFormat('h:mm a').format(t);
+    }
+    if (rawTime is String && rawTime.isNotEmpty) return rawTime;
+    return '';
+  }
+
   static String _formatDateJa(DateTime dt) {
     const weekdays = ['月', '火', '水', '木', '金', '土', '日'];
-    final wd = weekdays[dt.weekday - 1]; // Monday==1 … Sunday==7
+    final wd = weekdays[dt.weekday - 1];
     return '${dt.year}年${dt.month}月${dt.day}日($wd)';
   }
 
-  // ── Registration deadline check ──────────────────────────────────────────
   bool _isRegistrationClosed() {
     final raw = event['registration_deadline'];
     if (raw == null) return false;
@@ -325,84 +361,28 @@ class EventCardFull extends ConsumerWidget {
     } else if (raw is DateTime) {
       deadline = raw;
     } else if (raw is String && raw.isNotEmpty) {
-      try { deadline = DateTime.parse(raw); } catch (_) {}
+      try {
+        deadline = DateTime.parse(raw);
+      } catch (_) {}
     }
     if (deadline == null) return false;
     return DateTime.now().isAfter(deadline);
   }
 
-  // ── Tag helpers ───────────────────────────────────────────────────────────
-  List<String> _buildTagStrings() {
-    final tags = <String>[];
-
-    if (_isJa) {
-      if (event['event_skill_level_pro']      == true) tags.add('上級');
-      if (event['event_skill_level_amateur']   == true) tags.add('中級');
-      if (event['event_skill_level_beginner']  == true) tags.add('初級');
-      if (event['event_category_juniors']      == true) tags.add('ジュニア');
-      if (event['event_category_seniors']      == true) tags.add('シニア');
-      if (event['event_category_collegiate']   == true) tags.add('学生');
-      if (event['event_category_mixeddoubles'] == true) tags.add('ミックス');
-      if (event['event_category_mensdoubles']  == true) tags.add('男子ダブルス');
-      if (event['event_category_womensdoubles']== true) tags.add('女子ダブルス');
-      if (event['event_category_menssingle']   == true) tags.add('男子シングルス');
-      if (event['event_category_womenssingle'] == true) tags.add('女子シングルス');
-    } else {
-      if (event['event_skill_level_pro']      == true) tags.add('PRO');
-      if (event['event_skill_level_amateur']   == true) tags.add('AMATEUR');
-      if (event['event_skill_level_beginner']  == true) tags.add('BEGINNER');
-      if (event['event_category_juniors']      == true) tags.add('JUNIORS');
-      if (event['event_category_seniors']      == true) tags.add('SENIORS');
-      if (event['event_category_collegiate']   == true) tags.add('COLLEGIATE');
-      if (event['event_category_mixeddoubles'] == true) tags.add('MIXED DOUBLES');
-      if (event['event_category_mensdoubles']  == true) tags.add("MEN'S DOUBLES");
-      if (event['event_category_womensdoubles']== true) tags.add("WOMEN'S DOUBLES");
-      if (event['event_category_menssingle']   == true) tags.add("MEN'S SINGLES");
-      if (event['event_category_womenssingle'] == true) tags.add("WOMEN'S SINGLES");
-    }
-
-    if (tags.isEmpty) {
-      final oldSkill = (event['event_skill_level'] ?? '').toString();
-      if (oldSkill.isNotEmpty) tags.add(oldSkill.toUpperCase());
-    }
-    return tags;
-  }
-
-  Widget _buildTag(String label) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: _greenLight,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _green.withOpacity(0.2)),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: _green,
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.4,
-        ),
-      ),
-    );
-  }
-
-  // ── Event-type localiser (mirrors web app T object) ───────────────────────
   String _localizeType(String key) {
     const m = {
       'Professional Tournament': 'プロトーナメント',
-      'Global Tournament':       'グローバルトーナメント',
-      'Japan Tournament':        '日本トーナメント',
-      'Open Play':               'オープンプレイ',
-      'Trial Session':           '体験セッション',
-      'Local Event':             'ローカルイベント',
-      'Lessons/Clinics':         'レッスン・クリニック',
+      'Global Tournament': 'グローバルトーナメント',
+      'Japan Tournament': '日本トーナメント',
+      'Open Play': 'オープンプレイ',
+      'Trial Session': '体験セッション',
+      'Local Event': 'ローカルイベント',
+      'Lessons/Clinics': 'レッスン・クリニック',
       'Weekly Play / Recurring Play': '定期プレイ',
-      'Tournament':              'トーナメント',
-      'Camp/Lesson':             'キャンプ/レッスン',
-      'Social':                  'ソーシャル',
-      'Other':                   'その他',
+      'Tournament': 'トーナメント',
+      'Camp/Lesson': 'キャンプ/レッスン',
+      'Social': 'ソーシャル',
+      'Other': 'その他',
     };
     return m[key] ?? key;
   }

@@ -1603,7 +1603,16 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
                     errorBuilder: (_, __, ___) => Container(
                       height: 200,
                       color: _accentSoft,
-                      child: Icon(Icons.sports_tennis_rounded, size: 52, color: _primary.withOpacity(0.4)),
+                      alignment: Alignment.center,
+                      child: Opacity(
+                        opacity: 0.85,
+                        child: Image.asset(
+                          'assets/pickleball_ball_no_bg_1.png',
+                          width: 56,
+                          height: 56,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
                     )),
               ),
               Positioned(
@@ -1667,7 +1676,16 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
               Container(
                 height: 100, width: double.infinity,
                 color: _accentSoft,
-                child: Icon(Icons.sports_tennis_rounded, size: 48, color: _primary.withOpacity(0.4)),
+                alignment: Alignment.center,
+                child: Opacity(
+                  opacity: 0.85,
+                  child: Image.asset(
+                    'assets/pickleball_ball_no_bg_1.png',
+                    width: 52,
+                    height: 52,
+                    fit: BoxFit.contain,
+                  ),
+                ),
               ),
               Positioned(
                 top: 12, right: 12,

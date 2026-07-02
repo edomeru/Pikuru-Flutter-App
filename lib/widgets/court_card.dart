@@ -33,23 +33,42 @@ class CourtCard extends StatelessWidget {
         child: Stack(
           children: [
             // ── Full-bleed image ─────────────────────────────────
-            Image.network(
-              imageUrl.isNotEmpty
-                  ? imageUrl
-                  : "https://via.placeholder.com/300x200.png?text=Court",
-              height: 220,
-              width: double.infinity,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(
-                height: 220,
-                color: AppColors.primary.withOpacity(0.1),
-                child: const Icon(
-                  Icons.sports_tennis,
-                  size: 56,
-                  color: AppColors.primary,
-                ),
-              ),
-            ),
+            imageUrl.isNotEmpty
+                ? Image.network(
+                    imageUrl,
+                    height: 220,
+                    width: double.infinity,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      height: 220,
+                      color: AppColors.primary.withOpacity(0.1),
+                      alignment: Alignment.center,
+                      child: Opacity(
+                        opacity: 0.85,
+                        child: Image.asset(
+                          'assets/pickleball_ball_no_bg_1.png',
+                          width: 64,
+                          height: 64,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                  )
+                : Container(
+                    height: 220,
+                    width: double.infinity,
+                    color: AppColors.primary.withOpacity(0.1),
+                    alignment: Alignment.center,
+                    child: Opacity(
+                      opacity: 0.85,
+                      child: Image.asset(
+                        'assets/pickleball_ball_no_bg_1.png',
+                        width: 64,
+                        height: 64,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  ),
 
             // ── Dark gradient overlay at bottom ──────────────────
             Positioned(

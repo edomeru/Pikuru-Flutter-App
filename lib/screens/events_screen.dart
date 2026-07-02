@@ -326,11 +326,13 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     final addr = [
       getField('loc_address'),
       getField('event_venue_address'),
+      (event['event_address'] ?? '').toString().trim(),
     ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
 
     final addrJp = [
       getField('loc_address_jp'),
       getField('event_venue_address_jp'),
+      (event['event_address_jp'] ?? '').toString().trim(),
       addr,
     ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
 
@@ -339,6 +341,34 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
       getField('event_googlelink'),
       getField('event_venue_link'),
     ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
+
+    String orgNameEn = [
+      getField('org_name'),
+      (event['event_org_name'] ?? '').toString().trim(),
+    ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
+
+    String orgNameJp = [
+      getField('org_name_jp'),
+      orgNameEn,
+    ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
+
+    final orgId = (event['event_org_id'] ?? '').toString().trim();
+    if (orgId.isNotEmpty) {
+      try {
+        final orgSnap = await FirebaseFirestore.instance
+            .collection('organizations')
+            .where('org_id', isEqualTo: orgId)
+            .limit(1)
+            .get();
+        if (orgSnap.docs.isNotEmpty) {
+          final org = orgSnap.docs.first.data();
+          final resolvedEn = (org['org_name'] ?? '').toString().trim();
+          final resolvedJp = (org['org_name_jp'] ?? resolvedEn).toString().trim();
+          if (resolvedEn.isNotEmpty) orgNameEn = resolvedEn;
+          if (resolvedJp.isNotEmpty) orgNameJp = resolvedJp;
+        }
+      } catch (_) {}
+    }
 
     String label = city.isNotEmpty && pref.isNotEmpty
         ? '$city, $pref'
@@ -356,13 +386,17 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
         ? prefJp
         : countryJp;
 
+    final venueName = getField('event_venue_name');
+
     return {
       ...event,
-      'location':         label,
-      'location_jp':      labelJp,
+      'location':         label.isNotEmpty ? label : venueName,
+      'location_jp':      labelJp.isNotEmpty ? labelJp : venueName,
       'event_address':    addr,
       'event_address_jp': addrJp,
       'event_googlelink': googleLink,
+      'org_name':         orgNameEn,
+      'org_name_jp':      orgNameJp,
       '_prefecture':      pref,
       '_prefecture_jp':   prefJp,
       '_country':         country,

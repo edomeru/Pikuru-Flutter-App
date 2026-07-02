@@ -19,6 +19,46 @@ class EventCard extends StatelessWidget {
     this.lang = 'en',
   });
 
+  static const double _imageHeight = 160;
+
+  Widget _imagePlaceholder() => Container(
+        height: _imageHeight,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              AppColors.primary.withOpacity(0.12),
+              AppColors.primary.withOpacity(0.28),
+            ],
+          ),
+        ),
+        alignment: Alignment.center,
+        child: Opacity(
+          opacity: 0.9,
+          child: Image.asset(
+            'assets/pickleball_ball_no_bg_1.png',
+            width: 56,
+            height: 56,
+            fit: BoxFit.contain,
+          ),
+        ),
+      );
+
+  Widget _buildImage() {
+    final url = imageUrl.trim();
+    if (url.isEmpty) return _imagePlaceholder();
+
+    return Image.network(
+      url,
+      height: _imageHeight,
+      width: double.infinity,
+      fit: BoxFit.cover,
+      errorBuilder: (_, __, ___) => _imagePlaceholder(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -46,22 +86,10 @@ class EventCard extends StatelessWidget {
                   topLeft: Radius.circular(20),
                   topRight: Radius.circular(20),
                 ),
-                child: Image.network(
-                  imageUrl.isNotEmpty
-                      ? imageUrl
-                      : "https://via.placeholder.com/300x200.png?text=Event",
-                  height: 160,
+                child: SizedBox(
+                  height: _imageHeight,
                   width: double.infinity,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    height: 160,
-                    color: AppColors.primary.withOpacity(0.1),
-                    child: const Icon(
-                      Icons.event,
-                      size: 48,
-                      color: AppColors.primary,
-                    ),
-                  ),
+                  child: _buildImage(),
                 ),
               ),
               // Green gradient overlay at bottom of image
