@@ -923,6 +923,7 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
 
   List<Map<String, dynamic>> _rawEvents = [];
   List<Map<String, dynamic>> _enrichedEvents = [];
+  List<Map<String, dynamic>> _locations = [];
   bool _loadingEvents = true;
 
   @override
@@ -990,9 +991,24 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
 
       query = query.orderBy('event_date').limit(100);
 
-      final snap = await query.get();
+      final futures = await Future.wait([
+        query.get(),
+        FirebaseFirestore.instance.collection('locations').get()
+      ]);
+
+      final snap = futures[0] as QuerySnapshot<Map<String, dynamic>>;
+      final locsSnap = futures[1] as QuerySnapshot<Map<String, dynamic>>;
 
       if (!mounted) return;
+
+      final locList = locsSnap.docs
+          .map((d) => d.data() as Map<String, dynamic>)
+          .toList();
+
+      final locCache = {
+        for (var loc in locList)
+          (loc['loc_id'] ?? '').toString().trim(): loc
+      };
 
       final raw = snap.docs
           .map((d) => <String, dynamic>{...d.data() as Map<String, dynamic>, '_doc_id': d.id})
@@ -1002,10 +1018,11 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
           .where((e) => (e['event_loc_id'] ?? '').toString().trim().isNotEmpty)
           .toList();
 
-      final enriched = await _enrichEvents(rawWithLocId);
+      final enriched = _enrichEvents(rawWithLocId, locCache);
 
       if (!mounted) return;
       setState(() {
+        _locations      = locList;
         _rawEvents      = rawWithLocId;
         _enrichedEvents = enriched;
         _loadingEvents  = false;
@@ -1462,26 +1479,7 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     return true;
   }
 
-  Future<List<Map<String, dynamic>>> _enrichEvents(List<Map<String, dynamic>> raw) async {
-    final locIds = raw
-        .map((e) => (e['event_loc_id'] ?? '').toString().trim())
-        .where((id) => id.isNotEmpty)
-        .toSet();
-
-    final locCache = <String, Map<String, dynamic>>{};
-    for (final locId in locIds) {
-      try {
-        final q = await FirebaseFirestore.instance
-            .collection('locations')
-            .where('loc_id', isEqualTo: locId)
-            .limit(1)
-            .get();
-        if (q.docs.isNotEmpty) { locCache[locId] = q.docs.first.data(); continue; }
-        final doc = await FirebaseFirestore.instance.collection('locations').doc(locId).get();
-        if (doc.exists) locCache[locId] = doc.data()!;
-      } catch (_) {}
-    }
-
+  List<Map<String, dynamic>> _enrichEvents(List<Map<String, dynamic>> raw, Map<String, Map<String, dynamic>> locCache) {
     return raw.map((e) {
       final locId = (e['event_loc_id'] ?? '').toString().trim();
       final loc   = locId.isNotEmpty ? (locCache[locId] ?? <String, dynamic>{}) : <String, dynamic>{};
@@ -1528,25 +1526,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
         '_resolvedCity':       cityEn,
       };
     }).toList();
-  }
-
-  Map<String, List<Map<String, String>>> _buildLocationMap(List<Map<String, dynamic>> enrichedEvents) {
-    final map = <String, List<Map<String, String>>>{};
-    for (final e in enrichedEvents) {
-      final country = (e['_resolvedCountry'] ?? '').toString().trim();
-      if (country.isEmpty) continue;
-      final pref = (e['_resolvedPrefecture'] ?? '').toString().trim();
-      if (pref.isEmpty) continue;
-      map.putIfAbsent(country, () => []);
-      if (!map[country]!.any((p) => p['en'] == pref)) {
-        map[country]!.add({'en': pref});
-      }
-    }
-    final sorted = Map.fromEntries(map.entries.toList()..sort((a, b) => a.key.compareTo(b.key)));
-    for (final prefs in sorted.values) {
-      prefs.sort((a, b) => a['en']!.compareTo(b['en']!));
-    }
-    return sorted;
   }
 
   Map<DateTime, List<Map<String, dynamic>>> _buildEventMap(List<Map<String, dynamic>> events) {
@@ -1603,16 +1582,8 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     }
   }
 
-  void _showFilterModal(List<Map<String, dynamic>> enrichedEvents) {
+  void _showFilterModal() {
     _CalFilter temp = _filter;
-    final locationMap = _buildLocationMap(enrichedEvents);
-
-    final cities = <String>{};
-    for (final e in enrichedEvents) {
-      final c = (e['_resolvedCity'] ?? '').toString().trim();
-      if (c.isNotEmpty) cities.add(c);
-    }
-    final sortedCities = cities.toList()..sort();
 
     showModalBottomSheet(
       context: context,
@@ -1620,6 +1591,40 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(builder: (ctx, setS) {
         final curS = _S(ref.read(appLangProvider));
+
+        final countries = _locations
+            .map((loc) => (loc['loc_country'] ?? '').toString().trim())
+            .where((c) => c.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
+
+        final activeCountry = temp.defaultLocationActive ? 'Japan' : temp.country;
+        final prefectures = _locations
+            .where((loc) {
+              final c = (loc['loc_country'] ?? '').toString().trim();
+              return activeCountry.isEmpty || c.toLowerCase() == activeCountry.toLowerCase();
+            })
+            .map((loc) => (loc['loc_prefecture_en'] ?? loc['loc_prefecture'] ?? '').toString().trim())
+            .where((p) => p.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
+
+        final activePref = temp.defaultLocationActive ? 'Tokyo' : temp.prefecture;
+        final cities = _locations
+            .where((loc) {
+              final c = (loc['loc_country'] ?? '').toString().trim();
+              final p = (loc['loc_prefecture_en'] ?? loc['loc_prefecture'] ?? '').toString().trim();
+              final matchCountry = activeCountry.isEmpty || c.toLowerCase() == activeCountry.toLowerCase();
+              final matchPref = activePref.isEmpty || p.toLowerCase() == activePref.toLowerCase();
+              return matchCountry && matchPref;
+            })
+            .map((loc) => (loc['loc_city_en'] ?? loc['loc_city'] ?? '').toString().trim())
+            .where((ci) => ci.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort();
 
         Widget sectionLabel(String text) => Padding(
           padding: const EdgeInsets.only(bottom: 12),
@@ -1763,11 +1768,6 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
           ]);
         }
 
-        final availablePrefs = temp.country.isNotEmpty
-            ? (locationMap[temp.country] ?? [])
-            : <Map<String, String>>[];
-        final sortedPrefs = availablePrefs.map((p) => p['en']!).toList()..sort();
-
         return Container(
           constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.92),
           decoration: const BoxDecoration(
@@ -1830,22 +1830,44 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                   sectionLabel(curS.secLocation),
                   Row(children: [
                     Expanded(child: dropdownField(
-                      curS.fCountry, temp.country,
-                      locationMap.keys.toList(), curS.allCountries,
-                          (v) => setS(() => temp = temp.copyWith(country: v, prefecture: '', city: '', defaultLocationActive: false)),
+                      curS.fCountry,
+                      temp.defaultLocationActive ? 'Japan' : temp.country,
+                      countries,
+                      curS.allCountries,
+                      (v) => setS(() {
+                        if (v == 'Japan' && temp.defaultLocationActive) {
+                          temp = temp.copyWith(country: 'Japan', prefecture: 'Tokyo', city: '', defaultLocationActive: true);
+                        } else if (v.isEmpty) {
+                          temp = temp.copyWith(country: '', prefecture: '', city: '', defaultLocationActive: false);
+                        } else {
+                          temp = temp.copyWith(country: v, prefecture: '', city: '', defaultLocationActive: false);
+                        }
+                      }),
                     )),
                     const SizedBox(width: 12),
                     Expanded(child: dropdownField(
-                      curS.fPrefecture, temp.prefecture,
-                      sortedPrefs, curS.fAll,
-                          (v) => setS(() => temp = temp.copyWith(prefecture: v, defaultLocationActive: false)),
+                      curS.fPrefecture,
+                      temp.defaultLocationActive ? 'Tokyo' : temp.prefecture,
+                      prefectures,
+                      curS.fAll,
+                      (v) => setS(() {
+                        if (v.isEmpty) {
+                          final currentCountry = temp.defaultLocationActive ? 'Japan' : temp.country;
+                          temp = temp.copyWith(country: currentCountry, prefecture: '', city: '', defaultLocationActive: false);
+                        } else {
+                          final currentCountry = temp.defaultLocationActive ? 'Japan' : temp.country;
+                          temp = temp.copyWith(country: currentCountry, prefecture: v, city: '', defaultLocationActive: false);
+                        }
+                      }),
                     )),
                   ]),
                   const SizedBox(height: 12),
                   dropdownField(
-                    curS.fCity, temp.city,
-                    sortedCities, curS.fAll,
-                        (v) => setS(() => temp = temp.copyWith(city: v, defaultLocationActive: false)),
+                    curS.fCity,
+                    temp.city,
+                    cities,
+                    curS.fAll,
+                    (v) => setS(() => temp = temp.copyWith(city: v, defaultLocationActive: false)),
                   ),
 
                   divider(),
@@ -1971,7 +1993,7 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
             Padding(
               padding: const EdgeInsets.only(right: 12),
               child: GestureDetector(
-                onTap: () => _showFilterModal(events),
+                onTap: () => _showFilterModal(),
                 child: Stack(clipBehavior: Clip.none, children: [
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),

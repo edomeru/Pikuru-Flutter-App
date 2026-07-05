@@ -108,6 +108,7 @@ class _AdvFilter {
   bool skillBeginner;
   bool catMx, catMd, catMs, catWs, catWd, catSe, catJu, catCo;
   bool tourist;
+  bool defaultLocationActive;
 
   _AdvFilter({
     this.dateStart,
@@ -123,6 +124,7 @@ class _AdvFilter {
     this.catWs = false, this.catWd = false, this.catSe = false,
     this.catJu = false, this.catCo = false,
     this.tourist = false,
+    this.defaultLocationActive = true,
   });
 
   _AdvFilter copyWith({
@@ -137,6 +139,7 @@ class _AdvFilter {
     bool? catMx, bool? catMd, bool? catMs, bool? catWs,
     bool? catWd, bool? catSe, bool? catJu, bool? catCo,
     bool? tourist,
+    bool? defaultLocationActive,
   }) => _AdvFilter(
     dateStart:     clearDates ? null : (dateStart ?? this.dateStart),
     dateEnd:       clearDates ? null : (dateEnd   ?? this.dateEnd),
@@ -152,6 +155,7 @@ class _AdvFilter {
     catWd: catWd ?? this.catWd, catSe: catSe ?? this.catSe,
     catJu: catJu ?? this.catJu, catCo: catCo ?? this.catCo,
     tourist: tourist ?? this.tourist,
+    defaultLocationActive: defaultLocationActive ?? this.defaultLocationActive,
   );
 
   bool get hasNonLocationFilters =>
@@ -163,9 +167,10 @@ class _AdvFilter {
 
   bool get isActive =>
       hasNonLocationFilters ||
-          country.isNotEmpty || prefecture.isNotEmpty || city.isNotEmpty;
+          country.isNotEmpty || prefecture.isNotEmpty || city.isNotEmpty ||
+          !defaultLocationActive;
 
-  _AdvFilter get cleared => _AdvFilter();
+  _AdvFilter get cleared => _AdvFilter(defaultLocationActive: true);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -186,6 +191,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
   _AdvFilter _adv = _AdvFilter();
 
   List<Map<String, dynamic>> _events = [];
+  List<Map<String, dynamic>> _locations = [];
   bool _loadingEvents = true;
   String? _loadError;
 
@@ -204,7 +210,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
   _S get s => _S(ref.watch(appLangProvider));
 
-  static const int _defaultDays = 100;
+  static const int _defaultDays = 30;
 
   @override
   void initState() {
@@ -222,20 +228,46 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     try {
       final now   = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
-      final in100 = today.add(const Duration(days: 100));
+      final in30  = today.add(const Duration(days: 30));
 
-      final snap = await FirebaseFirestore.instance
-          .collection('events')
-          .where('event_active',         isEqualTo: true)
-          .where('event_checked',        isEqualTo: true)
-          .where('event_pending_review', isEqualTo: false)
-          .where('event_date', isGreaterThanOrEqualTo: Timestamp.fromDate(today))
-          .where('event_date', isLessThanOrEqualTo:    Timestamp.fromDate(in100))
-          .orderBy('event_date')
-          .limit(100)
-          .get();
+      final futures = await Future.wait([
+        FirebaseFirestore.instance
+            .collection('events')
+            .where('event_active',         isEqualTo: true)
+            .where('event_checked',        isEqualTo: true)
+            .where('event_pending_review', isEqualTo: false)
+            .where('event_date', isGreaterThanOrEqualTo: Timestamp.fromDate(today))
+            .where('event_date', isLessThanOrEqualTo:    Timestamp.fromDate(in30))
+            .orderBy('event_date')
+            .limit(100)
+            .get(),
+        FirebaseFirestore.instance.collection('locations').get(),
+        FirebaseFirestore.instance.collection('organizations').get(),
+      ]);
+
+      final snap = futures[0] as QuerySnapshot<Map<String, dynamic>>;
+      final locsSnap = futures[1] as QuerySnapshot<Map<String, dynamic>>;
+      final orgsSnap = futures[2] as QuerySnapshot<Map<String, dynamic>>;
 
       if (!mounted) return;
+
+      final locList = locsSnap.docs
+          .map((d) => d.data())
+          .toList();
+
+      final locCache = {
+        for (var loc in locList)
+          (loc['loc_id'] ?? '').toString().trim(): loc
+      };
+
+      final orgList = orgsSnap.docs
+          .map((d) => d.data())
+          .toList();
+
+      final orgCache = {
+        for (var org in orgList)
+          (org['org_id'] ?? '').toString().trim(): org
+      };
 
       final raw = snap.docs
           .map((d) => <String, dynamic>{...d.data(), '_doc_id': d.id})
@@ -243,12 +275,13 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
       debugPrint('[EventsScreen] Raw events fetched: ${raw.length}');
 
-      final enriched = await Future.wait(
-        raw.map((e) => _enrichEvent(e).catchError((_) => e)),
-      );
+      final enriched = raw
+          .map((e) => _enrichEvent(e, locCache, orgCache))
+          .toList();
 
       if (!mounted) return;
       setState(() {
+        _locations = locList;
         _events = enriched;
         _loadingEvents = false;
       });
@@ -264,22 +297,12 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     }
   }
 
-  Future<Map<String, dynamic>> _enrichEvent(Map<String, dynamic> event) async {
+  Map<String, dynamic> _enrichEvent(
+      Map<String, dynamic> event,
+      Map<String, Map<String, dynamic>> locCache,
+      Map<String, Map<String, dynamic>> orgCache) {
     final locId = (event['event_loc_id'] ?? event['loc_id'] ?? '').toString().trim();
-    Map<String, dynamic> locDoc = {};
-
-    if (locId.isNotEmpty) {
-      try {
-        final snap = await FirebaseFirestore.instance
-            .collection('locations')
-            .where('loc_id', isEqualTo: locId)
-            .limit(1)
-            .get();
-        if (snap.docs.isNotEmpty) {
-          locDoc = snap.docs.first.data();
-        }
-      } catch (_) {}
-    }
+    final locDoc = locId.isNotEmpty ? (locCache[locId] ?? <String, dynamic>{}) : <String, dynamic>{};
 
     String getField(String key) =>
         ((locDoc[key] ?? event[key] ?? '')).toString().trim();
@@ -353,21 +376,12 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     ].firstWhere((v) => v.isNotEmpty, orElse: () => '');
 
     final orgId = (event['event_org_id'] ?? '').toString().trim();
-    if (orgId.isNotEmpty) {
-      try {
-        final orgSnap = await FirebaseFirestore.instance
-            .collection('organizations')
-            .where('org_id', isEqualTo: orgId)
-            .limit(1)
-            .get();
-        if (orgSnap.docs.isNotEmpty) {
-          final org = orgSnap.docs.first.data();
-          final resolvedEn = (org['org_name'] ?? '').toString().trim();
-          final resolvedJp = (org['org_name_jp'] ?? resolvedEn).toString().trim();
-          if (resolvedEn.isNotEmpty) orgNameEn = resolvedEn;
-          if (resolvedJp.isNotEmpty) orgNameJp = resolvedJp;
-        }
-      } catch (_) {}
+    if (orgId.isNotEmpty && orgCache.containsKey(orgId)) {
+      final org = orgCache[orgId]!;
+      final resolvedEn = (org['org_name'] ?? '').toString().trim();
+      final resolvedJp = (org['org_name_jp'] ?? resolvedEn).toString().trim();
+      if (resolvedEn.isNotEmpty) orgNameEn = resolvedEn;
+      if (resolvedJp.isNotEmpty) orgNameJp = resolvedJp;
     }
 
     String label = city.isNotEmpty && pref.isNotEmpty
@@ -407,13 +421,19 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
   }
 
   String get _locationLabel {
+    if (_adv.defaultLocationActive) return s.defaultLocation;
     if (_adv.city.isNotEmpty)       return _adv.city;
     if (_adv.prefecture.isNotEmpty) return _adv.prefecture;
     if (_adv.country.isNotEmpty)    return _adv.country;
-    return s.defaultLocation;
+    return s.allCountries;
   }
 
   bool _matchesLocation(Map<String, dynamic> event) {
+    if (_adv.defaultLocationActive) {
+      final pref = (event['_prefecture'] ?? '').toString().toLowerCase();
+      return pref.contains('tokyo') || pref.contains('東京');
+    }
+
     if (_adv.country.isEmpty && _adv.prefecture.isEmpty && _adv.city.isEmpty) {
       return true;
     }
@@ -536,23 +556,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
   // ─────────────────────────────────────────────────────────────────────────
   void _showFilterModal() {
     _AdvFilter temp = _adv;
-
-    final countries   = <String>{};
-    final prefectures = <String>{};
-    final cities      = <String>{};
-
-    for (final event in _events) {
-      final c  = (event['_country']    ?? '').toString().trim();
-      final p  = (event['_prefecture'] ?? '').toString().trim();
-      final ci = (event['_city']       ?? '').toString().trim();
-      if (c.isNotEmpty)  countries.add(c);
-      if (p.isNotEmpty)  prefectures.add(p);
-      if (ci.isNotEmpty) cities.add(ci);
-    }
-
-    final sortedCountries   = countries.toList()  ..sort();
-    final sortedPrefectures = prefectures.toList()..sort();
-    final sortedCities      = cities.toList()     ..sort();
 
     showModalBottomSheet(
       context: context,
@@ -872,22 +875,74 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                     sectionLabel(s.locationSection),
                     Row(children: [
                       Expanded(child: dropdownField(
-                        s.country, temp.country,
-                        sortedCountries, s.allCountries,
-                            (v) => setS(() => temp = temp.copyWith(country: v)),
+                        s.country,
+                        temp.defaultLocationActive ? 'Japan' : temp.country,
+                        _locations
+                            .map((loc) => (loc['loc_country'] ?? '').toString().trim())
+                            .where((c) => c.isNotEmpty)
+                            .toSet()
+                            .toList()..sort(),
+                        s.allCountries,
+                        (v) => setS(() {
+                          if (v == 'Japan' && temp.defaultLocationActive) {
+                            temp = temp.copyWith(country: 'Japan', prefecture: 'Tokyo', city: '', defaultLocationActive: true);
+                          } else if (v.isEmpty) {
+                            temp = temp.copyWith(country: '', prefecture: '', city: '', defaultLocationActive: false);
+                          } else {
+                            temp = temp.copyWith(country: v, prefecture: '', city: '', defaultLocationActive: false);
+                          }
+                        }),
                       )),
                       const SizedBox(width: 12),
                       Expanded(child: dropdownField(
-                        s.prefecture, temp.prefecture,
-                        sortedPrefectures, s.all,
-                            (v) => setS(() => temp = temp.copyWith(prefecture: v)),
+                        s.prefecture,
+                        temp.defaultLocationActive ? 'Tokyo' : temp.prefecture,
+                        () {
+                          final activeCountry = temp.defaultLocationActive ? 'Japan' : temp.country;
+                          return _locations
+                              .where((loc) {
+                                final c = (loc['loc_country'] ?? '').toString().trim();
+                                return activeCountry.isEmpty || c.toLowerCase() == activeCountry.toLowerCase();
+                              })
+                              .map((loc) => (loc['loc_prefecture_en'] ?? loc['loc_prefecture'] ?? '').toString().trim())
+                              .where((p) => p.isNotEmpty)
+                              .toSet()
+                              .toList()..sort();
+                        }(),
+                        s.all,
+                        (v) => setS(() {
+                          if (v.isEmpty) {
+                            final currentCountry = temp.defaultLocationActive ? 'Japan' : temp.country;
+                            temp = temp.copyWith(country: currentCountry, prefecture: '', city: '', defaultLocationActive: false);
+                          } else {
+                            final currentCountry = temp.defaultLocationActive ? 'Japan' : temp.country;
+                            temp = temp.copyWith(country: currentCountry, prefecture: v, city: '', defaultLocationActive: false);
+                          }
+                        }),
                       )),
                     ]),
                     const SizedBox(height: 12),
                     dropdownField(
-                      s.city, temp.city,
-                      sortedCities, s.all,
-                          (v) => setS(() => temp = temp.copyWith(city: v)),
+                      s.city,
+                      temp.city,
+                      () {
+                        final activeCountry = temp.defaultLocationActive ? 'Japan' : temp.country;
+                        final activePref = temp.defaultLocationActive ? 'Tokyo' : temp.prefecture;
+                        return _locations
+                            .where((loc) {
+                              final c = (loc['loc_country'] ?? '').toString().trim();
+                              final p = (loc['loc_prefecture_en'] ?? loc['loc_prefecture'] ?? '').toString().trim();
+                              final matchCountry = activeCountry.isEmpty || c.toLowerCase() == activeCountry.toLowerCase();
+                              final matchPref = activePref.isEmpty || p.toLowerCase() == activePref.toLowerCase();
+                              return matchCountry && matchPref;
+                            })
+                            .map((loc) => (loc['loc_city_en'] ?? loc['loc_city'] ?? '').toString().trim())
+                            .where((ci) => ci.isNotEmpty)
+                            .toSet()
+                            .toList()..sort();
+                      }(),
+                      s.all,
+                      (v) => setS(() => temp = temp.copyWith(city: v, defaultLocationActive: false)),
                     ),
 
                     divider(),
@@ -945,7 +1000,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                     Row(children: [
                       Expanded(
                         child: GestureDetector(
-                          onTap: () => setS(() => temp = _AdvFilter()),
+                          onTap: () => setS(() => temp = _AdvFilter(defaultLocationActive: true)),
                           child: Container(
                             height: 52,
                             decoration: BoxDecoration(
