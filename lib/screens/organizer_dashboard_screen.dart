@@ -285,7 +285,7 @@ class _OrganizerDashboardScreenState
   @override
   void initState() {
     super.initState();
-    _tabs = TabController(length: 3, vsync: this);
+    _tabs = TabController(length: 2, vsync: this);
     _tabs.addListener(() => setState(() {}));
   }
 
@@ -361,7 +361,7 @@ class _OrganizerDashboardScreenState
               tabs: [
                 Tab(text: _t(lang, 'myEvents')),
                 Tab(text: _t(lang, 'myGroups')),
-                Tab(text: _t(lang, 'stripeOnboarding')),
+                // Tab(text: _t(lang, 'stripeOnboarding')),
               ],
             ),
           ),
@@ -382,12 +382,12 @@ class _OrganizerDashboardScreenState
             refreshKey: _globalRefreshKey,
             onRefreshAll: _refreshAll,
           ),
-          _StripeOnboardingTab(
-            uid: uid,
-            lang: lang,
-            refreshKey: _globalRefreshKey,
-            onRefreshAll: _refreshAll,
-          ),
+          // _StripeOnboardingTab(
+          //   uid: uid,
+          //   lang: lang,
+          //   refreshKey: _globalRefreshKey,
+          //   onRefreshAll: _refreshAll,
+          // ),
         ],
       ),
     );
