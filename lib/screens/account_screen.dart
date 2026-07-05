@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -22,13 +23,13 @@ const _L = {
     'groupsJoined': 'Groups Joined',
     'noGroups': 'No groups',
     'join': 'Join',
-    'interestedGroups': 'Favorited Groups',
+    'interestedGroups': 'Favorite Groups',
     'noneYet': 'None yet',
     'browse': 'Browse',
-    'eventsJoined': 'Events Joined',
+    'eventsJoined': 'Registered Events',
     'noEvents': 'No events',
     'find': 'Find',
-    'savedEvents': 'Saved Events',
+    'savedEvents': 'Favorite Events',
     'noneSaved': 'None saved',
     'explore': 'Explore',
     'sectionAccount': 'Account',
@@ -51,13 +52,13 @@ const _L = {
     'groupsJoined': '参加グループ',
     'noGroups': 'グループなし',
     'join': '参加',
-    'interestedGroups': 'お気に入り',
+    'interestedGroups': 'お気に入りグループ',
     'noneYet': 'まだなし',
     'browse': '探す',
-    'eventsJoined': '参加イベント',
+    'eventsJoined': '登録済みイベント',
     'noEvents': 'イベントなし',
     'find': '探す',
-    'savedEvents': '保存済みイベント',
+    'savedEvents': 'お気に入りイベント',
     'noneSaved': '保存なし',
     'explore': '探索',
     'sectionAccount': 'アカウント',
@@ -157,9 +158,9 @@ class _AccountScreenState extends ConsumerState<AccountScreen>
     super.dispose();
   }
 
-  void _goToGroups() => widget.onNavigateToTab?.call(3);
   void _goToEventHistory({int tabIndex = 0}) =>
       widget.onOpenEventHistory?.call(initialTab: tabIndex);
+
 
   String _buildDisplayName(User? user) {
     final first = (_firstName ?? '').trim();
@@ -361,7 +362,12 @@ class _AccountScreenState extends ConsumerState<AccountScreen>
                                       emptyLabel: t('noGroups'),
                                       buttonLabel: t('join'),
                                       buttonIcon: Icons.add_rounded,
-                                      onTap: _goToGroups,
+                                      onTap: () => Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => const GroupHistoryScreen(initialTab: 0),
+                                        ),
+                                      ),
                                     ),
                                   ),
                                   const SizedBox(width: 12),
@@ -373,7 +379,12 @@ class _AccountScreenState extends ConsumerState<AccountScreen>
                                       emptyLabel: t('noneYet'),
                                       buttonLabel: t('browse'),
                                       buttonIcon: Icons.explore_rounded,
-                                      onTap: _goToGroups,
+                                      onTap: () => Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => const GroupHistoryScreen(initialTab: 1),
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -384,11 +395,8 @@ class _AccountScreenState extends ConsumerState<AccountScreen>
                               Row(
                                 children: [
                                   Expanded(
-                                    child: _StatBanner(
+                                    child: _CombinedEventStatBanner(
                                       uid: user?.uid ?? '',
-                                      collection: 'user_events',
-                                      userField: 'user_id',
-                                      statusFilter: 'my_events',
                                       icon: Icons.event_available_rounded,
                                       label: t('eventsJoined'),
                                       emptyLabel: t('noEvents'),
@@ -1025,6 +1033,194 @@ class _MenuTile extends StatelessWidget {
             color: AppColors.primary.withOpacity(0.08),
           ),
       ],
+    );
+  }
+}
+
+// ── Combined Event Stat Banner ────────────────────────────────────────────────
+// Counts unique registered events from BOTH user_events (status=my_events)
+// AND event_registrations so self-registered + organizer-approved are combined.
+class _CombinedEventStatBanner extends StatefulWidget {
+  final String uid;
+  final IconData icon;
+  final String label;
+  final String emptyLabel;
+  final String buttonLabel;
+  final IconData buttonIcon;
+  final VoidCallback onTap;
+
+  const _CombinedEventStatBanner({
+    required this.uid,
+    required this.icon,
+    required this.label,
+    required this.emptyLabel,
+    required this.buttonLabel,
+    required this.buttonIcon,
+    required this.onTap,
+  });
+
+  @override
+  State<_CombinedEventStatBanner> createState() =>
+      _CombinedEventStatBannerState();
+}
+
+class _CombinedEventStatBannerState extends State<_CombinedEventStatBanner> {
+  // Latest docs from each collection (null = not loaded yet)
+  List<QueryDocumentSnapshot>? _userEventDocs;
+  List<QueryDocumentSnapshot>? _regDocs;
+
+  StreamSubscription<QuerySnapshot>? _subA;
+  StreamSubscription<QuerySnapshot>? _subB;
+
+  @override
+  void initState() {
+    super.initState();
+    _setupListeners();
+  }
+
+  @override
+  void didUpdateWidget(_CombinedEventStatBanner old) {
+    super.didUpdateWidget(old);
+    if (old.uid != widget.uid) {
+      _subA?.cancel();
+      _subB?.cancel();
+      _userEventDocs = null;
+      _regDocs = null;
+      _setupListeners();
+    }
+  }
+
+  void _setupListeners() {
+    if (widget.uid.isEmpty) return;
+
+    _subA = FirebaseFirestore.instance
+        .collection('user_events')
+        .where('user_id', isEqualTo: widget.uid)
+        .where('status', isEqualTo: 'my_events')
+        .snapshots()
+        .listen((snap) {
+      if (mounted) setState(() => _userEventDocs = snap.docs);
+    });
+
+    _subB = FirebaseFirestore.instance
+        .collection('event_registrations')
+        .where('user_id', isEqualTo: widget.uid)
+        .snapshots()
+        .listen((snap) {
+      if (mounted) setState(() => _regDocs = snap.docs);
+    });
+  }
+
+  @override
+  void dispose() {
+    _subA?.cancel();
+    _subB?.cancel();
+    super.dispose();
+  }
+
+  int get _count {
+    final ids = <String>{};
+
+    for (final doc in _userEventDocs ?? []) {
+      final data = doc.data() as Map<String, dynamic>?;
+      final id = data?['event_id'] as String?;
+      if (id != null && id.isNotEmpty) ids.add(id);
+    }
+    for (final doc in _regDocs ?? []) {
+      final data = doc.data() as Map<String, dynamic>?;
+      final id = data?['event_id'] as String?;
+      if (id != null && id.isNotEmpty) ids.add(id);
+    }
+
+    return ids.length;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final count = _count;
+    return GestureDetector(
+      onTap: widget.onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.primary.withOpacity(0.15)),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withOpacity(0.07),
+              blurRadius: 14,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(widget.icon, color: AppColors.primary, size: 22),
+                ),
+                const Spacer(),
+                Text(
+                  '$count',
+                  style: TextStyle(
+                    fontSize: count == 0 ? 20 : 24,
+                    fontWeight: FontWeight.w900,
+                    color: count == 0 ? Colors.black26 : AppColors.primary,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              widget.label,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Colors.black54,
+                letterSpacing: 0.1,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              count == 0 ? widget.emptyLabel : '',
+              style: const TextStyle(fontSize: 11, color: Colors.black38),
+            ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(widget.buttonIcon, color: AppColors.primary, size: 13),
+                  const SizedBox(width: 4),
+                  Text(
+                    widget.buttonLabel,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

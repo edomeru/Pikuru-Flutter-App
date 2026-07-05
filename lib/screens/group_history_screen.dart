@@ -56,7 +56,8 @@ String _t(String lang, String key) =>
 // Screen
 // ─────────────────────────────────────────────────────────────────────────────
 class GroupHistoryScreen extends ConsumerStatefulWidget {
-  const GroupHistoryScreen({super.key});
+  final int initialTab;
+  const GroupHistoryScreen({super.key, this.initialTab = 0});
 
   @override
   ConsumerState<GroupHistoryScreen> createState() => _GroupHistoryScreenState();
@@ -69,7 +70,11 @@ class _GroupHistoryScreenState extends ConsumerState<GroupHistoryScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: widget.initialTab.clamp(0, 1),
+    );
   }
 
   @override
