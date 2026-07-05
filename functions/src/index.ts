@@ -1,6 +1,6 @@
 import * as nodemailer from "nodemailer";
 import {onCall, HttpsError} from "firebase-functions/v2/https";
-import {onDocumentCreated} from "firebase-functions/v2/firestore";
+import {onDocumentCreated, onDocumentUpdated} from "firebase-functions/v2/firestore";
 import {defineString} from "firebase-functions/params";
 import * as admin from "firebase-admin";
 
@@ -533,3 +533,75 @@ export const deleteUserByAdmin = onCall(async (request) => {
     throw new HttpsError("internal", err.message || "Failed to delete user. Please try again.");
   }
 });
+
+// ── Auto-populate loc_image when a review with images is approved ─────────────
+// When an admin approves a court review that contains images, and the linked
+// court (locations collection) currently has no loc_image, the first image
+// from the review is written to loc_image, making it the court's cover photo.
+export const onReviewApproved = onDocumentUpdated(
+  "reviews/{reviewId}",
+  async (event) => {
+    const before = event.data?.before?.data();
+    const after = event.data?.after?.data();
+    if (!before || !after) return;
+
+    // Only act when the review just became approved:
+    //   review_pending_review went true → false AND review_checked went * → true
+    const justApproved =
+      before.review_pending_review === true &&
+      after.review_pending_review === false &&
+      after.review_checked === true &&
+      after.rejected !== true;
+
+    if (!justApproved) return;
+
+    // Collect images (support both array and single-URL formats)
+    const rawImages: string[] =
+      Array.isArray(after.image_urls) ? after.image_urls :
+        (typeof after.image_url === "string" && after.image_url ? [after.image_url] : []);
+
+    const locId: string | undefined = after.loc_id;
+
+    if (!locId || rawImages.length === 0) {
+      console.log(`[onReviewApproved] Skipped — no locId or no images (locId=${locId}, images=${rawImages.length})`);
+      return;
+    }
+
+    const db = admin.firestore();
+
+    // Try to find the court document: first by document ID, then by loc_id field
+    let courtRef: FirebaseFirestore.DocumentReference | null = null;
+    let courtData: FirebaseFirestore.DocumentData | null = null;
+
+    const directRef = db.collection("locations").doc(locId);
+    const directSnap = await directRef.get();
+    if (directSnap.exists) {
+      courtRef = directRef;
+      courtData = directSnap.data() ?? null;
+    } else {
+      const q = await db
+        .collection("locations")
+        .where("loc_id", "==", locId)
+        .limit(1)
+        .get();
+      if (!q.empty) {
+        courtRef = q.docs[0].ref;
+        courtData = q.docs[0].data();
+      }
+    }
+
+    if (!courtRef || !courtData) {
+      console.warn(`[onReviewApproved] Court not found for locId=${locId}`);
+      return;
+    }
+
+    // Only set if the court has no image yet
+    if (courtData.loc_image) {
+      console.log(`[onReviewApproved] Court already has loc_image — skipping (locId=${locId})`);
+      return;
+    }
+
+    await courtRef.update({loc_image: rawImages[0]});
+    console.log(`[onReviewApproved] Set loc_image on court locId=${locId} from approved review`);
+  }
+);
