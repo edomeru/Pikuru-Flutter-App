@@ -132,12 +132,25 @@ class _ShareGroupModalState extends ConsumerState<ShareGroupModal>
 
   String get _groupType => _f('org_type');
 
-  String get _groupId =>
-      (widget.group['org_id'] ??
-          widget.group['org_ID'] ??
-          widget.group['_doc_id'] ??
-          '')
-          .toString();
+  String get _groupId {
+    final orgId = (widget.group['org_id'] ?? '').toString().trim();
+    if (orgId.isNotEmpty) return orgId;
+    final orgID = (widget.group['org_ID'] ?? '').toString().trim();
+    if (orgID.isNotEmpty) return orgID;
+    final docId = (widget.group['_doc_id'] ?? '').toString().trim();
+    if (docId.isNotEmpty) return docId;
+    final id = (widget.group['id'] ?? '').toString().trim();
+    if (id.isNotEmpty) return id;
+    final underscoreId = (widget.group['_id'] ?? '').toString().trim();
+    if (underscoreId.isNotEmpty) return underscoreId;
+    return '';
+  }
+
+  String get _groupUrl {
+    final id = _groupId;
+    if (id.isEmpty) return 'https://pikuru.com/groups';
+    return 'https://pikuru.com/groups/${Uri.encodeComponent(id)}';
+  }
 
   String get _shareText => '${_t['sharedGroup']}$_groupName 🏓';
 
@@ -414,7 +427,7 @@ class _ShareGroupModalState extends ConsumerState<ShareGroupModal>
                         icon: Icons.link_rounded,
                         color: const Color(0xFF1C1C1E),
                         onTap: () {
-                          Clipboard.setData(ClipboardData(text: _shareText));
+                          Clipboard.setData(ClipboardData(text: _groupUrl));
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(t['linkCopied']!),
@@ -429,27 +442,11 @@ class _ShareGroupModalState extends ConsumerState<ShareGroupModal>
                       ),
                       const SizedBox(width: 16),
                       _SocialButton(
-                        label: t['instagram']!,
-                        color: const Color(0xFFE1306C),
-                        gradient: const LinearGradient(
-                          colors: [
-                            Color(0xFFF58529),
-                            Color(0xFFDD2A7B),
-                            Color(0xFF8134AF),
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        icon: Icons.camera_alt_rounded,
-                        onTap: () => _launchSocial('instagram://app'),
-                      ),
-                      const SizedBox(width: 16),
-                      _SocialButton(
-                        label: t['line']!,
-                        color: const Color(0xFF06C755),
-                        iconWidget: _LineIcon(),
+                        label: t['twitter']!,
+                        color: const Color(0xFF000000),
+                        iconWidget: const _XIcon(),
                         onTap: () => _launchSocial(
-                            'https://line.me/R/share?text=${Uri.encodeComponent(_shareText)}'),
+                            'https://twitter.com/intent/tweet?text=${Uri.encodeComponent(_shareText)}&url=${Uri.encodeComponent(_groupUrl)}'),
                       ),
                       const SizedBox(width: 16),
                       _SocialButton(
@@ -457,31 +454,23 @@ class _ShareGroupModalState extends ConsumerState<ShareGroupModal>
                         color: const Color(0xFF1877F2),
                         icon: Icons.facebook_rounded,
                         onTap: () => _launchSocial(
-                            'https://www.facebook.com/sharer/sharer.php?u=${Uri.encodeComponent(_shareText)}'),
+                            'https://www.facebook.com/sharer/sharer.php?u=${Uri.encodeComponent(_groupUrl)}'),
                       ),
                       const SizedBox(width: 16),
                       _SocialButton(
-                        label: t['messenger']!,
-                        color: const Color(0xFF0084FF),
-                        iconWidget: _MessengerIcon(),
+                        label: t['line']!,
+                        color: const Color(0xFF06C755),
+                        iconWidget: _LineIcon(),
                         onTap: () => _launchSocial(
-                            'fb-messenger://share?link=${Uri.encodeComponent(_shareText)}'),
-                      ),
-                      const SizedBox(width: 16),
-                      _SocialButton(
-                        label: t['twitter']!,
-                        color: const Color(0xFF000000),
-                        icon: Icons.alternate_email_rounded,
-                        onTap: () => _launchSocial(
-                            'https://twitter.com/intent/tweet?text=${Uri.encodeComponent(_shareText)}'),
+                            'https://line.me/R/msg/text/?${Uri.encodeComponent("$_shareText\n$_groupUrl")}'),
                       ),
                       const SizedBox(width: 16),
                       _SocialButton(
                         label: t['whatsapp']!,
                         color: const Color(0xFF25D366),
-                        icon: Icons.chat_rounded,
+                        icon: Icons.chat_bubble_rounded,
                         onTap: () => _launchSocial(
-                            'https://wa.me/?text=${Uri.encodeComponent(_shareText)}'),
+                            'https://api.whatsapp.com/send?text=${Uri.encodeComponent("$_shareText\n$_groupUrl")}'),
                       ),
                     ],
                   ),
@@ -999,4 +988,57 @@ class _MessengerIcon extends StatelessWidget {
     color: Colors.white,
     size: 24,
   );
+}
+
+class _XIcon extends StatelessWidget {
+  const _XIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 20,
+      height: 20,
+      child: CustomPaint(
+        painter: _XIconPainter(),
+      ),
+    );
+  }
+}
+
+class _XIconPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+
+    // Draw the main diagonal path (filled polygon)
+    final path = Path()
+      ..moveTo(size.width * 0.166, size.height * 0.166)
+      ..lineTo(size.width * 0.655, size.height * 0.833)
+      ..lineTo(size.width * 0.833, size.height * 0.833)
+      ..lineTo(size.width * 0.344, size.height * 0.166)
+      ..close();
+    canvas.drawPath(path, paint);
+
+    // Draw the thin crossing diagonal line
+    final linePaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+
+    canvas.drawLine(
+      Offset(size.width * 0.166, size.height * 0.833),
+      Offset(size.width * 0.448, size.height * 0.551),
+      linePaint,
+    );
+    canvas.drawLine(
+      Offset(size.width * 0.551, size.height * 0.448),
+      Offset(size.width * 0.833, size.height * 0.166),
+      linePaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
