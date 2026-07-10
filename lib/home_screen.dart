@@ -16,6 +16,7 @@ import 'package:pikuru/screens/about_pikuru_screen.dart';
 import 'package:pikuru/screens/event_detail_screen.dart';
 import 'package:pikuru/screens/group_detail_screen.dart';
 import 'package:pikuru/screens/search_screen.dart';
+import 'package:pikuru/modal/group_filter_modal.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
@@ -1203,64 +1204,102 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   // ─────────────────────────────────────────────────────────────────────────
   Widget _buildGroupsSection(WidgetRef ref, String lang) {
     final orgsAsync = ref.watch(organizationsProvider);
+    final locationsAsync = ref.watch(locationsProvider);
+
     return orgsAsync.when(
       data: (orgs) {
-        if (orgs.isEmpty) {
-          return Center(child: Text(_t(lang, 'noGroups')));
-        }
-        return ListView.builder(
-          scrollDirection: Axis.horizontal,
-          clipBehavior: Clip.none,
-          itemCount: orgs.length,
-          itemBuilder: (context, index) {
-            final data = orgs[index];
-            final name = _groupName(data, lang);
-            final desc = _groupDescription(data, lang);
-            final orgLocId = (data['org_loc_id'] ?? '').toString();
+        return locationsAsync.when(
+          data: (locations) {
+            // Helper to build location map
+            final locMap = <String, Map<String, dynamic>>{};
+            for (final d in locations) {
+              final docId = (d['_doc_id'] ?? '').toString();
+              final locId = (d['loc_id'] ?? '').toString();
+              if (docId.isNotEmpty) locMap[docId] = d;
+              if (locId.isNotEmpty) locMap[locId] = d;
+            }
 
-            return Consumer(
-              builder: (context, ref, child) {
-                final locationAsync = ref.watch(
-                  locationResolverProvider(orgLocId),
-                );
-                return locationAsync.when(
-                  data: (locationEn) {
-                    final location = lang == kLangJa
-                        ? (data['location_jp'] as String? ?? '').isNotEmpty
-                              ? (data['location_jp'] as String)
-                              : locationEn
-                        : locationEn;
-                    return GestureDetector(
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => GroupDetailScreen(group: data),
-                        ),
-                      ),
-                      child: GroupCard(
+            // Default filter matching GroupsScreen: Country = Japan, Prefecture = Tokyo
+            const defaultFilter = GroupFilter(
+              orgCountry: 'Japan',
+              orgPrefecture: 'Tokyo',
+            );
+
+            final filtered = orgs.where((g) {
+              if (g['org_type'] != 'Local Group') return false;
+              if (g['org_public'] != true) return false;
+              if (g['org_pending_review'] == true) return false;
+              return defaultFilter.matches(g, locMap);
+            }).toList();
+
+            // Sort by city name just like in GroupsScreen
+            filtered.sort((a, b) {
+              final ca = (a['loc_city_en'] ?? a['loc_city'] ?? a['org_city'] ?? '').toString().toLowerCase();
+              final cb = (b['loc_city_en'] ?? b['loc_city'] ?? b['org_city'] ?? '').toString().toLowerCase();
+              return ca.compareTo(cb);
+            });
+
+            if (filtered.isEmpty) {
+              return Center(child: Text(_t(lang, 'noGroups')));
+            }
+
+            return ListView.builder(
+              scrollDirection: Axis.horizontal,
+              clipBehavior: Clip.none,
+              itemCount: filtered.length,
+              itemBuilder: (context, index) {
+                final data = filtered[index];
+                final name = _groupName(data, lang);
+                final desc = _groupDescription(data, lang);
+                final orgLocId = (data['org_loc_id'] ?? '').toString();
+
+                return Consumer(
+                  builder: (context, ref, child) {
+                    final locationAsync = ref.watch(
+                      locationResolverProvider(orgLocId),
+                    );
+                    return locationAsync.when(
+                      data: (locationEn) {
+                        final location = lang == kLangJa
+                            ? (data['location_jp'] as String? ?? '').isNotEmpty
+                                  ? (data['location_jp'] as String)
+                                  : locationEn
+                            : locationEn;
+                        return GestureDetector(
+                          onTap: () => Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => GroupDetailScreen(group: data),
+                            ),
+                          ),
+                          child: GroupCard(
+                            imageUrl: (data['org_image'] ?? '').toString(),
+                            name: name,
+                            description: desc,
+                            location: location,
+                          ),
+                        );
+                      },
+                      loading: () => GroupCard(
                         imageUrl: (data['org_image'] ?? '').toString(),
                         name: name,
                         description: desc,
-                        location: location,
+                        location: '...',
+                      ),
+                      error: (_, __) => GroupCard(
+                        imageUrl: (data['org_image'] ?? '').toString(),
+                        name: name,
+                        description: desc,
+                        location: _t(lang, 'unknownLocation'),
                       ),
                     );
                   },
-                  loading: () => GroupCard(
-                    imageUrl: (data['org_image'] ?? '').toString(),
-                    name: name,
-                    description: desc,
-                    location: '...',
-                  ),
-                  error: (_, __) => GroupCard(
-                    imageUrl: (data['org_image'] ?? '').toString(),
-                    name: name,
-                    description: desc,
-                    location: _t(lang, 'unknownLocation'),
-                  ),
                 );
               },
             );
           },
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (error, stack) => Center(child: Text('Error: $error')),
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
