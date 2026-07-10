@@ -188,169 +188,180 @@ class _RegisterPageState extends ConsumerState<RegisterPage>
         inAsyncCall: _showSpinner,
         child: FadeTransition(
           opacity: _fadeAnimation,
-          child: SingleChildScrollView(
-            child: Form(
-              key: _formKey,
-              child: Column(
-                children: [
-                  _buildHeader(lang),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 32),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints:
+                  BoxConstraints(minHeight: constraints.maxHeight),
+                  child: IntrinsicHeight(
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        children: [
+                          _buildHeader(lang),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const SizedBox(height: 32),
 
-                        // ── Nickname ───────────────────────────────────────
-                        TextFormField(
-                          controller: _nicknameController,
-                          decoration: _inputDecoration(
-                              _t(lang, 'nickname')),
-                          validator: (v) => v == null || v.trim().isEmpty
-                              ? _t(lang, 'errorRequired')
-                              : null,
-                        ),
-                        const SizedBox(height: 16),
+                                // ── Nickname ───────────────────────────────────────
+                                TextFormField(
+                                  controller: _nicknameController,
+                                  decoration: _inputDecoration(
+                                      _t(lang, 'nickname')),
+                                  validator: (v) => v == null || v.trim().isEmpty
+                                      ? _t(lang, 'errorRequired')
+                                      : null,
+                                ),
+                                const SizedBox(height: 16),
 
-                        // ── Email ──────────────────────────────────────────
-                        TextFormField(
-                          controller: _emailController,
-                          keyboardType: TextInputType.emailAddress,
-                          decoration: _inputDecoration(_t(lang, 'email')),
-                          validator: (v) {
-                            if (v == null || v.isEmpty) {
-                              return _t(lang, 'errorRequired');
-                            }
-                            if (!v.contains('@')) {
-                              return _t(lang, 'errorEmail');
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 16),
+                                // ── Email ──────────────────────────────────────────
+                                TextFormField(
+                                  controller: _emailController,
+                                  keyboardType: TextInputType.emailAddress,
+                                  decoration: _inputDecoration(_t(lang, 'email')),
+                                  validator: (v) {
+                                    if (v == null || v.isEmpty) {
+                                      return _t(lang, 'errorRequired');
+                                    }
+                                    if (!v.contains('@')) {
+                                      return _t(lang, 'errorEmail');
+                                    }
+                                    return null;
+                                  },
+                                ),
+                                const SizedBox(height: 16),
 
-                        // ── Password ───────────────────────────────────────
-                        TextFormField(
-                          controller: _passwordController,
-                          obscureText: !_showPassword,
-                          decoration:
-                          _inputDecoration(_t(lang, 'password')).copyWith(
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                _showPassword
-                                    ? Icons.visibility_outlined
-                                    : Icons.visibility_off_outlined,
-                                color: Colors.grey,
-                              ),
-                              onPressed: () => setState(
-                                      () => _showPassword = !_showPassword),
+                                // ── Password ───────────────────────────────────────
+                                TextFormField(
+                                  controller: _passwordController,
+                                  obscureText: !_showPassword,
+                                  decoration:
+                                  _inputDecoration(_t(lang, 'password')).copyWith(
+                                    suffixIcon: IconButton(
+                                      icon: Icon(
+                                        _showPassword
+                                            ? Icons.visibility_outlined
+                                            : Icons.visibility_off_outlined,
+                                        color: Colors.grey,
+                                      ),
+                                      onPressed: () => setState(
+                                              () => _showPassword = !_showPassword),
+                                    ),
+                                  ),
+                                  validator: (v) {
+                                    if (v == null || v.isEmpty) {
+                                      return _t(lang, 'errorRequired');
+                                    }
+                                    if (v.length < 6) {
+                                      return _t(lang, 'errorMinPw');
+                                    }
+                                    return null;
+                                  },
+                                ),
+                                const SizedBox(height: 16),
+
+                                // ── Confirm Password ───────────────────────────────
+                                TextFormField(
+                                  controller: _confirmPasswordController,
+                                  obscureText: !_showConfirmPassword,
+                                  decoration: _inputDecoration(
+                                      _t(lang, 'confirmPassword'))
+                                      .copyWith(
+                                    suffixIcon: IconButton(
+                                      icon: Icon(
+                                        _showConfirmPassword
+                                            ? Icons.visibility_outlined
+                                            : Icons.visibility_off_outlined,
+                                        color: Colors.grey,
+                                      ),
+                                      onPressed: () => setState(() =>
+                                      _showConfirmPassword =
+                                      !_showConfirmPassword),
+                                    ),
+                                  ),
+                                  validator: (v) {
+                                    if (v == null || v.isEmpty) {
+                                      return _t(lang, 'errorRequired');
+                                    }
+                                    if (v != _passwordController.text) {
+                                      return _t(lang, 'errorMatch');
+                                    }
+                                    return null;
+                                  },
+                                ),
+                                const SizedBox(height: 12),
+
+                                // ── Terms checkbox ─────────────────────────────────
+                                Row(
+                                  children: [
+                                    SizedBox(
+                                      width: 24,
+                                      height: 24,
+                                      child: Checkbox(
+                                        value: _agree,
+                                        onChanged: (v) =>
+                                            setState(() => _agree = v ?? false),
+                                        shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(4)),
+                                        side: const BorderSide(color: Colors.grey),
+                                        activeColor: AppColors.primary,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        _t(lang, 'agree'),
+                                        style: const TextStyle(
+                                            fontSize: 13,
+                                            color: Colors.black87),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 24),
+
+                                // ── Sign up row ────────────────────────────────────
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    Text(_t(lang, 'signUp'),
+                                        style: const TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.black87)),
+                                    const SizedBox(width: 10),
+                                    GestureDetector(
+                                      onTap: () => _onSignUp(lang),
+                                      child: Container(
+                                        width: 48,
+                                        height: 48,
+                                        decoration: BoxDecoration(
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                                color: Colors.black87, width: 2)),
+                                        child: const Icon(Icons.arrow_forward,
+                                            color: Colors.black87),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                              ],
                             ),
                           ),
-                          validator: (v) {
-                            if (v == null || v.isEmpty) {
-                              return _t(lang, 'errorRequired');
-                            }
-                            if (v.length < 6) {
-                              return _t(lang, 'errorMinPw');
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 16),
-
-                        // ── Confirm Password ───────────────────────────────
-                        TextFormField(
-                          controller: _confirmPasswordController,
-                          obscureText: !_showConfirmPassword,
-                          decoration: _inputDecoration(
-                              _t(lang, 'confirmPassword'))
-                              .copyWith(
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                _showConfirmPassword
-                                    ? Icons.visibility_outlined
-                                    : Icons.visibility_off_outlined,
-                                color: Colors.grey,
-                              ),
-                              onPressed: () => setState(() =>
-                              _showConfirmPassword =
-                              !_showConfirmPassword),
-                            ),
-                          ),
-                          validator: (v) {
-                            if (v == null || v.isEmpty) {
-                              return _t(lang, 'errorRequired');
-                            }
-                            if (v != _passwordController.text) {
-                              return _t(lang, 'errorMatch');
-                            }
-                            return null;
-                          },
-                        ),
-                        const SizedBox(height: 12),
-
-                        // ── Terms checkbox ─────────────────────────────────
-                        Row(
-                          children: [
-                            SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: Checkbox(
-                                value: _agree,
-                                onChanged: (v) =>
-                                    setState(() => _agree = v ?? false),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(4)),
-                                side: const BorderSide(color: Colors.grey),
-                                activeColor: AppColors.primary,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                _t(lang, 'agree'),
-                                style: const TextStyle(
-                                    fontSize: 13,
-                                    color: Colors.black87),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 24),
-
-                        // ── Sign up row ────────────────────────────────────
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            Text(_t(lang, 'signUp'),
-                                style: const TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.black87)),
-                            const SizedBox(width: 10),
-                            GestureDetector(
-                              onTap: () => _onSignUp(lang),
-                              child: Container(
-                                width: 48,
-                                height: 48,
-                                decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                        color: Colors.black87, width: 2)),
-                                child: const Icon(Icons.arrow_forward,
-                                    color: Colors.black87),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                      ],
+                          const Spacer(),
+                          _buildFooter(context, lang),
+                        ],
+                      ),
                     ),
                   ),
-                  _buildFooter(context, lang),
-                ],
-              ),
-            ),
+                ),
+              );
+            },
           ),
         ),
       ),
