@@ -6,6 +6,8 @@ import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:pikuru/screens/group_detail_screen.dart';
 import 'package:pikuru/screens/individual_chat_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:pikuru/services/block_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Localised strings
@@ -23,6 +25,10 @@ const _L = {
     'noneFound':     'None found.',
     'users':         'Users',
     'userProfile':   'User Profile',
+    'block':         'Block User',
+    'unblock':       'Unblock User',
+    'blockedBanner': 'You have blocked this user.',
+    'blockedByBanner': 'This user has blocked you.',
   },
   _kLangJa: {
     'unknownUser':   '不明なユーザー',
@@ -33,6 +39,10 @@ const _L = {
     'noneFound':     '見つかりませんでした。',
     'users':         'ユーザー',
     'userProfile':   'ユーザープロフィール',
+    'block':         'ユーザーをブロックする',
+    'unblock':       'ユーザーのブロックを解除する',
+    'blockedBanner': 'このユーザーをブロックしています。',
+    'blockedByBanner': 'このユーザーからブロックされています。',
   },
 };
 
@@ -170,66 +180,80 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF2F4F7),
-      body: StreamBuilder<DocumentSnapshot>(
-        stream: _profileStream,
-        builder: (context, profileSnap) {
-          if (profileSnap.hasData && profileSnap.data!.exists) {
-            final d = profileSnap.data!.data() as Map<String, dynamic>;
+      body: StreamBuilder<bool>(
+        stream: BlockService.streamIsBlocked(widget.userId),
+        builder: (context, blockSnap) {
+          final isBlocked = blockSnap.data ?? false;
 
-            final parsed = _parseName(d);
-            if (parsed.isNotEmpty) _name = parsed;
+          return StreamBuilder<bool>(
+            stream: BlockService.streamIsBlockedBy(widget.userId),
+            builder: (context, blockBySnap) {
+              final isBlockedBy = blockBySnap.data ?? false;
 
-            _address     = (d['address']     ?? '').toString();
-            _description = (d['description'] ?? '').toString();
+              return StreamBuilder<DocumentSnapshot>(
+                stream: _profileStream,
+                builder: (context, profileSnap) {
+                  if (profileSnap.hasData && profileSnap.data!.exists) {
+                    final d = profileSnap.data!.data() as Map<String, dynamic>;
 
-            // ── Populate both avatar fields from Firestore ─────────────────
-            // profile_img: base64 portrait stored by the user
-            final rawProfileImg = (d['profile_img'] ?? '').toString().trim();
-            if (rawProfileImg.isNotEmpty) _profileImg = rawProfileImg;
+                    final parsed = _parseName(d);
+                    if (parsed.isNotEmpty) _name = parsed;
 
-            // photoURL: Google / social auth URL
-            final rawPhotoUrl = (d['photoURL'] ?? '').toString().trim();
-            if (rawPhotoUrl.isNotEmpty) _photoUrl = rawPhotoUrl;
+                    _address     = (d['address']     ?? '').toString();
+                    _description = (d['description'] ?? '').toString();
 
-            _loadingProfile = false;
-          } else if (profileSnap.connectionState == ConnectionState.active) {
-            _loadingProfile = false;
-          }
+                    // ── Populate both avatar fields from Firestore ─────────────────
+                    // profile_img: base64 portrait stored by the user
+                    final rawProfileImg = (d['profile_img'] ?? '').toString().trim();
+                    if (rawProfileImg.isNotEmpty) _profileImg = rawProfileImg;
 
-          if (_loadingProfile) {
-            return const Scaffold(
-              backgroundColor: Color(0xFFF2F4F7),
-              body: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-            );
-          }
+                    // photoURL: Google / social auth URL
+                    final rawPhotoUrl = (d['photoURL'] ?? '').toString().trim();
+                    if (rawPhotoUrl.isNotEmpty) _photoUrl = rawPhotoUrl;
 
-          final displayName  = _name.isNotEmpty ? _name : _t(lang, 'unknownUser');
-          final initials     = _initials(displayName);
-          // Resolve inside build so every StreamBuilder rebuild gets fresh data
-          final avatarImage  = _resolvedAvatarImage;
+                    _loadingProfile = false;
+                  } else if (profileSnap.connectionState == ConnectionState.active) {
+                    _loadingProfile = false;
+                  }
 
-          return StreamBuilder<QuerySnapshot>(
-            stream: _groupsStream,
-            builder: (context, groupsSnap) {
-              if (groupsSnap.hasData) {
-                _userGroups = groupsSnap.data!.docs
-                    .map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>})
-                    .toList();
-              }
+                  if (_loadingProfile) {
+                    return const Scaffold(
+                      backgroundColor: Color(0xFFF2F4F7),
+                      body: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                    );
+                  }
 
-              return CustomScrollView(
-                slivers: [
-                  SliverToBoxAdapter(
-                    child: _buildCover(context, displayName, initials, avatarImage, lang),
-                  ),
-                  SliverToBoxAdapter(
-                    child: _buildBreadcrumb(displayName, lang),
-                  ),
-                  SliverToBoxAdapter(
-                    child: _buildContent(context, displayName, lang),
-                  ),
-                  const SliverToBoxAdapter(child: SizedBox(height: 40)),
-                ],
+                  final displayName  = _name.isNotEmpty ? _name : _t(lang, 'unknownUser');
+                  final initials     = _initials(displayName);
+                  // Resolve inside build so every StreamBuilder rebuild gets fresh data
+                  final avatarImage  = _resolvedAvatarImage;
+
+                  return StreamBuilder<QuerySnapshot>(
+                    stream: _groupsStream,
+                    builder: (context, groupsSnap) {
+                      if (groupsSnap.hasData) {
+                        _userGroups = groupsSnap.data!.docs
+                            .map((d) => {'id': d.id, ...d.data() as Map<String, dynamic>})
+                            .toList();
+                      }
+
+                      return CustomScrollView(
+                        slivers: [
+                          SliverToBoxAdapter(
+                            child: _buildCover(context, displayName, initials, avatarImage, lang),
+                          ),
+                          SliverToBoxAdapter(
+                            child: _buildBreadcrumb(displayName, lang),
+                          ),
+                          SliverToBoxAdapter(
+                            child: _buildContent(context, displayName, lang, isBlocked, isBlockedBy),
+                          ),
+                          const SliverToBoxAdapter(child: SizedBox(height: 40)),
+                        ],
+                      );
+                    },
+                  );
+                },
               );
             },
           );
@@ -466,10 +490,11 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
   }
 
   // ── Content ───────────────────────────────────────────────────────────────
-  Widget _buildContent(BuildContext context, String displayName, String lang) {
+  Widget _buildContent(BuildContext context, String displayName, String lang, bool isBlocked, bool isBlockedBy) {
+    final isAnyBlocked = isBlocked || isBlockedBy;
     final isWide = MediaQuery.of(context).size.width >= 700;
-    final aboutCard  = _buildAboutCard(displayName, lang);
-    final groupsCard = _buildGroupsSection(displayName, lang);
+    final aboutCard  = _buildAboutCard(displayName, lang, isBlocked, isBlockedBy);
+    final groupsCard = isAnyBlocked ? const SizedBox() : _buildGroupsSection(displayName, lang);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -478,22 +503,30 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(child: aboutCard),
-          const SizedBox(width: 16),
-          Expanded(child: groupsCard),
+          if (!isAnyBlocked) ...[
+            const SizedBox(width: 16),
+            Expanded(child: groupsCard),
+          ],
         ],
       )
           : Column(
         children: [
           aboutCard,
-          const SizedBox(height: 16),
-          groupsCard,
+          if (!isAnyBlocked) ...[
+            const SizedBox(height: 16),
+            groupsCard,
+          ],
         ],
       ),
     );
   }
 
   // ── About card ────────────────────────────────────────────────────────────
-  Widget _buildAboutCard(String displayName, String lang) {
+  Widget _buildAboutCard(String displayName, String lang, bool isBlocked, bool isBlockedBy) {
+    final myUid = FirebaseAuth.instance.currentUser?.uid;
+    final isMe = widget.userId == myUid;
+    final isAnyBlocked = isBlocked || isBlockedBy;
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -507,17 +540,72 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (isBlocked) ...[
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.08),
+                border: Border.all(color: Colors.red.withOpacity(0.18)),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                children: [
+                  const Text('🚫', style: TextStyle(fontSize: 14)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _t(lang, 'blockedBanner'),
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.redAccent,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (isBlockedBy) ...[
+            Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.08),
+                border: Border.all(color: Colors.red.withOpacity(0.18)),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Row(
+                children: [
+                  const Text('🚫', style: TextStyle(fontSize: 14)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      _t(lang, 'blockedByBanner'),
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.redAccent,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           Row(
             children: [
               Expanded(
                 child: GestureDetector(
-                  onTap: _openChat,
+                  onTap: isAnyBlocked ? null : _openChat,
                   child: Container(
                     height: 50,
                     decoration: BoxDecoration(
-                      color: AppColors.primary,
+                      color: isAnyBlocked ? Colors.black.withOpacity(0.05) : AppColors.primary,
                       borderRadius: BorderRadius.circular(14),
-                      boxShadow: [
+                      border: isAnyBlocked ? Border.all(color: Colors.black.withOpacity(0.06)) : null,
+                      boxShadow: isAnyBlocked ? null : [
                         BoxShadow(
                           color: AppColors.primary.withOpacity(0.25),
                           blurRadius: 14,
@@ -530,98 +618,161 @@ class _UserProfileScreenState extends ConsumerState<UserProfileScreen> {
                         lang == _kLangJa
                             ? '$displayName${_t(lang, 'chatWith')}'
                             : '${_t(lang, 'chatWith')} $displayName',
-                        style: const TextStyle(
-                          fontSize: 14, fontWeight: FontWeight.w700, color: Colors.white,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: isAnyBlocked ? Colors.black.withOpacity(0.25) : Colors.white,
                         ),
                       ),
                     ),
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
-              Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF2F4F7),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: Colors.black.withOpacity(0.06), width: 1),
-                ),
-                child: Icon(Icons.notifications_outlined, color: Colors.black.withOpacity(0.35), size: 22),
-              ),
-            ],
-          ),
-
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Divider(color: Colors.black.withOpacity(0.06), height: 1),
-          ),
-
-          Row(
-            children: [
-              Container(
-                width: 4,
-                height: 18,
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  borderRadius: BorderRadius.circular(4),
-                  boxShadow: [BoxShadow(color: AppColors.primary.withOpacity(0.4), blurRadius: 6)],
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  '${_t(lang, 'about')} $displayName',
-                  style: const TextStyle(
-                    fontSize: 16, fontWeight: FontWeight.w900,
-                    color: Color(0xFF0D0D0D), letterSpacing: -0.3,
+              if (!isMe) ...[
+                const SizedBox(width: 10),
+                PopupMenuButton<String>(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
                   ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-
-          Padding(
-            padding: const EdgeInsets.only(left: 4),
-            child: Text(
-              _description.isNotEmpty ? _description : _t(lang, 'noDescription'),
-              style: TextStyle(
-                fontSize: 14, fontWeight: FontWeight.w500,
-                color: Colors.black.withOpacity(0.50), height: 1.55,
-              ),
-            ),
-          ),
-
-          if (_address.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.07),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.primary.withOpacity(0.15), width: 1),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.12),
-                      shape: BoxShape.circle,
+                  color: Colors.white,
+                  offset: const Offset(0, 56),
+                  onSelected: (value) async {
+                    if (value == 'block') {
+                      if (isBlocked) {
+                        await BlockService.unblockUser(widget.userId);
+                      } else {
+                        final confirmBlock = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: Text(lang == _kLangJa ? 'ユーザーをブロックする' : 'Block User'),
+                            content: Text(lang == _kLangJa
+                                ? 'このユーザーをブロックしますか？'
+                                : 'Are you sure you want to block this user?'),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, false),
+                                child: Text(lang == _kLangJa ? 'キャンセル' : 'Cancel'),
+                              ),
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, true),
+                                child: Text(lang == _kLangJa ? 'ブロック' : 'Block'),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirmBlock == true) {
+                          await BlockService.blockUser(widget.userId);
+                        }
+                      }
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem<String>(
+                      value: 'block',
+                      child: Row(
+                        children: [
+                          Icon(
+                            isBlocked ? Icons.check_circle_outline_rounded : Icons.block_flipped,
+                            color: AppColors.primary,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            isBlocked ? _t(lang, 'unblock') : _t(lang, 'block'),
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    child: Icon(Icons.location_on_rounded, color: AppColors.primary, size: 17),
+                  ],
+                  child: Container(
+                    width: 50,
+                    height: 50,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF2F4F7),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: Colors.black.withOpacity(0.06), width: 1),
+                    ),
+                    child: Icon(Icons.more_vert_rounded, color: Colors.black.withOpacity(0.35), size: 22),
                   ),
-                  const SizedBox(width: 10),
-                  Text(
-                    _address,
-                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.primary),
+                ),
+              ],
+            ],
+          ),
+
+          if (!isAnyBlocked) ...[
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Divider(color: Colors.black.withOpacity(0.06), height: 1),
+            ),
+            Row(
+              children: [
+                Container(
+                  width: 4,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(4),
+                    boxShadow: [BoxShadow(color: AppColors.primary.withOpacity(0.4), blurRadius: 6)],
                   ),
-                ],
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '${_t(lang, 'about')} $displayName',
+                    style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w900,
+                      color: Color(0xFF0D0D0D), letterSpacing: -0.3,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: Text(
+                _description.isNotEmpty ? _description : _t(lang, 'noDescription'),
+                style: TextStyle(
+                  fontSize: 14, fontWeight: FontWeight.w500,
+                  color: Colors.black.withOpacity(0.50), height: 1.55,
+                ),
               ),
             ),
+            if (_address.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.07),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.primary.withOpacity(0.15), width: 1),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: AppColors.primary.withOpacity(0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.location_on_rounded, color: AppColors.primary, size: 17),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      _address,
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.primary),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ],
         ],
       ),

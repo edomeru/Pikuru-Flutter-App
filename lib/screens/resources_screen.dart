@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:pikuru/theme/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ResourcesScreen
@@ -968,6 +969,13 @@ class _ResourceDetailScreenState extends ConsumerState<ResourceDetailScreen>
   }
 
   Widget _buildAboutLayout(Map<String, dynamic> t) {
+    Future<void> launchSns(String urlString) async {
+      final uri = Uri.parse(urlString);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      }
+    }
+
     final origin = t['aboutOrigin'] is Map
         ? Map<String, dynamic>.from(t['aboutOrigin'] as Map)
         : <String, dynamic>{};
@@ -1142,13 +1150,26 @@ class _ResourceDetailScreenState extends ConsumerState<ResourceDetailScreen>
                       color: Colors.white.withOpacity(0.8))),
               const SizedBox(height: 20),
               Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                const _SocialBtn(icon: Icons.camera_alt_rounded),
+                _SocialBtn(
+                  icon: const Icon(Icons.facebook_rounded, color: Colors.white, size: 24),
+                  onTap: () => launchSns('https://www.facebook.com/letspikuru'),
+                ),
                 const SizedBox(width: 12),
-                const _SocialBtn(icon: Icons.facebook_rounded),
+                _SocialBtn(
+                  icon: const Icon(Icons.camera_alt_outlined, color: Colors.white, size: 24),
+                  onTap: () => launchSns('https://www.instagram.com/letspikuru'),
+                ),
                 const SizedBox(width: 12),
-                const _SocialBtn(icon: Icons.play_arrow_rounded),
-                const SizedBox(width: 12),
-                const _SocialBtn(label: 'LINE'),
+                _SocialBtn(
+                  icon: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CustomPaint(
+                      painter: _TiktokIconPainter(),
+                    ),
+                  ),
+                  onTap: () => launchSns('https://www.tiktok.com/@letspikuru'),
+                ),
               ]),
             ]),
           ),
@@ -1524,32 +1545,76 @@ class _BodyText extends StatelessWidget {
 }
 
 class _SocialBtn extends StatelessWidget {
-  final IconData? icon;
-  final String? label;
-  const _SocialBtn({this.icon, this.label});
+  final Widget icon;
+  final VoidCallback onTap;
+  const _SocialBtn({required this.icon, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: label != null ? null : 48,
-      height: 48,
-      padding: label != null
-          ? const EdgeInsets.symmetric(horizontal: 16)
-          : EdgeInsets.zero,
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.white.withOpacity(0.25)),
-      ),
-      child: Center(
-        child: label != null
-            ? Text(label!,
-            style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w800,
-                fontSize: 14))
-            : Icon(icon, color: Colors.white, size: 22),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white.withOpacity(0.25)),
+        ),
+        child: Center(
+          child: icon,
+        ),
       ),
     );
   }
+}
+
+class _TiktokIconPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white
+      ..strokeWidth = 3.2
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    final w = size.width;
+    final h = size.height;
+
+    // Stem: vertical line
+    canvas.drawLine(
+      Offset(w * 0.55, h * 0.25),
+      Offset(w * 0.55, h * 0.7),
+      paint,
+    );
+
+    // Bottom note head (arc or circle)
+    final headRect = Rect.fromCircle(
+      center: Offset(w * 0.4, h * 0.7),
+      radius: w * 0.15,
+    );
+    canvas.drawArc(
+      headRect,
+      0, // Start angle: 0 (right)
+      3.14159 * 1.5, // 270 degrees
+      false,
+      paint,
+    );
+
+    // Top flag (arc)
+    final flagRect = Rect.fromCircle(
+      center: Offset(w * 0.75, h * 0.25),
+      radius: w * 0.2,
+    );
+    canvas.drawArc(
+      flagRect,
+      3.14159, // Start angle: 180 degrees (left)
+      -3.14159 * 0.5, // -90 degrees (upwards)
+      false,
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

@@ -15,6 +15,7 @@ import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:pikuru/screens/chat_members_screen.dart';
 import 'package:pikuru/screens/event_detail_screen.dart';
+import 'package:pikuru/services/block_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // i18n
@@ -1009,67 +1010,77 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
 
   // ── Message List ───────────────────────────────────────────────────────
   Widget _buildMessageList(String lang) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: FirebaseFirestore.instance
-          .collection('group_chats')
-          .doc(widget.chatId)
-          .collection('messages')
-          .orderBy('sent_at', descending: false)
-          .snapshots(),
-      builder: (context, snap) {
-        if (!snap.hasData) {
-          return Center(
-              child: CircularProgressIndicator(
-                  color: AppColors.primary, strokeWidth: 2.5));
-        }
+    return StreamBuilder<List<String>>(
+      stream: BlockService.streamBlockedUsers(),
+      builder: (context, blockedUsersSnap) {
+        final blockedUsers = blockedUsersSnap.data ?? [];
 
-        final allMsgs = snap.data!.docs;
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection('group_chats')
+              .doc(widget.chatId)
+              .collection('messages')
+              .orderBy('sent_at', descending: false)
+              .snapshots(),
+          builder: (context, snap) {
+            if (!snap.hasData) {
+              return Center(
+                  child: CircularProgressIndicator(
+                      color: AppColors.primary, strokeWidth: 2.5));
+            }
 
-        // Filter by active tab — mirrors web displayedMessages
-        final msgs = allMsgs.where((doc) {
-          final d = doc.data() as Map<String, dynamic>;
-          final isBroadcast =
-              d['is_broadcast'] == true || d['type'] == 'broadcast';
-          if (_activeTab == 'announcements') return isBroadcast;
-          return !isBroadcast;
-        }).toList();
+            final allMsgs = snap.data!.docs;
 
-        // Subscribe to each sender
-        for (final doc in allMsgs) {
-          final d = doc.data() as Map<String, dynamic>;
-          final uid = (d['sender_id'] ?? '').toString();
-          if (uid.isNotEmpty) _ensureSender(uid);
-        }
+            // Filter out messages from blocked senders + tab filtering
+            final msgs = allMsgs.where((doc) {
+              final d = doc.data() as Map<String, dynamic>;
+              final senderId = (d['sender_id'] ?? '').toString();
+              if (blockedUsers.contains(senderId)) return false;
 
-        if (msgs.isEmpty) return _buildEmptyState(lang);
-        _scrollToBottom();
+              final isBroadcast =
+                  d['is_broadcast'] == true || d['type'] == 'broadcast';
+              if (_activeTab == 'announcements') return isBroadcast;
+              return !isBroadcast;
+            }).toList();
 
-        return ListView.builder(
-          controller: _scrollCtrl,
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-          itemCount: msgs.length,
-          itemBuilder: (ctx, i) {
-            final msg = Map<String, dynamic>.from(
-                msgs[i].data() as Map<String, dynamic>);
-            msg['_id'] = msgs[i].id;
-            final isMe = msg['sender_id'] == _me?.uid;
-            final prevSenderId = i > 0
-                ? (msgs[i - 1].data() as Map<String, dynamic>)['sender_id']
-                : null;
-            final nextSenderId = i < msgs.length - 1
-                ? (msgs[i + 1].data() as Map<String, dynamic>)['sender_id']
-                : null;
-            final isFirst = prevSenderId != msg['sender_id'];
-            final isLast = nextSenderId != msg['sender_id'];
-            final showDate = i == 0 ||
-                _isDifferentDay(
-                  (msgs[i - 1].data() as Map<String, dynamic>)['sent_at'],
-                  msg['sent_at'],
-                );
-            return Column(children: [
-              if (showDate) _buildDateDivider(msg['sent_at'], lang),
-              _buildBubble(msg, isMe, isFirst, isLast, lang),
-            ]);
+            // Subscribe to each sender
+            for (final doc in allMsgs) {
+              final d = doc.data() as Map<String, dynamic>;
+              final uid = (d['sender_id'] ?? '').toString();
+              if (uid.isNotEmpty) _ensureSender(uid);
+            }
+
+            if (msgs.isEmpty) return _buildEmptyState(lang);
+            _scrollToBottom();
+
+            return ListView.builder(
+              controller: _scrollCtrl,
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+              itemCount: msgs.length,
+              itemBuilder: (ctx, i) {
+                final msg = Map<String, dynamic>.from(
+                    msgs[i].data() as Map<String, dynamic>);
+                msg['_id'] = msgs[i].id;
+                final isMe = msg['sender_id'] == _me?.uid;
+                final prevSenderId = i > 0
+                    ? (msgs[i - 1].data() as Map<String, dynamic>)['sender_id']
+                    : null;
+                final nextSenderId = i < msgs.length - 1
+                    ? (msgs[i + 1].data() as Map<String, dynamic>)['sender_id']
+                    : null;
+                final isFirst = prevSenderId != msg['sender_id'];
+                final isLast = nextSenderId != msg['sender_id'];
+                final showDate = i == 0 ||
+                    _isDifferentDay(
+                      (msgs[i - 1].data() as Map<String, dynamic>)['sent_at'],
+                      msg['sent_at'],
+                    );
+                return Column(children: [
+                  if (showDate) _buildDateDivider(msg['sent_at'], lang),
+                  _buildBubble(msg, isMe, isFirst, isLast, lang),
+                ]);
+              },
+            );
           },
         );
       },

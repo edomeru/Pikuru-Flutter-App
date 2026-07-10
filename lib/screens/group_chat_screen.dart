@@ -11,6 +11,7 @@ import 'package:pikuru/services/chat_service.dart';
 import 'package:pikuru/screens/chat_members_screen.dart';
 import 'package:pikuru/screens/group_detail_screen.dart';
 import 'package:pikuru/screens/event_detail_screen.dart';
+import 'package:pikuru/services/block_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // i18n strings
@@ -634,55 +635,69 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
 
   // ── Message List ───────────────────────────────────────────────────────
   Widget _buildMessageList(_T t) {
-    return StreamBuilder<QuerySnapshot>(
-      stream: ChatService.messagesStream(_chatId!),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) return _buildLoader();
-        final messages = snapshot.data!.docs;
-        if (messages.isEmpty) return _buildEmptyState(t);
-        _scrollToBottom();
+    return StreamBuilder<List<String>>(
+      stream: BlockService.streamBlockedUsers(),
+      builder: (context, blockedUsersSnap) {
+        final blockedUsers = blockedUsersSnap.data ?? [];
 
-        // ── Subscribe to every unique sender in real-time ──────────────
-        for (final doc in messages) {
-          final msg      = doc.data() as Map<String, dynamic>;
-          final senderId = (msg['sender_id'] ?? '').toString();
-          if (senderId.isNotEmpty) _ensureSenderSubscription(senderId);
-        }
+        return StreamBuilder<QuerySnapshot>(
+          stream: ChatService.messagesStream(_chatId!),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) return _buildLoader();
+            
+            final allMessages = snapshot.data!.docs;
+            final messages = allMessages.where((doc) {
+              final msg = doc.data() as Map<String, dynamic>;
+              final senderId = (msg['sender_id'] ?? '').toString();
+              return !blockedUsers.contains(senderId);
+            }).toList();
 
-        return ListView.builder(
-          controller: _scrollController,
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
-          itemCount: messages.length,
-          itemBuilder: (context, index) {
-            final msg    = messages[index].data() as Map<String, dynamic>;
-            final isMe   = msg['sender_id'] == currentUser?.uid;
-            final prevSenderId = index > 0
-                ? (messages[index - 1].data()
-            as Map<String, dynamic>)['sender_id']
-                : null;
-            final nextSenderId = index < messages.length - 1
-                ? (messages[index + 1].data()
-            as Map<String, dynamic>)['sender_id']
-                : null;
-            final isFirstInGroup = prevSenderId != msg['sender_id'];
-            final isLastInGroup  = nextSenderId != msg['sender_id'];
-            final showDate = index == 0 ||
-                _isDifferentDay(
-                  (messages[index - 1].data()
-                  as Map<String, dynamic>)['sent_at'],
-                  msg['sent_at'],
+            if (messages.isEmpty) return _buildEmptyState(t);
+            _scrollToBottom();
+
+            // ── Subscribe to every unique sender in real-time ──────────────
+            for (final doc in messages) {
+              final msg      = doc.data() as Map<String, dynamic>;
+              final senderId = (msg['sender_id'] ?? '').toString();
+              if (senderId.isNotEmpty) _ensureSenderSubscription(senderId);
+            }
+
+            return ListView.builder(
+              controller: _scrollController,
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
+              itemCount: messages.length,
+              itemBuilder: (context, index) {
+                final msg    = messages[index].data() as Map<String, dynamic>;
+                final isMe   = msg['sender_id'] == currentUser?.uid;
+                final prevSenderId = index > 0
+                    ? (messages[index - 1].data()
+                as Map<String, dynamic>)['sender_id']
+                    : null;
+                final nextSenderId = index < messages.length - 1
+                    ? (messages[index + 1].data()
+                as Map<String, dynamic>)['sender_id']
+                    : null;
+                final isFirstInGroup = prevSenderId != msg['sender_id'];
+                final isLastInGroup  = nextSenderId != msg['sender_id'];
+                final showDate = index == 0 ||
+                    _isDifferentDay(
+                      (messages[index - 1].data()
+                      as Map<String, dynamic>)['sent_at'],
+                      msg['sent_at'],
+                    );
+
+                return Column(
+                  children: [
+                    if (showDate) _buildDateDivider(msg['sent_at'], t),
+                    _buildMessageBubble(
+                        msg, isMe, isFirstInGroup, isLastInGroup, t),
+                  ],
                 );
-
-            return Column(
-              children: [
-                if (showDate) _buildDateDivider(msg['sent_at'], t),
-                _buildMessageBubble(
-                    msg, isMe, isFirstInGroup, isLastInGroup, t),
-              ],
+              },
             );
           },
         );
-      },
+      }
     );
   }
 

@@ -11,6 +11,7 @@ import 'package:pikuru/services/individual_chat_service.dart';
 import 'package:pikuru/screens/group_detail_screen.dart';
 import 'package:pikuru/screens/event_detail_screen.dart';
 import 'package:pikuru/screens/user_profile_screen.dart';
+import 'package:pikuru/services/block_service.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Localised strings
@@ -28,6 +29,11 @@ const _L = {
     'unknown':          'Unknown',
     'untitledEvent':    'Untitled Event',
     'unknownGroup':     'Unknown Group',
+    'block':            'Block User',
+    'unblock':          'Unblock User',
+    'blockedBanner':    "You've blocked this user. Unblock to chat.",
+    'blockedByBanner':  'This user is currently unavailable.',
+    'blockedBadge':     'Blocked',
   },
   kLangJa: {
     'today':            '今日',
@@ -41,6 +47,11 @@ const _L = {
     'unknown':          '不明',
     'untitledEvent':    '無題のイベント',
     'unknownGroup':     '不明なグループ',
+    'block':            'ユーザーをブロックする',
+    'unblock':          'ユーザーのブロックを解除する',
+    'blockedBanner':    'このユーザーをブロックしています。会話するには解除してください。',
+    'blockedByBanner':  'このユーザーは現在利用できません。',
+    'blockedBadge':     'ブロック中',
   },
 };
 
@@ -346,31 +357,46 @@ class _IndividualChatScreenState extends ConsumerState<IndividualChatScreen>
   Widget build(BuildContext context) {
     final lang = ref.watch(appLangProvider);
 
-    return Scaffold(
-      resizeToAvoidBottomInset: true,
-      backgroundColor: const Color(0xFFF7F7F9),
-      body: Column(
-        children: [
-          SafeArea(bottom: false, child: _buildAppBar(lang)),
-          Expanded(
-            child: GestureDetector(
-              onTap: () => FocusScope.of(context).unfocus(),
-              child: _isLoading
-                  ? Center(
-                  child: CircularProgressIndicator(
-                      color: AppColors.primary, strokeWidth: 2))
-                  : _buildMessageList(lang),
-            ),
-          ),
-          SafeArea(top: false, child: _buildInputBar(lang)),
-        ],
-      ),
+    return StreamBuilder<bool>(
+      stream: BlockService.streamIsBlocked(widget.otherUserId),
+      builder: (context, blockSnap) {
+        final isBlocked = blockSnap.data ?? false;
+
+        return StreamBuilder<bool>(
+          stream: BlockService.streamIsBlockedBy(widget.otherUserId),
+          builder: (context, blockBySnap) {
+            final isBlockedBy = blockBySnap.data ?? false;
+
+            return Scaffold(
+              resizeToAvoidBottomInset: true,
+              backgroundColor: const Color(0xFFF7F7F9),
+              body: Column(
+                children: [
+                  SafeArea(bottom: false, child: _buildAppBar(lang, isBlocked, isBlockedBy)),
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () => FocusScope.of(context).unfocus(),
+                      child: _isLoading
+                          ? Center(
+                          child: CircularProgressIndicator(
+                              color: AppColors.primary, strokeWidth: 2))
+                          : _buildMessageList(lang),
+                    ),
+                  ),
+                  SafeArea(top: false, child: _buildInputBar(lang, isBlocked, isBlockedBy)),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
   // ── App Bar ───────────────────────────────────────────────────────────────
-  Widget _buildAppBar(String lang) {
+  Widget _buildAppBar(String lang, bool isBlocked, bool isBlockedBy) {
     final avatarImage = _resolveImage(_liveOtherAvatar);
+    final isAnyBlocked = isBlocked || isBlockedBy;
 
     return Container(
       color: Colors.white,
@@ -410,15 +436,40 @@ class _IndividualChatScreenState extends ConsumerState<IndividualChatScreen>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(
-                                _liveOtherName,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFF0D0D0D),
-                                  letterSpacing: -0.5,
-                                ),
-                                overflow: TextOverflow.ellipsis,
+                              Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      _liveOtherName,
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w700,
+                                        color: Color(0xFF0D0D0D),
+                                        letterSpacing: -0.5,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  if (isAnyBlocked) ...[
+                                    const SizedBox(width: 6),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: Colors.red.withOpacity(0.08),
+                                        borderRadius: BorderRadius.circular(50),
+                                        border: Border.all(color: Colors.red.withOpacity(0.18)),
+                                      ),
+                                      child: Text(
+                                        _t(lang, 'blockedBadge'),
+                                        style: const TextStyle(
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.w700,
+                                          color: Colors.redAccent,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
                               const SizedBox(height: 1),
                               Text(
@@ -438,16 +489,69 @@ class _IndividualChatScreenState extends ConsumerState<IndividualChatScreen>
                 ),
 
                 // More button
-                Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: () {},
-                    borderRadius: BorderRadius.circular(50),
-                    child: Padding(
-                      padding: const EdgeInsets.all(10),
-                      child: Icon(Icons.more_vert_rounded,
-                          size: 22, color: Colors.black.withOpacity(0.4)),
+                PopupMenuButton<String>(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  color: Colors.white,
+                  offset: const Offset(0, 48),
+                  onSelected: (value) async {
+                    if (value == 'block') {
+                      if (isBlocked) {
+                        await BlockService.unblockUser(widget.otherUserId);
+                      } else {
+                        final confirmBlock = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: Text(lang == kLangJa ? 'ユーザーをブロックする' : 'Block User'),
+                            content: Text(lang == kLangJa
+                                ? 'このユーザーをブロックしますか？'
+                                : 'Are you sure you want to block this user?'),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, false),
+                                child: Text(lang == kLangJa ? 'キャンセル' : 'Cancel'),
+                              ),
+                              TextButton(
+                                onPressed: () => Navigator.pop(context, true),
+                                child: Text(lang == kLangJa ? 'ブロック' : 'Block'),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirmBlock == true) {
+                          await BlockService.blockUser(widget.otherUserId);
+                        }
+                      }
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem<String>(
+                      value: 'block',
+                      child: Row(
+                        children: [
+                          Icon(
+                            isBlocked ? Icons.check_circle_outline_rounded : Icons.block_flipped,
+                            color: AppColors.primary,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            isBlocked ? _t(lang, 'unblock') : _t(lang, 'block'),
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
+                  ],
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Icon(Icons.more_vert_rounded,
+                        size: 22, color: Colors.black.withOpacity(0.4)),
                   ),
                 ),
               ],
@@ -1095,7 +1199,50 @@ class _IndividualChatScreenState extends ConsumerState<IndividualChatScreen>
   );
 
   // ── Input Bar ─────────────────────────────────────────────────────────────
-  Widget _buildInputBar(String lang) {
+  Widget _buildInputBar(String lang, bool isBlocked, bool isBlockedBy) {
+    final isAnyBlocked = isBlocked || isBlockedBy;
+    if (isAnyBlocked) {
+      return Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.06),
+              blurRadius: 20,
+              offset: const Offset(0, -4),
+            ),
+          ],
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.red.withOpacity(0.08),
+            border: Border.all(color: Colors.red.withOpacity(0.18)),
+            borderRadius: BorderRadius.circular(24),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text('🚫', style: TextStyle(fontSize: 14)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  isBlocked ? _t(lang, 'blockedBanner') : _t(lang, 'blockedByBanner'),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.redAccent,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
