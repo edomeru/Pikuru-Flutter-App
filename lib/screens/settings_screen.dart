@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/providers/app_language_provider.dart';
@@ -384,14 +385,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                       const SizedBox(height: 12),
                       _SettingsCard(items: [
                         _SettingsItem(
-                            icon: Icons.description_rounded,
-                            label: t('terms'),
-                            onTap: () {}),
-                        _SettingsItem(
                             icon: Icons.privacy_tip_rounded,
                             label: t('privacy'),
                             isLast: true,
-                            onTap: () {}),
+                            onTap: () {
+                              Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) => _PrivacyPolicyWebViewScreen(
+                                        title: t('privacy'),
+                                      )));
+                            }),
                       ]),
 
                       const SizedBox(height: 24),
@@ -599,6 +603,62 @@ class _TrailingTag extends StatelessWidget {
               fontSize: 12,
               fontWeight: FontWeight.w600,
               color: AppColors.primary)),
+    );
+  }
+}
+
+// ── Privacy Policy WebView Screen ──────────────────────────────────────────────
+class _PrivacyPolicyWebViewScreen extends StatefulWidget {
+  final String title;
+  const _PrivacyPolicyWebViewScreen({required this.title});
+
+  @override
+  State<_PrivacyPolicyWebViewScreen> createState() =>
+      _PrivacyPolicyWebViewScreenState();
+}
+
+class _PrivacyPolicyWebViewScreenState
+    extends State<_PrivacyPolicyWebViewScreen> {
+  late final WebViewController _controller;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(NavigationDelegate(
+        onPageStarted: (_) => setState(() => _loading = true),
+        onPageFinished: (_) => setState(() => _loading = false),
+      ))
+      ..loadRequest(Uri.parse('https://pikuru-app.web.app/terms'));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFFF4F9F5),
+      appBar: AppBar(
+        backgroundColor: AppColors.primary,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          onPressed: () => Navigator.maybePop(context),
+        ),
+        title: Text(widget.title,
+            style: const TextStyle(
+                fontWeight: FontWeight.w600, fontSize: 18, letterSpacing: 0.3)),
+      ),
+      body: Stack(
+        children: [
+          WebViewWidget(controller: _controller),
+          if (_loading)
+            const Center(
+              child: CircularProgressIndicator(color: AppColors.primary),
+            ),
+        ],
+      ),
     );
   }
 }
