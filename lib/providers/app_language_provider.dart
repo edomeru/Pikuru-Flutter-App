@@ -13,7 +13,7 @@ const _kPrefKey = 'app_lang';
 
 Future<String> loadSavedLang() async {
   final prefs = await SharedPreferences.getInstance();
-  return prefs.getString(_kPrefKey) ?? kLangEn;
+  return prefs.getString(_kPrefKey) ?? kLangJa;
 }
 
 Future<void> saveLang(String code) async {
@@ -22,13 +22,13 @@ Future<void> saveLang(String code) async {
 }
 
 // ── Provider ──────────────────────────────────────────────────────────────────
-// Initialised to 'en'; call setLang via the notifier to change globally.
+  // Initialised to 'ja'; call setLang via the notifier to change globally.
 final appLangProvider = StateNotifierProvider<AppLangNotifier, String>((ref) {
   return AppLangNotifier();
 });
 
 class AppLangNotifier extends StateNotifier<String> {
-  AppLangNotifier() : super(kLangEn) {
+  AppLangNotifier() : super(kLangJa) {
     _restore();
   }
 
