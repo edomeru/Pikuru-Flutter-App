@@ -44,6 +44,10 @@ class _T {
   final String loadingMap;
   final String setupPublic;
   final String setupPrivate;
+  final String setupReserved;
+  final String setupClassMembership;
+  final String setupCoordinated;
+  final String setupDropIn;
   final String amenityOpenPlay;
   final String amenityReservation;
   final String amenityMembership;
@@ -103,6 +107,10 @@ class _T {
     required this.loadingMap,
     required this.setupPublic,
     required this.setupPrivate,
+    required this.setupReserved,
+    required this.setupClassMembership,
+    required this.setupCoordinated,
+    required this.setupDropIn,
     required this.amenityOpenPlay,
     required this.amenityReservation,
     required this.amenityMembership,
@@ -163,6 +171,10 @@ class _T {
     loadingMap:           'Loading map...',
     setupPublic:          'Public Access Courts',
     setupPrivate:         'Private / Coordinated Courts',
+    setupReserved:        'Reserved Courts',
+    setupClassMembership: 'Class/Membership Only Courts',
+    setupCoordinated:     'Coordinated Group / Setup Courts',
+    setupDropIn:          'Drop-in Courts',
     amenityOpenPlay:      'Open Play',
     amenityReservation:   'Reservation',
     amenityMembership:    'Membership',
@@ -223,6 +235,10 @@ class _T {
     loadingMap:           'マップを読み込み中...',
     setupPublic:          '一般開放コート',
     setupPrivate:         '事前調整・予約制コート',
+    setupReserved:        '予約制コート',
+    setupClassMembership: 'クラス・会員限定コート',
+    setupCoordinated:     '調整グループ／セットアップコート',
+    setupDropIn:          'ドロップインコート',
     amenityOpenPlay:      'オープンプレイ',
     amenityReservation:   '予約制',
     amenityMembership:    '会員制',
@@ -1241,8 +1257,12 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
   String get _setupTypeLabel {
     final raw = (_loc['loc_setup_type'] ?? '').toString().trim();
     if (!_isJa || raw.isEmpty) return raw;
-    if (raw == 'Public Access Courts')         return _t.setupPublic;
-    if (raw == 'Private / Coordinated Courts') return _t.setupPrivate;
+    if (raw == 'Public Access Courts')             return _t.setupPublic;
+    if (raw == 'Private / Coordinated Courts')     return _t.setupPrivate;
+    if (raw == 'Reserved Courts')                  return _t.setupReserved;
+    if (raw == 'Class/Membership Only Courts')     return _t.setupClassMembership;
+    if (raw == 'Coordinated Group / Setup Courts') return _t.setupCoordinated;
+    if (raw == 'Drop-in Courts')                   return _t.setupDropIn;
     return raw;
   }
 
@@ -1250,6 +1270,11 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
     final isFree = _loc['loc_price_free'] == true ||
         _loc['loc_price_free']?.toString() == 'T';
     if (isFree) return _t.free;
+    if (_isJa && _price.isNotEmpty) {
+      return _price
+          .replaceAll(RegExp(r'\bper hour\b', caseSensitive: false), '／時間')
+          .replaceAll(RegExp(r'\bhour\b', caseSensitive: false), '時間');
+    }
     return _price;
   }
 
@@ -1276,16 +1301,19 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
       [_city, _prefecture, _country].where((s) => s.isNotEmpty).join(', ');
 
   String get _hoursFormatted {
-    const days = [
-      ('Mon', 'loc_hours_mon'),   ('Tue', 'loc_hours_tues'),
-      ('Wed', 'loc_hours_weds'),  ('Thu', 'loc_hours_thurs'),
-      ('Fri', 'loc_hours_fri'),   ('Sat', 'loc_hours_sat'),
-      ('Sun', 'loc_hours_sun'),
+    final dayLabels = _isJa
+        ? ['月', '火', '水', '木', '金', '土', '日']
+        : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const fields = [
+      'loc_hours_mon', 'loc_hours_tues',
+      'loc_hours_weds', 'loc_hours_thurs',
+      'loc_hours_fri', 'loc_hours_sat',
+      'loc_hours_sun',
     ];
     final filled = <(String, String)>[];
-    for (final (label, field) in days) {
-      final v = (_loc[field] ?? '').toString().trim();
-      if (v.isNotEmpty) filled.add((label, v));
+    for (int i = 0; i < fields.length; i++) {
+      final v = (_loc[fields[i]] ?? '').toString().trim();
+      if (v.isNotEmpty) filled.add((dayLabels[i], v));
     }
     if (filled.isEmpty) return '';
     final groups = <({String range, String hours})>[];
