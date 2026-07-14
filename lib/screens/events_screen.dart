@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pikuru/theme/material.dart';
@@ -5,8 +6,10 @@ import 'package:pikuru/providers/providers.dart';
 import 'package:pikuru/widgets/event_card_full.dart';
 import 'package:pikuru/screens/calendar_events_screen.dart';
 import 'package:pikuru/screens/add_event_screen.dart';
+import 'package:pikuru/screens/event_history_screen.dart';
 import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -65,6 +68,13 @@ class _S {
   String get collegiate    => isJa ? '学生'           : 'Collegiate';
 
   String get touristFriendly => isJa ? '観光客歓迎' : 'Tourist Friendly';
+
+  // My Activity strings (parity with web app sidebar)
+  String get myActivity   => isJa ? 'マイアクティビティ' : 'My Activity';
+  String get eventsJoined => isJa ? '登録済みイベント'   : 'Registered Events';
+  String get eventsSaved  => isJa ? 'お気に入りイベント' : 'Favorite Events';
+  String get findEvents   => isJa ? 'イベントを探す'    : 'Find Events';
+  String get explore      => isJa ? '見る'              : 'Explore';
 
   String noEvents(String loc) => isJa
       ? '$loc で今後30日間のイベントはありません。'
@@ -190,6 +200,11 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
   String     _selectedFilter = 'Upcoming';
   _AdvFilter _adv = _AdvFilter();
 
+  // Auth state — tracks logged-in user so My Activity block can be shown
+  // and default location filter can mirror the web app behaviour.
+  String? _uid;
+  StreamSubscription<User?>? _subAuth;
+
   List<Map<String, dynamic>> _events = [];
   List<Map<String, dynamic>> _locations = [];
   bool _loadingEvents = true;
@@ -215,7 +230,28 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
   @override
   void initState() {
     super.initState();
+    // Mirror web app: logged-in → default to Tokyo; guest → no location filter.
+    _uid = FirebaseAuth.instance.currentUser?.uid;
+    _adv = _AdvFilter(defaultLocationActive: _uid != null);
+    _subAuth = FirebaseAuth.instance.authStateChanges().listen((user) {
+      final newUid = user?.uid;
+      if (newUid == _uid) return;
+      if (mounted) {
+        setState(() {
+          _uid = newUid;
+          _adv = _AdvFilter(defaultLocationActive: newUid != null);
+        });
+      }
+    });
     _loadEventsDirectly();
+  }
+
+  @override
+  void dispose() {
+    _subAuth?.cancel();
+    _searchController.dispose();
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadEventsDirectly() async {
@@ -1440,6 +1476,10 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
           )
         : <Map<String, dynamic>>[];
 
+    // Show My Activity block at top when the user is logged in.
+    final showActivity = _uid != null;
+    final activityOffset = showActivity ? 1 : 0;
+
     return RefreshIndicator(
       onRefresh: _loadEventsDirectly,
       color: _green,
@@ -1448,8 +1488,13 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
         controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 110),
-        itemCount: pageItems.length + (totalPages > 1 ? 1 : 0),
-        itemBuilder: (context, index) {
+        itemCount: pageItems.length + (totalPages > 1 ? 1 : 0) + activityOffset,
+        itemBuilder: (context, rawIndex) {
+          // ── My Activity block (parity with web app) ──
+          if (showActivity && rawIndex == 0) {
+            return _MyActivityEventsBlock(t: s);
+          }
+          final index = rawIndex - activityOffset;
           if (index == pageItems.length) {
             return _buildPaginationRow(totalPages);
           }
@@ -1643,6 +1688,266 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// My Activity Block — Events (parity with web app /events sidebar)
+// Shows Registered Events + Favorite Events counts for the logged-in user.
+// ─────────────────────────────────────────────────────────────────────────────
+class _MyActivityEventsBlock extends StatefulWidget {
+  final _S t;
+  const _MyActivityEventsBlock({required this.t});
+  @override
+  State<_MyActivityEventsBlock> createState() => _MyActivityEventsBlockState();
+}
+
+class _MyActivityEventsBlockState extends State<_MyActivityEventsBlock> {
+  String? _uid;
+  StreamSubscription<User?>? _subAuth;
+
+  // user_events with status == 'my_events'
+  List<QueryDocumentSnapshot>? _userEventDocs;
+  // all event_registrations for this user
+  List<QueryDocumentSnapshot>? _regDocs;
+  // user_events with status == 'interested' (saved)
+  int _saved = 0;
+
+  StreamSubscription<QuerySnapshot>? _subA;
+  StreamSubscription<QuerySnapshot>? _subB;
+  StreamSubscription<QuerySnapshot>? _subC;
+
+  static const Color _green      = Color(0xFF3A7D44);
+  static const Color _greenLight = Color(0xFFE8F4EB);
+  static const Color _border     = Color(0xFFE2EAE4);
+
+  @override
+  void initState() {
+    super.initState();
+    _uid = FirebaseAuth.instance.currentUser?.uid;
+    _subAuth = FirebaseAuth.instance.authStateChanges().listen((user) {
+      final newUid = user?.uid;
+      if (newUid == _uid) return;
+      if (mounted) setState(() { _uid = newUid; _userEventDocs = null; _regDocs = null; _saved = 0; });
+      _resubscribe();
+    });
+    _resubscribe();
+  }
+
+  void _resubscribe() {
+    _subA?.cancel(); _subA = null;
+    _subB?.cancel(); _subB = null;
+    _subC?.cancel(); _subC = null;
+    final uid = _uid;
+    if (uid == null) return;
+
+    // Stream 1 — user_events (my_events)
+    _subA = FirebaseFirestore.instance
+        .collection('user_events')
+        .where('user_id', isEqualTo: uid)
+        .where('status', isEqualTo: 'my_events')
+        .snapshots()
+        .listen((snap) {
+      if (mounted) setState(() => _userEventDocs = snap.docs);
+    });
+
+    // Stream 2 — event_registrations
+    _subB = FirebaseFirestore.instance
+        .collection('event_registrations')
+        .where('user_id', isEqualTo: uid)
+        .snapshots()
+        .listen((snap) {
+      if (mounted) setState(() => _regDocs = snap.docs);
+    });
+
+    // Stream 3 — interested (saved)
+    _subC = FirebaseFirestore.instance
+        .collection('user_events')
+        .where('user_id', isEqualTo: uid)
+        .where('status', isEqualTo: 'interested')
+        .snapshots()
+        .listen((snap) {
+      if (mounted) setState(() => _saved = snap.size);
+    });
+  }
+
+  @override
+  void dispose() {
+    _subAuth?.cancel();
+    _subA?.cancel(); _subB?.cancel(); _subC?.cancel();
+    super.dispose();
+  }
+
+  /// Unique event count across user_events + event_registrations (web parity).
+  int get _eventsJoined {
+    final ids = <String>{};
+    for (final doc in _userEventDocs ?? []) {
+      final data = doc.data() as Map<String, dynamic>?;
+      final id = data?['event_id'] as String?;
+      if (id != null && id.isNotEmpty) ids.add(id);
+    }
+    for (final doc in _regDocs ?? []) {
+      final data = doc.data() as Map<String, dynamic>?;
+      final id = data?['event_id'] as String?;
+      if (id != null && id.isNotEmpty) ids.add(id);
+    }
+    return ids.length;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_uid == null) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: _border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.t.myActivity.toUpperCase(),
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.5,
+                color: _green,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _EventsActivityStatCard(
+                    count: _eventsJoined,
+                    label: widget.t.eventsJoined,
+                    buttonLabel: widget.t.findEvents,
+                    icon: Icons.event_available_rounded,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const EventHistoryScreen(initialTab: 0),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _EventsActivityStatCard(
+                    count: _saved,
+                    label: widget.t.eventsSaved,
+                    buttonLabel: widget.t.explore,
+                    icon: Icons.bookmark_rounded,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const EventHistoryScreen(initialTab: 1),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stat Card widget used inside _MyActivityEventsBlock
+// ─────────────────────────────────────────────────────────────────────────────
+class _EventsActivityStatCard extends StatelessWidget {
+  final int count;
+  final String label;
+  final String buttonLabel;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _EventsActivityStatCard({
+    required this.count,
+    required this.label,
+    required this.buttonLabel,
+    required this.icon,
+    required this.onTap,
+  });
+
+  static const Color _green      = Color(0xFF3A7D44);
+  static const Color _greenLight = Color(0xFFE8F4EB);
+  static const Color _border     = Color(0xFFE2EAE4);
+  static const Color _textMid    = Color(0xFF5C6B61);
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF7FAF8),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 36, height: 36,
+                  decoration: BoxDecoration(
+                    color: _greenLight,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, color: _green, size: 18),
+                ),
+                const Spacer(),
+                Text(
+                  '$count',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF1A1D1B),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: _textMid,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: _greenLight,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                buttonLabel,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: _green,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
