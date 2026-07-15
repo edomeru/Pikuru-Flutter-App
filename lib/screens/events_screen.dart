@@ -82,7 +82,7 @@ class _S {
   String get locationSection  => isJa ? '場所'          : 'LOCATION';
   String get eventTypeSection => isJa ? 'イベント種類'   : 'EVENT TYPE';
   String get skillSection     => isJa ? 'スキルレベル'   : 'SKILL LEVELS';
-  String get categorySection    => isJa ? 'カテゴリー'    : 'CATEGORIES';
+  String get categorySection    => isJa ? 'カテゴリー'    : "CATEGORIES (M=Men's, W=Women's, Mixed)";
   String get ageBracketSection  => isJa ? '年代・区分'    : 'AGE BRACKET';
   String get otherSection       => isJa ? 'その他'        : 'OTHER';
 
@@ -100,10 +100,10 @@ class _S {
   String get amateur  => isJa ? '中級' : 'Amateur';
   String get beginner => isJa ? '初級' : 'Beginner';
 
-  String get mensDoubles   => isJa ? '男子ダブルス'   : "Men's Doubles";
-  String get mensSingles   => isJa ? '男子シングルズ'  : "Men's Singles";
-  String get womensDoubles => isJa ? '女子ダブルス'   : "Women's Doubles";
-  String get womensSingles => isJa ? '女子シングルズ'  : "Women's Singles";
+  String get mensDoubles   => isJa ? '男子ダブルス'   : "M Doubles";
+  String get mensSingles   => isJa ? '男子シングルズ'  : "M Singles";
+  String get womensDoubles => isJa ? '女子ダブルス'   : "W Doubles";
+  String get womensSingles => isJa ? '女子シングルズ'  : "W Singles";
   String get mixedDoubles  => isJa ? 'ミックスダブルス' : 'Mixed Doubles';
   String get seniors       => isJa ? 'シニア'         : 'Seniors';
   String get juniors       => isJa ? 'ジュニア'       : 'Juniors';
