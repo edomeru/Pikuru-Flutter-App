@@ -722,7 +722,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                   const SizedBox(width: 8),
                   Text(
                     hasVal
-                        ? DateFormat('MM/dd/yyyy').format(value!)
+                        ? DateFormat(s.isJa ? 'yyyy/MM/dd' : 'MM/dd/yyyy').format(value!)
                         : s.selectDate,
                     style: TextStyle(
                       fontSize: 13, fontWeight: FontWeight.w600,

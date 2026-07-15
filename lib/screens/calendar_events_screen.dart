@@ -1802,7 +1802,7 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                       color: hasVal ? AppColors.primary : _textLight),
                   const SizedBox(width: 8),
                   Expanded(child: Text(
-                    hasVal ? DateFormat('MM/dd/yyyy').format(value!) : curS.selectDate,
+                    hasVal ? DateFormat(curS.isJa ? 'yyyy/MM/dd' : 'MM/dd/yyyy').format(value!) : curS.selectDate,
                     style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
                         color: hasVal ? AppColors.primary : _textLight),
                   )),
