@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pikuru/theme/material.dart';
@@ -5,8 +6,10 @@ import 'package:pikuru/providers/providers.dart';
 import 'package:pikuru/widgets/event_card_full.dart';
 import 'package:pikuru/screens/calendar_events_screen.dart';
 import 'package:pikuru/screens/add_event_screen.dart';
+import 'package:pikuru/screens/event_history_screen.dart';
 import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -79,9 +82,9 @@ class _S {
   String get locationSection  => isJa ? '場所'          : 'LOCATION';
   String get eventTypeSection => isJa ? 'イベント種類'   : 'EVENT TYPE';
   String get skillSection     => isJa ? 'スキルレベル'   : 'SKILL LEVELS';
-  String get categorySection  => isJa ? 'カテゴリー'    : 'CATEGORIES';
-  String get categoryNote     => isJa ? 'M=男子、W=女子、Mixed=混合' : "M=Men's, W=Women's, Mixed";
-  String get otherSection     => isJa ? 'その他'        : 'OTHER';
+  String get categorySection    => isJa ? 'カテゴリー'    : 'CATEGORIES';
+  String get ageBracketSection  => isJa ? '年代・区分'    : 'AGE BRACKET';
+  String get otherSection       => isJa ? 'その他'        : 'OTHER';
 
   String get startDate  => isJa ? '開始日' : 'Start Date';
   String get endDate    => isJa ? '終了日' : 'End Date';
@@ -97,10 +100,10 @@ class _S {
   String get amateur  => isJa ? '中級' : 'Amateur';
   String get beginner => isJa ? '初級' : 'Beginner';
 
-  String get mensDoubles   => isJa ? '男子ダブルス'   : 'M Doubles';
-  String get mensSingles   => isJa ? '男子シングルズ'  : 'M Singles';
-  String get womensDoubles => isJa ? '女子ダブルス'   : 'W Doubles';
-  String get womensSingles => isJa ? '女子シングルズ'  : 'W Singles';
+  String get mensDoubles   => isJa ? '男子ダブルス'   : "Men's Doubles";
+  String get mensSingles   => isJa ? '男子シングルズ'  : "Men's Singles";
+  String get womensDoubles => isJa ? '女子ダブルス'   : "Women's Doubles";
+  String get womensSingles => isJa ? '女子シングルズ'  : "Women's Singles";
   String get mixedDoubles  => isJa ? 'ミックスダブルス' : 'Mixed Doubles';
   String get seniors       => isJa ? 'シニア'         : 'Seniors';
   String get juniors       => isJa ? 'ジュニア'       : 'Juniors';
@@ -133,6 +136,12 @@ class _S {
     };
     return m[key] ?? key;
   }
+
+  String get myActivity   => isJa ? 'マイアクティビティ' : 'My Activity';
+  String get eventsJoined => isJa ? '登録済みイベント'   : 'Registered Events';
+  String get eventsSaved  => isJa ? 'お気に入りイベント' : 'Favorite Events';
+  String get findEvents   => isJa ? 'イベントを探す'     : 'Find Events';
+  String get explore      => isJa ? '見る'              : 'Explore';
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1049,7 +1058,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
                     divider(),
 
-                    sectionLabelWithNote(s.categorySection, s.categoryNote),
+                    sectionLabel(s.categorySection),
                     Wrap(spacing: 8, runSpacing: 8, children: [
                       checkPill(s.mensDoubles,   temp.catMd,
                               () => setS(() => temp = temp.copyWith(catMd: !temp.catMd))),
@@ -1061,11 +1070,17 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                               () => setS(() => temp = temp.copyWith(catWs: !temp.catWs))),
                       checkPill(s.mixedDoubles,  temp.catMx,
                               () => setS(() => temp = temp.copyWith(catMx: !temp.catMx))),
-                      checkPill(s.seniors,       temp.catSe,
+                    ]),
+
+                    divider(),
+
+                    sectionLabel(s.ageBracketSection),
+                    Wrap(spacing: 8, runSpacing: 8, children: [
+                      checkPill(s.seniors,    temp.catSe,
                               () => setS(() => temp = temp.copyWith(catSe: !temp.catSe))),
-                      checkPill(s.juniors,       temp.catJu,
+                      checkPill(s.juniors,    temp.catJu,
                               () => setS(() => temp = temp.copyWith(catJu: !temp.catJu))),
-                      checkPill(s.collegiate,    temp.catCo,
+                      checkPill(s.collegiate, temp.catCo,
                               () => setS(() => temp = temp.copyWith(catCo: !temp.catCo))),
                     ]),
 
@@ -1528,12 +1543,16 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
         controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 110),
-        itemCount: pageItems.length + (totalPages > 1 ? 1 : 0),
+        itemCount: 1 + pageItems.length + (totalPages > 1 ? 1 : 0),
         itemBuilder: (context, index) {
-          if (index == pageItems.length) {
+          if (index == 0) {
+            return _MyActivityEventsBlock(s: s);
+          }
+          final i = index - 1;
+          if (i == pageItems.length) {
             return _buildPaginationRow(totalPages);
           }
-          final event = pageItems[index];
+          final event = pageItems[i];
           return EventCardFull(
             event: event,
             lang: isJa ? 'ja' : 'en',
@@ -1723,6 +1742,287 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// My Activity block (Events) — parity with web app and groups screen
+// ─────────────────────────────────────────────────────────────────────────────
+class _MyActivityEventsBlock extends StatefulWidget {
+  final _S s;
+  const _MyActivityEventsBlock({required this.s});
+
+  @override
+  State<_MyActivityEventsBlock> createState() => _MyActivityEventsBlockState();
+}
+
+class _MyActivityEventsBlockState extends State<_MyActivityEventsBlock> {
+  static const Color _green      = Color(0xFF3A7D44);
+  static const Color _greenLight = Color(0xFFE8F4EB);
+  static const Color _border     = Color(0xFFE2EAE4);
+  static const Color _textMid    = Color(0xFF5C6B61);
+  static const Color _muted      = Color(0xFFC7D3CB);
+
+  List<String> _userEventsJoinedList = [];
+  List<String> _regEventsList = [];
+  int _eventsSaved = 0;
+  String? _uid;
+
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _subUserJoined;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _subReg;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _subSaved;
+  StreamSubscription<User?>? _subAuth;
+
+  int get _eventsJoined {
+    final combined = <String>{..._userEventsJoinedList, ..._regEventsList};
+    return combined.length;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _uid = FirebaseAuth.instance.currentUser?.uid;
+    _subAuth = FirebaseAuth.instance.authStateChanges().listen((u) {
+      final newUid = u?.uid;
+      if (newUid == _uid) return;
+      setState(() {
+        _uid = newUid;
+        _userEventsJoinedList = [];
+        _regEventsList = [];
+        _eventsSaved = 0;
+      });
+      _resubscribe();
+    });
+    _resubscribe();
+  }
+
+  void _resubscribe() {
+    _subUserJoined?.cancel();
+    _subReg?.cancel();
+    _subSaved?.cancel();
+    _subUserJoined = null;
+    _subReg = null;
+    _subSaved = null;
+
+    final uid = _uid;
+    if (uid == null) return;
+
+    _subUserJoined = FirebaseFirestore.instance
+        .collection('user_events')
+        .where('user_id', isEqualTo: uid)
+        .where('status', isEqualTo: 'my_events')
+        .snapshots()
+        .listen((snap) {
+      if (!mounted) return;
+      final ids = snap.docs
+          .map((d) => (d.data()['event_id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toList();
+      setState(() {
+        _userEventsJoinedList = ids;
+      });
+    });
+
+    _subReg = FirebaseFirestore.instance
+        .collection('event_registrations')
+        .where('user_id', isEqualTo: uid)
+        .snapshots()
+        .listen((snap) {
+      if (!mounted) return;
+      final ids = snap.docs
+          .map((d) => (d.data()['event_id'] ?? '').toString())
+          .where((id) => id.isNotEmpty)
+          .toList();
+      setState(() {
+        _regEventsList = ids;
+      });
+    });
+
+    _subSaved = FirebaseFirestore.instance
+        .collection('user_events')
+        .where('user_id', isEqualTo: uid)
+        .where('status', isEqualTo: 'interested')
+        .snapshots()
+        .listen((snap) {
+      if (!mounted) return;
+      setState(() {
+        _eventsSaved = snap.size;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _subUserJoined?.cancel();
+    _subReg?.cancel();
+    _subSaved?.cancel();
+    _subAuth?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_uid == null) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: _border),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.s.myActivity.toUpperCase(),
+              style: const TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.5,
+                color: _green,
+              ),
+            ),
+            const SizedBox(height: 12),
+            _EventsActivityStatCard(
+              count: _eventsJoined,
+              label: widget.s.eventsJoined,
+              buttonLabel: widget.s.findEvents,
+              icon: Icons.calendar_today_rounded,
+              buttonIcon: Icons.search_rounded,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const EventHistoryScreen(initialTab: 0),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 10),
+            _EventsActivityStatCard(
+              count: _eventsSaved,
+              label: widget.s.eventsSaved,
+              buttonLabel: widget.s.explore,
+              icon: Icons.bookmark_outline_rounded,
+              buttonIcon: Icons.arrow_forward_rounded,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const EventHistoryScreen(initialTab: 1),
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EventsActivityStatCard extends StatelessWidget {
+  final int count;
+  final String label;
+  final String buttonLabel;
+  final IconData icon;
+  final IconData buttonIcon;
+  final VoidCallback onTap;
+
+  const _EventsActivityStatCard({
+    required this.count,
+    required this.label,
+    required this.buttonLabel,
+    required this.icon,
+    required this.buttonIcon,
+    required this.onTap,
+  });
+
+  static const Color _green      = Color(0xFF3A7D44);
+  static const Color _greenLight = Color(0xFFE8F4EB);
+  static const Color _border     = Color(0xFFE2EAE4);
+  static const Color _textMid    = Color(0xFF5C6B61);
+  static const Color _muted      = Color(0xFFC7D3CB);
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF7FAF8),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _border),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              width: 40, height: 40,
+              decoration: BoxDecoration(
+                color: _greenLight,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: _green, size: 20),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: _textMid,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _greenLight,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(buttonIcon, size: 11, color: _green),
+                        const SizedBox(width: 4),
+                        Text(
+                          buttonLabel,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: _green,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '$count',
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.w900,
+                height: 1,
+                color: count == 0 ? _muted : _green,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
