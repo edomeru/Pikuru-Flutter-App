@@ -12,6 +12,41 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:pikuru/screens/event_detail_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Localized location dictionary (parity with web app locDic in page.tsx)
+// ─────────────────────────────────────────────────────────────────────────────
+const Map<String, String> _locDic = {
+  'Japan': '日本', 'Australia': 'オーストラリア', 'Philippines': 'フィリピン',
+  'United States': 'アメリカ', 'USA': 'アメリカ',
+  'Canada': 'カナダ', 'China': '中国', 'India': 'インド',
+  'Malaysia': 'マレーシア', 'Singapore': 'シンガポール',
+  'Slovenia': 'スロベニア', 'Sovenia': 'スロベニア',
+  'Turkey': 'トルコ', 'United Kingdom': 'イギリス', 'United Kingdon': 'イギリス',
+  'Vietnam': 'ベトナム',
+  'Hokkaido': '北海道', 'Tokyo': '東京', 'Shibuya': '渋谷区', 'Shinjuku': '新宿区',
+  'Minato': '港区', 'Chuo': '中央区', 'Yokohama': '横浜市',
+  'Osaka': '大阪', 'Kyoto': '京都',
+  'Melbourne': 'メルボルン', 'Victoria': 'ビクトリア州',
+  'Queensland': 'クイーンズランド州',
+  'New South Wales': 'ニューサウスウェールズ州',
+  'California': 'カリフォルニア州',
+};
+
+String _localizeLoc(String en, List<Map<String, dynamic>> locs,
+    List<String> enFields, String jaField) {
+  if (en.isEmpty) return en;
+  for (final loc in locs) {
+    for (final f in enFields) {
+      final v = (loc[f] ?? '').toString().trim();
+      if (v.isNotEmpty && v == en) {
+        final ja = (loc[jaField] ?? '').toString().trim();
+        if (ja.isNotEmpty && ja != en) return ja;
+      }
+    }
+  }
+  return _locDic[en] ?? en;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // i18n
 // ─────────────────────────────────────────────────────────────────────────────
 class _S {
@@ -195,6 +230,83 @@ class _S {
       return '${days[d.weekday % 7]}、${d.year}年${months[d.month - 1]}${d.day}日';
     }
     return DateFormat('EEEE, MMMM d, yyyy').format(d);
+  }
+
+  static const Map<String, String> _locDic = {
+    'Japan': '日本',
+    'Australia': 'オーストラリア',
+    'Philippines': 'フィリピン',
+    'United States': 'アメリカ',
+    'USA': 'アメリカ',
+    'Canada': 'カナダ',
+    'China': '中国',
+    'India': 'インド',
+    'Malaysia': 'マレーシア',
+    'Singapore': 'シンガポール',
+    'Slovenia': 'スロベニア',
+    'Sovenia': 'スロベニア',
+    'Turkey': 'トルコ',
+    'United Kingdom': 'イギリス',
+    'United Kingdon': 'イギリス',
+    'Vietnam': 'ベトナム',
+    'Hokkaido': '北海道',
+    'Aomori': '青森県',
+    'Iwate': '岩手県',
+    'Miyagi': '宮城県',
+    'Akita': '秋田県',
+    'Yamagata': '山形県',
+    'Fukushima': '福島県',
+    'Ibaraki': '茨城県',
+    'Tochigi': '栃木県',
+    'Gunma': '群馬県',
+    'Saitama': '埼玉県',
+    'Chiba': '千葉県',
+    'Tokyo': '東京',
+    'Kanagawa': '神奈川県',
+    'Niigata': '新潟県',
+    'Toyama': '富山県',
+    'Ishikawa': '石川県',
+    'Fukui': '福井県',
+    'Yamanashi': '山梨県',
+    'Nagano': '長野県',
+    'Gifu': '岐阜県',
+    'Shizuoka': '静岡県',
+    'Aichi': '愛知県',
+    'Mie': '三重県',
+    'Shiga:': '滋賀県',
+    'Kyoto': '京都',
+    'Osaka': '大阪',
+    'Hyogo': '兵庫県',
+    'Nara': '奈良県',
+    'Wakayama': '和歌山県',
+    'Tottori': '鳥取県',
+    'Shimane': '島根県',
+    'Okayama': '岡山県',
+    'Hiroshima': '広島県',
+    'Yamaguchi': '山口県',
+    'Tokushima': '徳島県',
+    'Kagawa': '香川県',
+    'Ehime': '愛媛県',
+    'Kochi': '高知県',
+    'Fukuoka': '福岡県',
+    'Saga': '佐賀県',
+    'Nagasaki': '長崎県',
+    'Kumamoto': '熊本県',
+    'Oita': '大分県',
+    'Miyaki': '宮崎県',
+    'Miyazaki': '宮崎県',
+    'Kagoshima': '鹿児島県',
+    'Okinawa': '沖縄県',
+    'Melbourne': 'メルボルン',
+    'Victoria': 'ビクトリア州',
+    'Queensland': 'クイーンズランド州',
+    'New South Wales': 'ニューサウスウェールズ州',
+    'California': 'カリフォルニア州',
+  };
+
+  String localizeLoc(String val) {
+    if (!isJa) return val;
+    return _locDic[val] ?? val;
   }
 }
 
@@ -1043,8 +1155,16 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
     if (_filter.defaultLocationActive) {
       return s.isJa ? '東京' : 'Tokyo';
     }
-    if (_filter.prefecture.isNotEmpty) return _filter.prefecture;
-    if (_filter.country.isNotEmpty)    return _filter.country;
+    if (_filter.prefecture.isNotEmpty) {
+      return s.isJa
+          ? _localizeLoc(_filter.prefecture, _locations, const ['loc_prefecture_en', 'loc_prefecture'], 'loc_prefecture_jp')
+          : _filter.prefecture;
+    }
+    if (_filter.country.isNotEmpty) {
+      return s.isJa
+          ? _localizeLoc(_filter.country, _locations, const ['loc_country'], 'loc_country_jp')
+          : _filter.country;
+    }
     return s.allCountries;
   }
 
@@ -1602,9 +1722,9 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
         final activeCountry = temp.defaultLocationActive ? 'Japan' : temp.country;
         final prefectures = _locations
             .where((loc) {
-              final c = (loc['loc_country'] ?? '').toString().trim();
-              return activeCountry.isEmpty || c.toLowerCase() == activeCountry.toLowerCase();
-            })
+          final c = (loc['loc_country'] ?? '').toString().trim();
+          return activeCountry.isEmpty || c.toLowerCase() == activeCountry.toLowerCase();
+        })
             .map((loc) => (loc['loc_prefecture_en'] ?? loc['loc_prefecture'] ?? '').toString().trim())
             .where((p) => p.isNotEmpty)
             .toSet()
@@ -1614,12 +1734,12 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
         final activePref = temp.defaultLocationActive ? 'Tokyo' : temp.prefecture;
         final cities = _locations
             .where((loc) {
-              final c = (loc['loc_country'] ?? '').toString().trim();
-              final p = (loc['loc_prefecture_en'] ?? loc['loc_prefecture'] ?? '').toString().trim();
-              final matchCountry = activeCountry.isEmpty || c.toLowerCase() == activeCountry.toLowerCase();
-              final matchPref = activePref.isEmpty || p.toLowerCase() == activePref.toLowerCase();
-              return matchCountry && matchPref;
-            })
+          final c = (loc['loc_country'] ?? '').toString().trim();
+          final p = (loc['loc_prefecture_en'] ?? loc['loc_prefecture'] ?? '').toString().trim();
+          final matchCountry = activeCountry.isEmpty || c.toLowerCase() == activeCountry.toLowerCase();
+          final matchPref = activePref.isEmpty || p.toLowerCase() == activePref.toLowerCase();
+          return matchCountry && matchPref;
+        })
             .map((loc) => (loc['loc_city_en'] ?? loc['loc_city'] ?? '').toString().trim())
             .where((ci) => ci.isNotEmpty)
             .toSet()
@@ -1730,8 +1850,10 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
         }
 
         Widget dropdownField(String label, String value, List<String> options,
-            String allLabel, ValueChanged<String> onChange) {
+            String allLabel, ValueChanged<String> onChange,
+            {String Function(String)? displayMapper}) {
           final hasVal = value.isNotEmpty;
+          String show(String o) => displayMapper != null ? displayMapper(o) : o;
           return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             if (label.isNotEmpty) ...[
               Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _textLight)),
@@ -1759,7 +1881,7 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                     DropdownMenuItem(value: '',
                         child: Text(allLabel, style: const TextStyle(color: _textLight))),
                     ...options.map((o) => DropdownMenuItem(
-                        value: o, child: Text(o, style: const TextStyle(color: _textDark)))),
+                        value: o, child: Text(show(o), style: const TextStyle(color: _textDark)))),
                   ],
                   onChanged: (v) => onChange(v ?? ''),
                 ),
@@ -1834,7 +1956,7 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                       temp.defaultLocationActive ? 'Japan' : temp.country,
                       countries,
                       curS.allCountries,
-                      (v) => setS(() {
+                          (v) => setS(() {
                         if (v == 'Japan' && temp.defaultLocationActive) {
                           temp = temp.copyWith(country: 'Japan', prefecture: 'Tokyo', city: '', defaultLocationActive: true);
                         } else if (v.isEmpty) {
@@ -1843,6 +1965,9 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                           temp = temp.copyWith(country: v, prefecture: '', city: '', defaultLocationActive: false);
                         }
                       }),
+                      displayMapper: (v) => curS.isJa
+                          ? _localizeLoc(v, _locations, const ['loc_country'], 'loc_country_jp')
+                          : v,
                     )),
                     const SizedBox(width: 12),
                     Expanded(child: dropdownField(
@@ -1850,15 +1975,33 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                       temp.defaultLocationActive ? 'Tokyo' : temp.prefecture,
                       prefectures,
                       curS.fAll,
-                      (v) => setS(() {
+                          (v) => setS(() {
                         if (v.isEmpty) {
                           final currentCountry = temp.defaultLocationActive ? 'Japan' : temp.country;
                           temp = temp.copyWith(country: currentCountry, prefecture: '', city: '', defaultLocationActive: false);
                         } else {
-                          final currentCountry = temp.defaultLocationActive ? 'Japan' : temp.country;
+                          var currentCountry = temp.defaultLocationActive ? 'Japan' : temp.country;
+                          // Auto-select country based on the chosen prefecture (parity with web app)
+                          final foundLoc = _locations.firstWhere(
+                                (loc) {
+                              final c = (loc['loc_country'] ?? '').toString().trim();
+                              final pEn = (loc['loc_prefecture_en'] ?? '').toString().trim();
+                              final pJa = (loc['loc_prefecture'] ?? '').toString().trim();
+                              return c.isNotEmpty && (pEn == v || pJa == v);
+                            },
+                            orElse: () => <String, dynamic>{},
+                          );
+                          final foundCountry = (foundLoc['loc_country'] ?? '').toString().trim();
+                          if (foundCountry.isNotEmpty) {
+                            currentCountry = foundCountry;
+                          }
                           temp = temp.copyWith(country: currentCountry, prefecture: v, city: '', defaultLocationActive: false);
                         }
                       }),
+                      displayMapper: (v) => curS.isJa
+                          ? _localizeLoc(v, _locations,
+                          const ['loc_prefecture_en', 'loc_prefecture'], 'loc_prefecture_jp')
+                          : v,
                     )),
                   ]),
                   const SizedBox(height: 12),
@@ -1867,7 +2010,11 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                     temp.city,
                     cities,
                     curS.fAll,
-                    (v) => setS(() => temp = temp.copyWith(city: v, defaultLocationActive: false)),
+                        (v) => setS(() => temp = temp.copyWith(city: v, defaultLocationActive: false)),
+                    displayMapper: (v) => curS.isJa
+                        ? _localizeLoc(v, _locations,
+                        const ['loc_city_en', 'loc_city'], 'loc_city_jp')
+                        : v,
                   ),
 
                   divider(),

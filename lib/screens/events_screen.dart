@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pikuru/theme/material.dart';
@@ -6,11 +5,51 @@ import 'package:pikuru/providers/providers.dart';
 import 'package:pikuru/widgets/event_card_full.dart';
 import 'package:pikuru/screens/calendar_events_screen.dart';
 import 'package:pikuru/screens/add_event_screen.dart';
-import 'package:pikuru/screens/event_history_screen.dart';
 import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Localized location dictionary (parity with web app locDic in page.tsx)
+// ─────────────────────────────────────────────────────────────────────────────
+const Map<String, String> _locDic = {
+  // Countries
+  'Japan': '日本', 'Australia': 'オーストラリア', 'Philippines': 'フィリピン',
+  'United States': 'アメリカ', 'USA': 'アメリカ',
+  'Canada': 'カナダ', 'China': '中国', 'India': 'インド',
+  'Malaysia': 'マレーシア', 'Singapore': 'シンガポール',
+  'Slovenia': 'スロベニア', 'Sovenia': 'スロベニア',
+  'Turkey': 'トルコ', 'United Kingdom': 'イギリス', 'United Kingdon': 'イギリス',
+  'Vietnam': 'ベトナム',
+  // Prefectures / cities
+  'Hokkaido': '北海道', 'Aomori': '青森', 'Iwate': '岩手', 'Miyagi': '宮城', 'Akita': '秋田', 'Yamagata': '山形', 'Fukushima': '福島',
+  'Ibaraki': '茨城', 'Tochigi': '栃木', 'Gunma': '群馬', 'Saitama': '埼玉', 'Chiba': '千葉', 'Tokyo': '東京', 'Kanagawa': '神奈川',
+  'Niigata': '新潟', 'Toyama': '富山', 'Ishikawa': '石川', 'Fukui': '福井', 'Yamanashi': '山梨', 'Nagano': '長野', 'Gifu': '岐阜',
+  'Shizuoka': '静岡', 'Aichi': '愛知', 'Mie': '三重', 'Shiga': '滋賀', 'Kyoto': '京都', 'Osaka': '大阪', 'Hyogo': '兵庫',
+  'Nara': '奈良', 'Wakayama': '和歌山', 'Tottori': '鳥取', 'Shimane': '島根', 'Okayama': '岡山', 'Hiroshima': '広島', 'Yamaguchi': '山口',
+  'Tokushima': '徳島', 'Kagawa': '香川', 'Ehime': '愛媛', 'Kochi': '高知', 'Fukuoka': '福岡', 'Saga': '佐賀', 'Nagasaki': '長崎',
+  'Kumamoto': '熊本', 'Oita': '大分', 'Miyazaki': '宮崎', 'Kagoshima': '鹿児島', 'Okinawa': '沖縄',
+  'Shibuya': '渋谷区', 'Shinjuku': '新宿区', 'Minato': '港区', 'Chuo': '中央区', 'Yokohama': '横浜市',
+  'Melbourne': 'メルボルン', 'Victoria': 'ビクトリア州', 'Queensland': 'クイーンズランド州',
+  'New South Wales': 'ニューサウスウェールズ州', 'California': 'カリフォルニア州',
+};
+
+/// Returns a JA label for [en]. Prefers the matching JA field on any doc in
+/// [locs] whose [enField] equals [en]; falls back to [_locDic] then [en].
+String _localizeLoc(String en, List<Map<String, dynamic>> locs,
+    List<String> enFields, String jaField) {
+  if (en.isEmpty) return en;
+  for (final loc in locs) {
+    for (final f in enFields) {
+      final v = (loc[f] ?? '').toString().trim();
+      if (v.isNotEmpty && v == en) {
+        final ja = (loc[jaField] ?? '').toString().trim();
+        if (ja.isNotEmpty && ja != en) return ja;
+      }
+    }
+  }
+  return _locDic[en] ?? en;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Strings
@@ -68,13 +107,6 @@ class _S {
   String get collegiate    => isJa ? '学生'           : 'Collegiate';
 
   String get touristFriendly => isJa ? '観光客歓迎' : 'Tourist Friendly';
-
-  // My Activity strings (parity with web app sidebar)
-  String get myActivity   => isJa ? 'マイアクティビティ' : 'My Activity';
-  String get eventsJoined => isJa ? '登録済みイベント'   : 'Registered Events';
-  String get eventsSaved  => isJa ? 'お気に入りイベント' : 'Favorite Events';
-  String get findEvents   => isJa ? 'イベントを探す'    : 'Find Events';
-  String get explore      => isJa ? '見る'              : 'Explore';
 
   String noEvents(String loc) => isJa
       ? '$loc で今後30日間のイベントはありません。'
@@ -200,11 +232,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
   String     _selectedFilter = 'Upcoming';
   _AdvFilter _adv = _AdvFilter();
 
-  // Auth state — tracks logged-in user so My Activity block can be shown
-  // and default location filter can mirror the web app behaviour.
-  String? _uid;
-  StreamSubscription<User?>? _subAuth;
-
   List<Map<String, dynamic>> _events = [];
   List<Map<String, dynamic>> _locations = [];
   bool _loadingEvents = true;
@@ -230,28 +257,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
   @override
   void initState() {
     super.initState();
-    // Mirror web app: logged-in → default to Tokyo; guest → no location filter.
-    _uid = FirebaseAuth.instance.currentUser?.uid;
-    _adv = _AdvFilter(defaultLocationActive: _uid != null);
-    _subAuth = FirebaseAuth.instance.authStateChanges().listen((user) {
-      final newUid = user?.uid;
-      if (newUid == _uid) return;
-      if (mounted) {
-        setState(() {
-          _uid = newUid;
-          _adv = _AdvFilter(defaultLocationActive: newUid != null);
-        });
-      }
-    });
     _loadEventsDirectly();
-  }
-
-  @override
-  void dispose() {
-    _subAuth?.cancel();
-    _searchController.dispose();
-    _scrollController.dispose();
-    super.dispose();
   }
 
   Future<void> _loadEventsDirectly() async {
@@ -458,9 +464,21 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
 
   String get _locationLabel {
     if (_adv.defaultLocationActive) return s.defaultLocation;
-    if (_adv.city.isNotEmpty)       return _adv.city;
-    if (_adv.prefecture.isNotEmpty) return _adv.prefecture;
-    if (_adv.country.isNotEmpty)    return _adv.country;
+    if (_adv.city.isNotEmpty) {
+      return s.isJa
+          ? _localizeLoc(_adv.city, _locations, const ['loc_city_en', 'loc_city'], 'loc_city_jp')
+          : _adv.city;
+    }
+    if (_adv.prefecture.isNotEmpty) {
+      return s.isJa
+          ? _localizeLoc(_adv.prefecture, _locations, const ['loc_prefecture_en', 'loc_prefecture'], 'loc_prefecture_jp')
+          : _adv.prefecture;
+    }
+    if (_adv.country.isNotEmpty) {
+      return s.isJa
+          ? _localizeLoc(_adv.country, _locations, const ['loc_country'], 'loc_country_jp')
+          : _adv.country;
+    }
     return s.allCountries;
   }
 
@@ -919,7 +937,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                             .toSet()
                             .toList()..sort(),
                         s.allCountries,
-                        (v) => setS(() {
+                            (v) => setS(() {
                           if (v == 'Japan' && temp.defaultLocationActive) {
                             temp = temp.copyWith(country: 'Japan', prefecture: 'Tokyo', city: '', defaultLocationActive: true);
                           } else if (v.isEmpty) {
@@ -928,58 +946,84 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                             temp = temp.copyWith(country: v, prefecture: '', city: '', defaultLocationActive: false);
                           }
                         }),
+                        displayMapper: (v) => s.isJa
+                            ? _localizeLoc(v, _locations, const ['loc_country'], 'loc_country_jp')
+                            : v,
                       )),
                       const SizedBox(width: 12),
                       Expanded(child: dropdownField(
                         s.prefecture,
                         temp.defaultLocationActive ? 'Tokyo' : temp.prefecture,
-                        () {
+                            () {
                           final activeCountry = temp.defaultLocationActive ? 'Japan' : temp.country;
                           return _locations
                               .where((loc) {
-                                final c = (loc['loc_country'] ?? '').toString().trim();
-                                return activeCountry.isEmpty || c.toLowerCase() == activeCountry.toLowerCase();
-                              })
+                            final c = (loc['loc_country'] ?? '').toString().trim();
+                            return activeCountry.isEmpty || c.toLowerCase() == activeCountry.toLowerCase();
+                          })
                               .map((loc) => (loc['loc_prefecture_en'] ?? loc['loc_prefecture'] ?? '').toString().trim())
                               .where((p) => p.isNotEmpty)
                               .toSet()
                               .toList()..sort();
                         }(),
                         s.all,
-                        (v) => setS(() {
+                            (v) => setS(() {
                           if (v.isEmpty) {
                             final currentCountry = temp.defaultLocationActive ? 'Japan' : temp.country;
                             temp = temp.copyWith(country: currentCountry, prefecture: '', city: '', defaultLocationActive: false);
                           } else {
-                            final currentCountry = temp.defaultLocationActive ? 'Japan' : temp.country;
+                            var currentCountry = temp.defaultLocationActive ? 'Japan' : temp.country;
+                            // Auto-select country based on the chosen prefecture (parity with web app)
+                            final foundLoc = _locations.firstWhere(
+                                  (loc) {
+                                final c = (loc['loc_country'] ?? '').toString().trim();
+                                final pEn = (loc['loc_prefecture_en'] ?? '').toString().trim();
+                                final pJa = (loc['loc_prefecture'] ?? '').toString().trim();
+                                return c.isNotEmpty && (pEn == v || pJa == v);
+                              },
+                              orElse: () => <String, dynamic>{},
+                            );
+                            final foundCountry = (foundLoc['loc_country'] ?? '').toString().trim();
+                            if (foundCountry.isNotEmpty) {
+                              currentCountry = foundCountry;
+                            }
                             temp = temp.copyWith(country: currentCountry, prefecture: v, city: '', defaultLocationActive: false);
                           }
                         }),
+                        displayMapper: (v) => s.isJa
+                            ? _localizeLoc(v, _locations,
+                            const ['loc_prefecture_en', 'loc_prefecture'], 'loc_prefecture_jp')
+                            : v,
                       )),
                     ]),
                     const SizedBox(height: 12),
                     dropdownField(
                       s.city,
                       temp.city,
-                      () {
+                          () {
                         final activeCountry = temp.defaultLocationActive ? 'Japan' : temp.country;
                         final activePref = temp.defaultLocationActive ? 'Tokyo' : temp.prefecture;
                         return _locations
                             .where((loc) {
-                              final c = (loc['loc_country'] ?? '').toString().trim();
-                              final p = (loc['loc_prefecture_en'] ?? loc['loc_prefecture'] ?? '').toString().trim();
-                              final matchCountry = activeCountry.isEmpty || c.toLowerCase() == activeCountry.toLowerCase();
-                              final matchPref = activePref.isEmpty || p.toLowerCase() == activePref.toLowerCase();
-                              return matchCountry && matchPref;
-                            })
+                          final c = (loc['loc_country'] ?? '').toString().trim();
+                          final p = (loc['loc_prefecture_en'] ?? loc['loc_prefecture'] ?? '').toString().trim();
+                          final matchCountry = activeCountry.isEmpty || c.toLowerCase() == activeCountry.toLowerCase();
+                          final matchPref = activePref.isEmpty || p.toLowerCase() == activePref.toLowerCase();
+                          return matchCountry && matchPref;
+                        })
                             .map((loc) => (loc['loc_city_en'] ?? loc['loc_city'] ?? '').toString().trim())
                             .where((ci) => ci.isNotEmpty)
                             .toSet()
                             .toList()..sort();
                       }(),
                       s.all,
-                      (v) => setS(() => temp = temp.copyWith(city: v, defaultLocationActive: false)),
+                          (v) => setS(() => temp = temp.copyWith(city: v, defaultLocationActive: false)),
+                      displayMapper: (v) => s.isJa
+                          ? _localizeLoc(v, _locations,
+                          const ['loc_city_en', 'loc_city'], 'loc_city_jp')
+                          : v,
                     ),
+
 
                     divider(),
 
@@ -1471,14 +1515,10 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
     final endIndex = startIndex + _itemsPerPage;
     final pageItems = totalPages > 0
         ? filtered.sublist(
-            startIndex,
-            endIndex > filtered.length ? filtered.length : endIndex,
-          )
+      startIndex,
+      endIndex > filtered.length ? filtered.length : endIndex,
+    )
         : <Map<String, dynamic>>[];
-
-    // Show My Activity block at top when the user is logged in.
-    final showActivity = _uid != null;
-    final activityOffset = showActivity ? 1 : 0;
 
     return RefreshIndicator(
       onRefresh: _loadEventsDirectly,
@@ -1488,13 +1528,8 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
         controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(20, 20, 20, 110),
-        itemCount: pageItems.length + (totalPages > 1 ? 1 : 0) + activityOffset,
-        itemBuilder: (context, rawIndex) {
-          // ── My Activity block (parity with web app) ──
-          if (showActivity && rawIndex == 0) {
-            return _MyActivityEventsBlock(t: s);
-          }
-          final index = rawIndex - activityOffset;
+        itemCount: pageItems.length + (totalPages > 1 ? 1 : 0),
+        itemBuilder: (context, index) {
           if (index == pageItems.length) {
             return _buildPaginationRow(totalPages);
           }
@@ -1578,13 +1613,13 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
             onTap: _currentPage <= 1
                 ? null
                 : () {
-                    setState(() => _currentPage--);
-                    _scrollController.animateTo(
-                      0,
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeOut,
-                    );
-                  },
+              setState(() => _currentPage--);
+              _scrollController.animateTo(
+                0,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOut,
+              );
+            },
             child: Opacity(
               opacity: _currentPage <= 1 ? 0.35 : 1.0,
               child: Container(
@@ -1633,12 +1668,12 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                   ),
                   boxShadow: isCurrent
                       ? [
-                          BoxShadow(
-                            color: _green.withOpacity(0.3),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          )
-                        ]
+                    BoxShadow(
+                      color: _green.withOpacity(0.3),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    )
+                  ]
                       : null,
                 ),
                 alignment: Alignment.center,
@@ -1660,13 +1695,13 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
             onTap: _currentPage >= totalPages
                 ? null
                 : () {
-                    setState(() => _currentPage++);
-                    _scrollController.animateTo(
-                      0,
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeOut,
-                    );
-                  },
+              setState(() => _currentPage++);
+              _scrollController.animateTo(
+                0,
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOut,
+              );
+            },
             child: Opacity(
               opacity: _currentPage >= totalPages ? 0.35 : 1.0,
               child: Container(
@@ -1688,266 +1723,6 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// My Activity Block — Events (parity with web app /events sidebar)
-// Shows Registered Events + Favorite Events counts for the logged-in user.
-// ─────────────────────────────────────────────────────────────────────────────
-class _MyActivityEventsBlock extends StatefulWidget {
-  final _S t;
-  const _MyActivityEventsBlock({required this.t});
-  @override
-  State<_MyActivityEventsBlock> createState() => _MyActivityEventsBlockState();
-}
-
-class _MyActivityEventsBlockState extends State<_MyActivityEventsBlock> {
-  String? _uid;
-  StreamSubscription<User?>? _subAuth;
-
-  // user_events with status == 'my_events'
-  List<QueryDocumentSnapshot>? _userEventDocs;
-  // all event_registrations for this user
-  List<QueryDocumentSnapshot>? _regDocs;
-  // user_events with status == 'interested' (saved)
-  int _saved = 0;
-
-  StreamSubscription<QuerySnapshot>? _subA;
-  StreamSubscription<QuerySnapshot>? _subB;
-  StreamSubscription<QuerySnapshot>? _subC;
-
-  static const Color _green      = Color(0xFF3A7D44);
-  static const Color _greenLight = Color(0xFFE8F4EB);
-  static const Color _border     = Color(0xFFE2EAE4);
-
-  @override
-  void initState() {
-    super.initState();
-    _uid = FirebaseAuth.instance.currentUser?.uid;
-    _subAuth = FirebaseAuth.instance.authStateChanges().listen((user) {
-      final newUid = user?.uid;
-      if (newUid == _uid) return;
-      if (mounted) setState(() { _uid = newUid; _userEventDocs = null; _regDocs = null; _saved = 0; });
-      _resubscribe();
-    });
-    _resubscribe();
-  }
-
-  void _resubscribe() {
-    _subA?.cancel(); _subA = null;
-    _subB?.cancel(); _subB = null;
-    _subC?.cancel(); _subC = null;
-    final uid = _uid;
-    if (uid == null) return;
-
-    // Stream 1 — user_events (my_events)
-    _subA = FirebaseFirestore.instance
-        .collection('user_events')
-        .where('user_id', isEqualTo: uid)
-        .where('status', isEqualTo: 'my_events')
-        .snapshots()
-        .listen((snap) {
-      if (mounted) setState(() => _userEventDocs = snap.docs);
-    });
-
-    // Stream 2 — event_registrations
-    _subB = FirebaseFirestore.instance
-        .collection('event_registrations')
-        .where('user_id', isEqualTo: uid)
-        .snapshots()
-        .listen((snap) {
-      if (mounted) setState(() => _regDocs = snap.docs);
-    });
-
-    // Stream 3 — interested (saved)
-    _subC = FirebaseFirestore.instance
-        .collection('user_events')
-        .where('user_id', isEqualTo: uid)
-        .where('status', isEqualTo: 'interested')
-        .snapshots()
-        .listen((snap) {
-      if (mounted) setState(() => _saved = snap.size);
-    });
-  }
-
-  @override
-  void dispose() {
-    _subAuth?.cancel();
-    _subA?.cancel(); _subB?.cancel(); _subC?.cancel();
-    super.dispose();
-  }
-
-  /// Unique event count across user_events + event_registrations (web parity).
-  int get _eventsJoined {
-    final ids = <String>{};
-    for (final doc in _userEventDocs ?? []) {
-      final data = doc.data() as Map<String, dynamic>?;
-      final id = data?['event_id'] as String?;
-      if (id != null && id.isNotEmpty) ids.add(id);
-    }
-    for (final doc in _regDocs ?? []) {
-      final data = doc.data() as Map<String, dynamic>?;
-      final id = data?['event_id'] as String?;
-      if (id != null && id.isNotEmpty) ids.add(id);
-    }
-    return ids.length;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_uid == null) return const SizedBox.shrink();
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              widget.t.myActivity.toUpperCase(),
-              style: const TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1.5,
-                color: _green,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _EventsActivityStatCard(
-                    count: _eventsJoined,
-                    label: widget.t.eventsJoined,
-                    buttonLabel: widget.t.findEvents,
-                    icon: Icons.event_available_rounded,
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const EventHistoryScreen(initialTab: 0),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _EventsActivityStatCard(
-                    count: _saved,
-                    label: widget.t.eventsSaved,
-                    buttonLabel: widget.t.explore,
-                    icon: Icons.bookmark_rounded,
-                    onTap: () => Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => const EventHistoryScreen(initialTab: 1),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Stat Card widget used inside _MyActivityEventsBlock
-// ─────────────────────────────────────────────────────────────────────────────
-class _EventsActivityStatCard extends StatelessWidget {
-  final int count;
-  final String label;
-  final String buttonLabel;
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _EventsActivityStatCard({
-    required this.count,
-    required this.label,
-    required this.buttonLabel,
-    required this.icon,
-    required this.onTap,
-  });
-
-  static const Color _green      = Color(0xFF3A7D44);
-  static const Color _greenLight = Color(0xFFE8F4EB);
-  static const Color _border     = Color(0xFFE2EAE4);
-  static const Color _textMid    = Color(0xFF5C6B61);
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF7FAF8),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: _border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 36, height: 36,
-                  decoration: BoxDecoration(
-                    color: _greenLight,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(icon, color: _green, size: 18),
-                ),
-                const Spacer(),
-                Text(
-                  '$count',
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                    color: Color(0xFF1A1D1B),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: _textMid,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: _greenLight,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                buttonLabel,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: _green,
-                ),
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
