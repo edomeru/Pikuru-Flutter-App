@@ -490,8 +490,7 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
       });
 
       if (mounted) {
-        _showSnack(s.submitted);
-        Navigator.pop(context);
+        await _showSubmittedDialog(isJa: s.isJa);
       }
     } catch (e) {
       if (mounted) _showSnack('Error: $e', isError: true);
@@ -507,6 +506,103 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
       behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ));
+  }
+
+  Future<void> _showSubmittedDialog({required bool isJa}) async {
+    final title = isJa ? '🎉 イベントを送信しました！' : '🎉 Event Submitted!';
+    final body = isJa
+        ? 'イベントをご登録いただきありがとうございます。現在、内容を確認中です。審査は24〜48時間以内に完了予定です。審査状況は主催者ダッシュボードからいつでもご確認いただけます。'
+        : 'Thank you for submitting your event. It is now under review and will be processed within 24–48 hours. You can check its review status anytime from your Organizer Dashboard.';
+    final addMore = isJa ? '＋ さらにイベントを追加' : '+ Add more Events';
+    final goDash = isJa ? '主催者ダッシュボードへ' : 'Go to Organizer Dashboard';
+    final done = isJa ? '閉じる' : 'Done';
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: _surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        contentPadding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 64, height: 64,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _primary.withOpacity(0.12),
+                border: Border.all(color: _primary, width: 2),
+              ),
+              child: const Icon(Icons.check, color: _primary, size: 34),
+            ),
+            const SizedBox(height: 18),
+            Text(title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                    fontSize: 18, fontWeight: FontWeight.w700, color: _textDark)),
+            const SizedBox(height: 12),
+            Text(body,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontSize: 13.5, height: 1.5, color: _textDark.withOpacity(0.75))),
+            const SizedBox(height: 22),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  Navigator.of(context).pushReplacement(
+                    MaterialPageRoute(builder: (_) => const AddEventScreen()),
+                  );
+                },
+                child: Text(addMore,
+                    style: const TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _primary,
+                  side: const BorderSide(color: _primary),
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  Navigator.of(context).pop();
+                },
+                child: Text(goDash,
+                    style: const TextStyle(fontWeight: FontWeight.w700)),
+              ),
+            ),
+            const SizedBox(height: 6),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                style: TextButton.styleFrom(
+                  foregroundColor: _textDark.withOpacity(0.65),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  Navigator.of(context).pop();
+                },
+                child: Text(done),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   // ─────────────────────────────────────────────────────────────────────────

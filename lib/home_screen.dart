@@ -9,6 +9,9 @@ import 'package:pikuru/widgets/court_card.dart';
 import 'package:pikuru/providers/providers.dart';
 import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:pikuru/providers/notification_provider.dart';
+import 'package:pikuru/screens/add_court_screen.dart';
+import 'package:pikuru/screens/add_event_screen.dart';
+import 'package:pikuru/screens/add_group_screen.dart';
 import 'package:pikuru/screens/chats_screen.dart';
 import 'package:pikuru/screens/notifications_screen.dart';
 import 'package:pikuru/screens/what_is_pikuru_screen.dart';
@@ -767,45 +770,49 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
                 const SizedBox(height: 20),
 
-                // ── UPCOMING EVENTS ────────────────────────────────────────
-                _sectionHeader(
-                  _t(lang, 'upcomingEvents'),
-                  onSeeAll: () => widget.onNavigateToTab?.call(2),
-                  lang: lang,
+                // ── ADD A COURT CARD ───────────────────────────────────────
+                _buildAddCard(
+                  context: context,
+                  title: lang == kLangJa ? 'コートを追加' : 'Add a Court',
+                  subtitle: lang == kLangJa ? '新しいピックルボールコートを登録する' : 'Register a new pickleball court',
+                  icon: Icons.add_location_alt_rounded,
+                  iconBgColor: const Color(0xFFE8F5E9),
+                  iconColor: const Color(0xFF2E7D32),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AddCourtScreen()),
+                  ),
                 ),
                 const SizedBox(height: 16),
-                SizedBox(height: 265, child: _buildEventsSection(ref, lang)),
 
-                const SizedBox(height: 30),
-                _divider(),
-                const SizedBox(height: 20),
-
-                // ── LOCAL GROUPS ───────────────────────────────────────────
-                _sectionHeader(
-                  _t(lang, 'localGroups'),
-                  onSeeAll: () => widget.onNavigateToTab?.call(3),
-                  lang: lang,
+                // ── ADD AN EVENT CARD ──────────────────────────────────────
+                _buildAddCard(
+                  context: context,
+                  title: lang == kLangJa ? 'イベントを追加' : 'Add an Event',
+                  subtitle: lang == kLangJa ? 'トーナメントや体験会などを開催する' : 'Create a tournament, clinic or play session',
+                  icon: Icons.event_available_rounded,
+                  iconBgColor: const Color(0xFFE3F2FD),
+                  iconColor: const Color(0xFF1565C0),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AddEventScreen()),
+                  ),
                 ),
                 const SizedBox(height: 16),
-                SizedBox(height: 270, child: _buildGroupsSection(ref, lang)),
 
-                const SizedBox(height: 30),
-                _divider(),
-                const SizedBox(height: 20),
-
-                // ── PICKLEBALL COURTS ──────────────────────────────────────
-                _sectionHeader(
-                  _t(lang, 'pickleballCourts'),
-                  onSeeAll: () {
-                    ref.read(focusedCourtIdProvider.notifier).state = null;
-                    ref.read(resetCourtsFilterProvider.notifier).state++;
-                    widget.onNavigateToTab?.call(1);
-                  },
-                  lang: lang,
+                // ── ADD A GROUP CARD ───────────────────────────────────────
+                _buildAddCard(
+                  context: context,
+                  title: lang == kLangJa ? 'グループを追加' : 'Add a Group',
+                  subtitle: lang == kLangJa ? 'クラブや地域のコミュニティを作成する' : 'Create a club, local community or organization',
+                  icon: Icons.group_add_rounded,
+                  iconBgColor: const Color(0xFFF3E5F5),
+                  iconColor: const Color(0xFF6A1B9A),
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AddGroupScreen()),
+                  ),
                 ),
-                const SizedBox(height: 16),
-                SizedBox(height: 240, child: _buildCourtsSection(ref, lang)),
-
                 const SizedBox(height: 30),
 
                 // ── WELCOME CARD ───────────────────────────────────────────
@@ -1093,6 +1100,87 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  Widget _buildAddCard({
+    required BuildContext context,
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color iconBgColor,
+    required Color iconColor,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFE2EBE2), width: 1.2),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 50,
+              height: 50,
+              decoration: BoxDecoration(
+                color: iconBgColor,
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Icon(icon, color: iconColor, size: 24),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textDark,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textLight,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              width: 32,
+              height: 32,
+              decoration: const BoxDecoration(
+                color: Color(0xFFF0F5F0),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.chevron_right_rounded,
+                color: AppColors.primary,
+                size: 20,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _cardButton({
     required String label,
     required bool isPrimary,
@@ -1132,269 +1220,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  // Events section
-  // ─────────────────────────────────────────────────────────────────────────
-  Widget _buildEventsSection(WidgetRef ref, String lang) {
-    final eventsAsync = ref.watch(_homeEventsProvider);
-    return eventsAsync.when(
-      data: (events) {
-        if (events.isEmpty) {
-          return Center(child: Text(_t(lang, 'noEvents')));
-        }
-        return ListView.builder(
-          scrollDirection: Axis.horizontal,
-          clipBehavior: Clip.none,
-          itemCount: events.length,
-          itemBuilder: (context, index) {
-            final data = events[index];
-            final imageUrl =
-                (data['event_pic'] ??
-                        data['event_pic_thumbnail'] ??
-                        data['event_image'] ??
-                        '')
-                    .toString();
-            final title = _eventTitle(data, lang);
-            final formattedDateTime = _formatEventDateTime(data, lang);
-            final location = lang == kLangJa
-                ? (data['location_jp'] ?? data['location'] ?? '').toString()
-                : (data['location'] ?? '').toString();
-
-            // ── Registration deadline passed? (mirrors web app) ──
-            DateTime? deadline;
-            final rawDeadline = data['registration_deadline'];
-            if (rawDeadline is Timestamp) {
-              deadline = rawDeadline.toDate();
-            } else if (rawDeadline is DateTime) {
-              deadline = rawDeadline;
-            } else if (rawDeadline is String && rawDeadline.isNotEmpty) {
-              deadline = DateTime.tryParse(rawDeadline);
-            }
-            final registrationClosed =
-                deadline != null && DateTime.now().isAfter(deadline);
-
-            return GestureDetector(
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => EventDetailScreen(event: data),
-                ),
-              ),
-              child: EventCard(
-                imageUrl: imageUrl,
-                title: title,
-                dateTime: formattedDateTime,
-                location: location.isNotEmpty
-                    ? location
-                    : _t(lang, 'unknownLocation'),
-                registrationClosed: registrationClosed,
-                lang: lang == kLangJa ? 'ja' : 'en',
-              ),
-            );
-          },
-        );
-      },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, stack) => Center(child: Text('Error: $error')),
-    );
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Groups section
-  // ─────────────────────────────────────────────────────────────────────────
-  Widget _buildGroupsSection(WidgetRef ref, String lang) {
-    final orgsAsync = ref.watch(organizationsProvider);
-    final locationsAsync = ref.watch(locationsProvider);
-
-    return orgsAsync.when(
-      data: (orgs) {
-        return locationsAsync.when(
-          data: (locations) {
-            // Helper to build location map
-            final locMap = <String, Map<String, dynamic>>{};
-            for (final d in locations) {
-              final docId = (d['_doc_id'] ?? '').toString();
-              final locId = (d['loc_id'] ?? '').toString();
-              if (docId.isNotEmpty) locMap[docId] = d;
-              if (locId.isNotEmpty) locMap[locId] = d;
-            }
-
-            // Default filter matching GroupsScreen: Country = Japan, Prefecture = Tokyo
-            const defaultFilter = GroupFilter(
-              orgCountry: 'Japan',
-              orgPrefecture: 'Tokyo',
-            );
-
-            final filtered = orgs.where((g) {
-              if (g['org_type'] != 'Local Group') return false;
-              if (g['org_public'] != true) return false;
-              if (g['org_pending_review'] == true) return false;
-              return defaultFilter.matches(g, locMap);
-            }).toList();
-
-            // Sort by city name just like in GroupsScreen
-            filtered.sort((a, b) {
-              final ca = (a['loc_city_en'] ?? a['loc_city'] ?? a['org_city'] ?? '').toString().toLowerCase();
-              final cb = (b['loc_city_en'] ?? b['loc_city'] ?? b['org_city'] ?? '').toString().toLowerCase();
-              return ca.compareTo(cb);
-            });
-
-            if (filtered.isEmpty) {
-              return Center(child: Text(_t(lang, 'noGroups')));
-            }
-
-            return ListView.builder(
-              scrollDirection: Axis.horizontal,
-              clipBehavior: Clip.none,
-              itemCount: filtered.length,
-              itemBuilder: (context, index) {
-                final data = filtered[index];
-                final name = _groupName(data, lang);
-                final desc = _groupDescription(data, lang);
-                final orgLocId = (data['org_loc_id'] ?? '').toString();
-
-                return Consumer(
-                  builder: (context, ref, child) {
-                    final locationAsync = ref.watch(
-                      locationResolverProvider(orgLocId),
-                    );
-                    return locationAsync.when(
-                      data: (locationEn) {
-                        final location = lang == kLangJa
-                            ? (data['location_jp'] as String? ?? '').isNotEmpty
-                                  ? (data['location_jp'] as String)
-                                  : locationEn
-                            : locationEn;
-                        return GestureDetector(
-                          onTap: () => Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => GroupDetailScreen(group: data),
-                            ),
-                          ),
-                          child: GroupCard(
-                            imageUrl: (data['org_image'] ?? '').toString(),
-                            name: name,
-                            description: desc,
-                            location: location,
-                          ),
-                        );
-                      },
-                      loading: () => GroupCard(
-                        imageUrl: (data['org_image'] ?? '').toString(),
-                        name: name,
-                        description: desc,
-                        location: '...',
-                      ),
-                      error: (_, __) => GroupCard(
-                        imageUrl: (data['org_image'] ?? '').toString(),
-                        name: name,
-                        description: desc,
-                        location: _t(lang, 'unknownLocation'),
-                      ),
-                    );
-                  },
-                );
-              },
-            );
-          },
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (error, stack) => Center(child: Text('Error: $error')),
-        );
-      },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, stack) => Center(child: Text('Error: $error')),
-    );
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // Courts section
-  // ─────────────────────────────────────────────────────────────────────────
-  Widget _buildCourtsSection(WidgetRef ref, String lang) {
-    final courtsAsync = ref.watch(locationsProvider);
-    return courtsAsync.when(
-      data: (allCourts) {
-        final courts = allCourts.where((d) {
-          final pref = (d['loc_prefecture_en'] ?? d['loc_prefecture'] ?? '')
-              .toString()
-              .trim()
-              .toLowerCase();
-          return pref == 'tokyo' || pref == '東京' || pref.contains('tokyo');
-        }).toList();
-        if (courts.isEmpty) {
-          return Center(child: Text(_t(lang, 'noCourts')));
-        }
-        return ListView.builder(
-          scrollDirection: Axis.horizontal,
-          clipBehavior: Clip.none,
-          itemCount: courts.length,
-          itemBuilder: (context, index) {
-            final data = courts[index];
-            final name = _courtName(data, lang);
-            final location = _courtLocation(data, lang);
-
-            return GestureDetector(
-              onTap: () {
-                final docId = (data['_doc_id'] ?? '').toString();
-                if (docId.isNotEmpty) {
-                  ref.read(focusedCourtIdProvider.notifier).state = docId;
-                }
-                widget.onNavigateToTab?.call(1);
-              },
-              child: CourtCard(
-                imageUrl: (data['loc_image'] ?? '').toString(),
-                name: name,
-                location: location.isNotEmpty
-                    ? location
-                    : _t(lang, 'unknownLocation'),
-              ),
-            );
-          },
-        );
-      },
-      loading: () => const Center(child: CircularProgressIndicator()),
-      error: (error, stack) => Center(child: Text('Error: $error')),
-    );
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // UI helpers
-  // ─────────────────────────────────────────────────────────────────────────
-  Widget _sectionHeader(
-    String title, {
-    required VoidCallback onSeeAll,
-    required String lang,
-  }) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        GestureDetector(
-          onTap: onSeeAll,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              _t(lang, 'seeAll'),
-              style: const TextStyle(
-                fontSize: 13,
-                color: AppColors.primary,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _divider() => Container(height: 1, color: const Color(0xFFEEEFF1));
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -129,7 +129,7 @@ const _L = {
     'stripeAccountHolder': 'Account Holder Name',
   },
   kLangJa: {
-    'title': 'オーガナイザーダッシュボード',
+    'title': '主催者ダッシュボード',
     'sub': 'イベント・グループ・登録を管理しましょう。',
     'myEvents': 'マイイベント',
     'myGroups': 'マイグループ',
