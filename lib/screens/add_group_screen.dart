@@ -262,7 +262,10 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
   static const List<String> _orgTypes = [
     'For-Profit Club / Facility',
     'Nonprofit / Federation',
+    'Event Organizer',
+    'Collegiate Group',
     'Local Group',
+    'Coaching / Lessons',
   ];
 
   // ── Visibility ────────────────────────────────────────────────────────────
@@ -720,7 +723,7 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
         const SizedBox(height: 14),
         _buildLabel(t('groupType')),
         const SizedBox(height: 8),
-        _buildSegmentedType(),
+        _buildSegmentedType(lang),
         const SizedBox(height: 20),
 
         // ── Visibility (Public / Private) ─────────────────────────────────
@@ -913,22 +916,28 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
     ]);
   }
 
-  Widget _buildSegmentedType() {
+  Widget _buildSegmentedType(String lang) {
+    final bool isJa = lang == kLangJa;
+    const Map<String, (String, String)> _typeLabels = {
+      'For-Profit Club / Facility': ('For-Profit Club / Facility', '営利クラブ・施設'),
+      'Nonprofit / Federation':     ('Nonprofit / Federation',     '非営利団体・協会'),
+      'Event Organizer':            ('Event Organizer',            'イベント主催者'),
+      'Collegiate Group':           ('Collegiate Group',           '大学サークル'),
+      'Local Group':                ('Local Group',                'サークル'),
+      'Coaching / Lessons':         ('Coaching / Lessons',         'レッスン・コーチ'),
+    };
+
     return Wrap(
       spacing: 8, runSpacing: 8,
       children: _orgTypes.map((type) {
         final selected = _orgType == type;
-        final displayLabel = switch (type) {
-          'For-Profit Club / Facility' => 'Club / Facility',
-          'Nonprofit / Federation'     => 'Nonprofit / Federation',
-          'Local Group'                => 'Local Group',
-          _                            => type,
-        };
+        final labels = _typeLabels[type] ?? (type, type);
+        final label = isJa ? labels.$2 : labels.$1;
         return GestureDetector(
           onTap: () => setState(() => _orgType = type),
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: BoxDecoration(
               color: selected ? _primary : _surface,
               borderRadius: BorderRadius.circular(24),
@@ -937,16 +946,16 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
                   width: selected ? 1.5 : 1),
               boxShadow: selected
                   ? [BoxShadow(
-                  color: _primary.withOpacity(0.2),
-                  blurRadius: 8,
-                  offset: const Offset(0, 3))]
+                      color: _primary.withOpacity(0.2),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3))]
                   : [],
             ),
-            child: Text(displayLabel,
+            child: Text(label,
                 style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
-                    color: selected ? Colors.white : _textMid)),
+                    color: selected ? Colors.white : _textDark)),
           ),
         );
       }).toList(),
