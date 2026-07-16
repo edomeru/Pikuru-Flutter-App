@@ -770,6 +770,55 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
                 const SizedBox(height: 20),
 
+                // ── QUICK ACTIONS GRID ─────────────────────────────────────
+                GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: 2,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 2.4,
+                  children: [
+                    _buildGridButton(
+                      context: context,
+                      title: lang == kLangJa ? 'コートを探す' : 'Find a Court',
+                      subtitle: lang == kLangJa ? '近くのコート' : 'Near you',
+                      icon: Icons.grid_view_rounded,
+                      onTap: () => widget.onNavigateToTab?.call(1),
+                    ),
+                    _buildGridButton(
+                      context: context,
+                      title: lang == kLangJa ? 'イベントを探す' : 'Browse Events',
+                      subtitle: lang == kLangJa ? '今月のイベント' : 'This month',
+                      icon: Icons.calendar_today_rounded,
+                      onTap: () => widget.onNavigateToTab?.call(2),
+                    ),
+                    _buildGridButton(
+                      context: context,
+                      title: lang == kLangJa ? 'グループを探す' : 'Join a Group',
+                      subtitle: lang == kLangJa ? '地元のクラブ' : 'Local clubs',
+                      icon: Icons.people_alt_rounded,
+                      onTap: () => widget.onNavigateToTab?.call(3),
+                    ),
+                    _buildGridButton(
+                      context: context,
+                      title: lang == kLangJa ? 'メッセージ' : 'Messages',
+                      subtitle: lang == kLangJa ? 'チャットする' : 'Chat with players',
+                      icon: Icons.chat_bubble_rounded,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const ChatsScreen()),
+                        ).then((_) {
+                          if (mounted) _listenUnread();
+                        });
+                      },
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 24),
+
                 // ── ADD A COURT CARD ───────────────────────────────────────
                 _buildAddCard(
                   context: context,
@@ -1173,6 +1222,73 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 Icons.chevron_right_rounded,
                 color: AppColors.primary,
                 size: 20,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGridButton({
+    required BuildContext context,
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.primary.withOpacity(0.04),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: AppColors.primary.withOpacity(0.12),
+            width: 1.2,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, color: AppColors.primary, size: 18),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textDark,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.textLight.withOpacity(0.8),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
