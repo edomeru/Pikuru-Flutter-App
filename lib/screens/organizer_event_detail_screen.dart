@@ -288,7 +288,7 @@ class _OrganizerEventDetailScreenState
       if (_truthy('event_category_womenssingle'))  isJa ? '女子シングルス' : "Women's Singles",
       if (_truthy('event_category_mensdoubles'))   isJa ? '男子ダブルス'  : "Men's Doubles",
       if (_truthy('event_category_womensdoubles')) isJa ? '女子ダブルス'  : "Women's Doubles",
-      if (_truthy('event_category_mixeddoubles'))  isJa ? '混合ダブルス'  : 'Mixed Doubles',
+      if (_truthy('event_category_mixeddoubles'))  isJa ? 'ミックスダブルス'  : 'Mixed Doubles',
       if (_truthy('event_category_seniors'))       isJa ? 'シニア'        : 'Seniors',
       if (_truthy('event_category_juniors'))       isJa ? 'ジュニア'      : 'Juniors',
       if (_truthy('event_category_collegiate'))    isJa ? '大学生'        : 'Collegiate',

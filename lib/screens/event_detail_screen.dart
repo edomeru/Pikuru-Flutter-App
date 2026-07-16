@@ -98,12 +98,16 @@ class _S {
   String get tagBeginner      => isJa ? '初級者'        : 'BEGINNER';
   String get tagMensSingles   => isJa ? '男子シングルス' : "MEN'S SINGLES";
   String get tagWomensSingles => isJa ? '女子シングルス' : "WOMEN'S SINGLES";
-  String get tagMixedDoubles  => isJa ? '混合ダブルス'   : 'MIXED DOUBLES';
+  String get tagMixedDoubles  => isJa ? 'ミックスダブルス'   : 'MIXED DOUBLES';
   String get tagMensDoubles   => isJa ? '男子ダブルス'   : "MEN'S DOUBLES";
   String get tagWomensDoubles => isJa ? '女子ダブルス'   : "WOMEN'S DOUBLES";
   String get tagJuniors       => isJa ? 'ジュニア'      : 'JUNIORS';
   String get tagCollegiate    => isJa ? '大学生'        : 'COLLEGIATE';
   String get tagSeniors       => isJa ? 'シニア'        : 'SENIORS';
+
+  String get labelSkillLevels => isJa ? 'スキルレベル' : 'Skill Levels';
+  String get labelCategories  => isJa ? 'カテゴリー'   : 'Categories';
+  String get labelAgeBracket  => isJa ? '年代・区分'   : 'Age Groups';
 
   String get registerSection    => isJa ? '登録'                    : 'Registration';
   String get registerBtn        => isJa ? 'このイベントに登録'        : 'Register for this Event';
@@ -178,6 +182,7 @@ class _S {
   String localizeType(String key) {
     if (!isJa) return key;
     const m = {
+      'Professional Tour':             'プロツアー',
       'Professional Tournament':       'プロトーナメント',
       'Global Tournament':             'グローバルトーナメント',
       'Japan Tournament':              '日本トーナメント',
@@ -435,8 +440,8 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
     }
     if (dt == null) return '';
     if (s.isJa) {
-      const wd = ['月','火','水','木','金','土','日'];
-      return '${dt.year}年${dt.month}月${dt.day}日(${wd[dt.weekday-1]})';
+      const wd = ['月曜日','火曜日','水曜日','木曜日','金曜日','土曜日','日曜日'];
+      return '${dt.year}年${dt.month}月${dt.day}日（${wd[dt.weekday-1]}）';
     }
     return DateFormat('EEE, MMM d, yyyy').format(dt);
   }
@@ -629,11 +634,11 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
               background: Stack(fit: StackFit.expand, children: [
                 imageUrl.isNotEmpty
                     ? Image.network(
-                        imageUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) =>
-                            const _PickleballImageFallback(),
-                      )
+                  imageUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) =>
+                  const _PickleballImageFallback(),
+                )
                     : const _PickleballImageFallback(),
                 Container(
                   decoration: BoxDecoration(
@@ -1194,39 +1199,77 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
 
   Widget _buildTags() {
     final e = widget.event;
-    final tags = <String>[];
-    if (e['event_skill_level_pro']       == true) tags.add(s.tagPro);
-    if (e['event_skill_level_amateur']    == true) tags.add(s.tagAmateur);
-    if (e['event_skill_level_beginner']   == true) tags.add(s.tagBeginner);
-    if (e['event_category_menssingle']    == true) tags.add(s.tagMensSingles);
-    if (e['event_category_womenssingle']  == true) tags.add(s.tagWomensSingles);
-    if (e['event_category_mixeddoubles']  == true) tags.add(s.tagMixedDoubles);
-    if (e['event_category_mensdoubles']   == true) tags.add(s.tagMensDoubles);
-    if (e['event_category_womensdoubles'] == true) tags.add(s.tagWomensDoubles);
-    if (e['event_category_juniors']       == true) tags.add(s.tagJuniors);
-    if (e['event_category_collegiate']    == true) tags.add(s.tagCollegiate);
-    if (e['event_category_seniors']       == true) tags.add(s.tagSeniors);
-    if (tags.isEmpty) {
+    final skills = <String>[];
+    if (e['event_skill_level_pro']      == true) skills.add(s.tagPro);
+    if (e['event_skill_level_amateur']  == true) skills.add(s.tagAmateur);
+    if (e['event_skill_level_beginner'] == true) skills.add(s.tagBeginner);
+
+    final categories = <String>[];
+    if (e['event_category_menssingle']    == true) categories.add(s.tagMensSingles);
+    if (e['event_category_womenssingle']  == true) categories.add(s.tagWomensSingles);
+    if (e['event_category_mixeddoubles']  == true) categories.add(s.tagMixedDoubles);
+    if (e['event_category_mensdoubles']   == true) categories.add(s.tagMensDoubles);
+    if (e['event_category_womensdoubles'] == true) categories.add(s.tagWomensDoubles);
+
+    final ages = <String>[];
+    if (e['event_category_juniors']    == true) ages.add(s.tagJuniors);
+    if (e['event_category_collegiate'] == true) ages.add(s.tagCollegiate);
+    if (e['event_category_seniors']    == true) ages.add(s.tagSeniors);
+
+    if (skills.isEmpty && categories.isEmpty && ages.isEmpty) {
       final old = (e['event_skill_level'] ?? '').toString();
-      if (old.isNotEmpty) tags.add(old.toUpperCase());
+      if (old.isNotEmpty) skills.add(old.toUpperCase());
     }
-    if (tags.isEmpty) return const SizedBox.shrink();
+    if (skills.isEmpty && categories.isEmpty && ages.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    Widget chip(String tag) => Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+      decoration: BoxDecoration(
+        color: _greenLt,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _green.withOpacity(0.2)),
+      ),
+      child: Text(tag, style: const TextStyle(
+          color: _green, fontSize: 11,
+          fontWeight: FontWeight.w700, letterSpacing: 0.4)),
+    );
+
+    Widget subLabel(String text) => Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(text, style: const TextStyle(
+        fontSize: 10, fontWeight: FontWeight.w800,
+        color: _textMid, letterSpacing: 0.8,
+      )),
+    );
+
+    final sections = <Widget>[];
+    if (skills.isNotEmpty) {
+      sections.add(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        subLabel(s.labelSkillLevels),
+        Wrap(spacing: 7, runSpacing: 7, children: skills.map(chip).toList()),
+      ]));
+    }
+    if (categories.isNotEmpty) {
+      if (sections.isNotEmpty) sections.add(const SizedBox(height: 14));
+      sections.add(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        subLabel(s.labelCategories),
+        Wrap(spacing: 7, runSpacing: 7, children: categories.map(chip).toList()),
+      ]));
+    }
+    if (ages.isNotEmpty) {
+      if (sections.isNotEmpty) sections.add(const SizedBox(height: 14));
+      sections.add(Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        subLabel(s.labelAgeBracket),
+        Wrap(spacing: 7, runSpacing: 7, children: ages.map(chip).toList()),
+      ]));
+    }
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       _sectionLabel(s.categories),
       const SizedBox(height: 10),
-      Wrap(spacing: 7, runSpacing: 7,
-          children: tags.map((tag) => Container(
-            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
-            decoration: BoxDecoration(
-              color: _greenLt,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: _green.withOpacity(0.2)),
-            ),
-            child: Text(tag, style: const TextStyle(
-                color: _green, fontSize: 11,
-                fontWeight: FontWeight.w700, letterSpacing: 0.4)),
-          )).toList()),
+      ...sections,
     ]);
   }
 
