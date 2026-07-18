@@ -55,6 +55,17 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- Apple Sign-In callback via custom scheme.
+                 Our web server (pikuru-app.web.app/api/apple-callback) redirects to
+                 pikuru://apple-callback?code=...&id_token=... after Apple authenticates.
+                 app_links catches this and delivers it to the Flutter _signInWithApple handler. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="pikuru" android:host="apple-callback" />
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->

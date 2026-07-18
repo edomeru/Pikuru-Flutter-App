@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pikuru/register/RegisterPage.dart';
@@ -10,11 +11,14 @@ import 'package:pikuru/Utils/auth_service.dart';
 import 'package:pikuru/screens/reset_password_dialog.dart';
 import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
-import 'package:pikuru/services/notification_service.dart'; // ← add this import
+import 'package:pikuru/services/notification_service.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
+import 'package:app_links/app_links.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Localised strings — mirrors the web app's T map in login/page.tsx
@@ -434,39 +438,119 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       final rawNonce = _generateNonce();
       final hashedNonce = _sha256ofString(rawNonce);
 
-      final appleCredential = await SignInWithApple.getAppleIDCredential(
-        scopes: [
-          AppleIDAuthorizationScopes.email,
-          AppleIDAuthorizationScopes.fullName,
-        ],
-        nonce: hashedNonce,
-      );
+      if (Platform.isIOS) {
+        // ── iOS: use the native Apple ID sheet ──────────────────────────────
+        final appleCredential = await SignInWithApple.getAppleIDCredential(
+          scopes: [
+            AppleIDAuthorizationScopes.email,
+            AppleIDAuthorizationScopes.fullName,
+          ],
+          nonce: hashedNonce,
+        );
+        final oauthCredential = OAuthProvider('apple.com').credential(
+          idToken: appleCredential.identityToken,
+          rawNonce: rawNonce,
+        );
+        final result = await FirebaseAuth.instance.signInWithCredential(oauthCredential);
+        final user = result.user!;
+        if (appleCredential.givenName != null) {
+          final fullName =
+              '${appleCredential.givenName ?? ''} ${appleCredential.familyName ?? ''}'
+                  .trim();
+          await user.updateDisplayName(fullName);
+          await user.reload();
+        }
+        await _ensureRegistrationDoc(user);
+        await NotificationService.instance.init();
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const MainNavigation()),
+        );
+      } else {
+        // ── Android: manual OAuth flow via app_links + url_launcher ─────────
+        // The sign_in_with_apple plugin's signinwithapple:// callback is
+        // not reliably registered on Android. Instead we:
+        //  1. Build the Apple OAuth URL ourselves
+        //  2. Open it in the external browser via url_launcher
+        //  3. Listen for pikuru://apple-callback?id_token=... via app_links
+        //  4. Complete Firebase sign-in with the returned id_token + rawNonce
 
-      final oauthCredential = OAuthProvider(
-        'apple.com',
-      ).credential(idToken: appleCredential.identityToken, rawNonce: rawNonce);
+        final appleAuthUrl = Uri.https('appleid.apple.com', '/auth/authorize', {
+          'client_id': 'com.pikuru.pickleball.pikuru',
+          'redirect_uri': 'https://pikuru-app.web.app/api/apple-callback',
+          'response_type': 'code id_token',
+          'scope': 'name email',
+          'response_mode': 'form_post',
+          'nonce': hashedNonce,
+        });
 
-      final result = await FirebaseAuth.instance.signInWithCredential(
-        oauthCredential,
-      );
-      final user = result.user!;
+        final completer = Completer<Uri>();
+        final appLinks = AppLinks();
+        late StreamSubscription<Uri> sub;
+        sub = appLinks.uriLinkStream.listen((uri) {
+          if (uri.scheme == 'pikuru' && uri.host == 'apple-callback') {
+            sub.cancel();
+            if (!completer.isCompleted) completer.complete(uri);
+          }
+        });
 
-      if (appleCredential.givenName != null) {
-        final fullName =
-        '${appleCredential.givenName ?? ''} ${appleCredential.familyName ?? ''}'
-            .trim();
-        await user.updateDisplayName(fullName);
-        await user.reload();
+        final launched = await launchUrl(
+          appleAuthUrl,
+          mode: LaunchMode.externalApplication,
+        );
+        if (!launched) {
+          sub.cancel();
+          throw Exception('Could not open Apple sign-in page');
+        }
+
+        // Wait up to 5 minutes for the user to complete Apple sign-in
+        final callbackUri = await completer.future.timeout(
+          const Duration(minutes: 5),
+          onTimeout: () {
+            sub.cancel();
+            throw Exception('Apple sign-in timed out');
+          },
+        );
+
+        final idToken = callbackUri.queryParameters['id_token'];
+        if (idToken == null || idToken.isEmpty) {
+          throw Exception('Apple did not return an id_token');
+        }
+
+        final oauthCredential = OAuthProvider('apple.com').credential(
+          idToken: idToken,
+          rawNonce: rawNonce,
+        );
+        final result = await FirebaseAuth.instance.signInWithCredential(oauthCredential);
+        final user = result.user!;
+
+        // Apple only sends name on first sign-in
+        final userJson = callbackUri.queryParameters['user'];
+        if (userJson != null && userJson.isNotEmpty) {
+          try {
+            final userMap = jsonDecode(userJson) as Map<String, dynamic>;
+            final nameMap = userMap['name'] as Map<String, dynamic>?;
+            if (nameMap != null) {
+              final fullName =
+                  '${nameMap['firstName'] ?? ''} ${nameMap['lastName'] ?? ''}'
+                      .trim();
+              if (fullName.isNotEmpty) {
+                await user.updateDisplayName(fullName);
+                await user.reload();
+              }
+            }
+          } catch (_) {}
+        }
+
+        await _ensureRegistrationDoc(user);
+        await NotificationService.instance.init();
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (_) => const MainNavigation()),
+        );
       }
-
-      await _ensureRegistrationDoc(user);
-      await NotificationService.instance.init(); // re-saves token with new uid
-
-      if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const MainNavigation()),
-      );
     } on SignInWithAppleAuthorizationException catch (e) {
       if (e.code != AuthorizationErrorCode.canceled) {
         if (!mounted) return;
@@ -476,9 +560,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Apple sign-in failed: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Apple sign-in failed: $e')),
+      );
     } finally {
       if (mounted) setState(() => showSpinner = false);
     }

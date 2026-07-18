@@ -119,7 +119,7 @@ class NotificationService {
     }
 
     final initSettings = InitializationSettings(
-      android: const AndroidInitializationSettings('@drawable/ic_notification'),
+      android: const AndroidInitializationSettings('@mipmap/ic_launcher'),
       iOS: Platform.isIOS
           ? const DarwinInitializationSettings(
         requestAlertPermission: false,
@@ -454,7 +454,7 @@ class NotificationService {
             playSound: !isSilenced,
             enableVibration: !isSilenced,
             color: const Color(0xFF3A7D44),
-            icon: '@drawable/ic_notification',
+            icon: '@mipmap/ic_launcher',
           ),
         ),
         payload: payload,
@@ -484,7 +484,7 @@ class NotificationService {
             enableVibration: false,
             enableLights: false,
             color: Color(0xFF3A7D44),
-            icon: '@drawable/ic_notification',
+            icon: '@mipmap/ic_launcher',
           ),
         ),
         payload: payload,

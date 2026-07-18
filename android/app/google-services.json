@@ -12,7 +12,36 @@
           "package_name": "com.pikuru_pickleball.pikuru"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "48438281409-5ohptf9754ul37569ls34nl6949kh6rh.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.pikuru_pickleball.pikuru",
+            "certificate_hash": "2370dd2db962b4cbb3479ad1bdab96bf081ee15e"
+          }
+        },
+        {
+          "client_id": "48438281409-a1hbm5ce0ej2dpm8bmihle5cakh5i3pn.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.pikuru_pickleball.pikuru",
+            "certificate_hash": "79ac037542dee1b9e2faeceaac1a2abe4991ccee"
+          }
+        },
+        {
+          "client_id": "48438281409-jpl8idf8uk68l4mamg6m2vkrh3fahivn.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.pikuru_pickleball.pikuru",
+            "certificate_hash": "8e564a35f64abe15dc3c2f85bffec856d9ce744a"
+          }
+        },
+        {
+          "client_id": "48438281409-cddo2sc0c28qir2ks57kghf3ftqoaorj.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyD3zYU5Sc0EkBfIGRj9blLQDwbT0P62_9U"
@@ -20,7 +49,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "48438281409-cddo2sc0c28qir2ks57kghf3ftqoaorj.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "48438281409-3ij7duqgb2cbuu6i2u4c8ob5aqt96jbb.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.pikurupickleball.pikuru"
+              }
+            }
+          ]
         }
       }
     }
