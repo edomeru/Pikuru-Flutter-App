@@ -33,8 +33,9 @@ void main() async {
   // iOS simulator throws [firebase_messaging/apns-token-not-set] which crashes
   // the app before runApp() is called, causing a permanent white screen.
   try {
-    final bool isIosSimulator =
-        Platform.isIOS && !const bool.fromEnvironment('dart.vm.product');
+    final bool isIosSimulator = Platform.isIOS &&
+        (Platform.environment['SIMULATOR_DEVICE_NAME'] != null ||
+            Platform.environment['SIMULATOR_UDID'] != null);
 
     if (!isIosSimulator) {
       final token = await FirebaseMessaging.instance
