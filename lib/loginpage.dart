@@ -450,6 +450,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         final oauthCredential = OAuthProvider('apple.com').credential(
           idToken: appleCredential.identityToken,
           rawNonce: rawNonce,
+          accessToken: appleCredential.authorizationCode,
         );
         final result = await FirebaseAuth.instance.signInWithCredential(oauthCredential);
         final user = result.user!;
