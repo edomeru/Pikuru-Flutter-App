@@ -127,6 +127,19 @@ const _L = {
     'stripeBranchCode': 'Branch Code',
     'stripeAccountNumber': 'Account Number',
     'stripeAccountHolder': 'Account Holder Name',
+    'stripeConnectTitle': 'Link Pikuru App to Stripe',
+    'stripeConnectSub':
+    'Register a simulated Express payout profile to start charging fees.',
+    'stripeDetailsTitle': 'Representative & Business Info',
+    'stripeDetailsSub': 'Mock identity details for the sandbox onboarding flow.',
+    'stripePayoutTitle': 'Bank Payout Information',
+    'stripePayoutSub':
+    'Mock bank account where Stripe would send event fee payouts.',
+    'stripeSandboxNote': 'Sandbox only. No real bank details are sent to Stripe.',
+    'editTitleEn': 'Title (EN)',
+    'editDescEn': 'Description (EN)',
+    'editFee': 'Fee (¥)',
+    'saveChanges': 'Save Changes',
   },
   kLangJa: {
     'title': '主催者ダッシュボード',
@@ -209,6 +222,17 @@ const _L = {
     'stripeBranchCode': '支店コード',
     'stripeAccountNumber': '口座番号',
     'stripeAccountHolder': '口座名義',
+    'stripeConnectTitle': 'PikuruアプリをStripeに連携',
+    'stripeConnectSub': '参加費の受け取りを開始するため、シミュレーション用のExpress入金プロフィールを登録します。',
+    'stripeDetailsTitle': '代表者・事業情報',
+    'stripeDetailsSub': 'サンドボックス設定用のモック本人確認情報です。',
+    'stripePayoutTitle': '入金先の銀行情報',
+    'stripePayoutSub': 'Stripeがイベント参加費を送金するモック銀行口座です。',
+    'stripeSandboxNote': 'サンドボックスのみ。実際の銀行情報はStripeに送信されません。',
+    'editTitleEn': 'タイトル（英語）',
+    'editDescEn': '説明（英語）',
+    'editFee': '参加費（¥）',
+    'saveChanges': '変更を保存',
   },
 };
 
@@ -697,7 +721,7 @@ class _EventCard extends StatelessWidget {
     final isRejected = data['rejected'] == true;
 
     final title = lang == 'ja'
-        ? (data['event_title_jp'] ?? data['event_title'] ?? 'Untitled')
+        ? (data['event_title_jp'] ?? data['event_title'] ?? '無題')
         .toString()
         : (data['event_title'] ?? 'Untitled').toString();
     final desc = lang == 'ja'
@@ -1623,16 +1647,16 @@ void _showEditDialog(
                   ),
                 ),
                 const SizedBox(height: 20),
-                _SheetField(label: 'Title (EN)', ctrl: titleCtrl),
+                _SheetField(label: _t(lang, 'editTitleEn'), ctrl: titleCtrl),
                 const SizedBox(height: 12),
                 _SheetField(
-                  label: 'Description (EN)',
+                  label: _t(lang, 'editDescEn'),
                   ctrl: descCtrl,
                   maxLines: 4,
                 ),
                 const SizedBox(height: 12),
                 _SheetField(
-                  label: 'Fee (¥)',
+                  label: _t(lang, 'editFee'),
                   ctrl: feeCtrl,
                   keyboardType: TextInputType.number,
                 ),
@@ -1672,9 +1696,9 @@ void _showEditDialog(
                       color: Colors.white,
                       strokeWidth: 2,
                     )
-                        : const Text(
-                      'Save Changes',
-                      style: TextStyle(
+                        : Text(
+                      _t(lang, 'saveChanges'),
+                      style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.w700,
                         color: Colors.white,
@@ -2015,7 +2039,7 @@ class _GroupCard extends StatelessWidget {
     final isPublic = data['org_public'] != false;
 
     final name = lang == 'ja'
-        ? (data['org_name_jp'] ?? data['org_name'] ?? 'Unnamed').toString()
+        ? (data['org_name_jp'] ?? data['org_name'] ?? '名称未設定').toString()
         : (data['org_name'] ?? 'Unnamed').toString();
     final desc = lang == 'ja'
         ? (data['org_description_jp'] ?? data['org_description'] ?? '')
@@ -2726,8 +2750,8 @@ class _StripeOnboardingTabState extends State<_StripeOnboardingTab> {
     children: [
       _stepTitle(
         Icons.link_rounded,
-        'Link Pikuru App to Stripe',
-        'Register a simulated Express payout profile to start charging fees.',
+        _t('stripeConnectTitle'),
+        _t('stripeConnectSub'),
       ),
       const SizedBox(height: 18),
       Row(
@@ -2787,8 +2811,8 @@ class _StripeOnboardingTabState extends State<_StripeOnboardingTab> {
     children: [
       _stepTitle(
         Icons.badge_rounded,
-        'Representative & Business Info',
-        'Mock identity details for the sandbox onboarding flow.',
+        _t('stripeDetailsTitle'),
+        _t('stripeDetailsSub'),
       ),
       const SizedBox(height: 16),
       Row(
@@ -2829,8 +2853,8 @@ class _StripeOnboardingTabState extends State<_StripeOnboardingTab> {
     children: [
       _stepTitle(
         Icons.account_balance_rounded,
-        'Bank Payout Information',
-        'Mock bank account where Stripe would send event fee payouts.',
+        _t('stripePayoutTitle'),
+        _t('stripePayoutSub'),
       ),
       const SizedBox(height: 16),
       Row(
@@ -2872,14 +2896,14 @@ class _StripeOnboardingTabState extends State<_StripeOnboardingTab> {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: _D.border),
         ),
-        child: const Row(
+        child: Row(
           children: [
-            Icon(Icons.lock_rounded, size: 15, color: _D.textMuted),
-            SizedBox(width: 8),
+            const Icon(Icons.lock_rounded, size: 15, color: _D.textMuted),
+            const SizedBox(width: 8),
             Expanded(
               child: Text(
-                'Sandbox only. No real bank details are sent to Stripe.',
-                style: TextStyle(
+                _t('stripeSandboxNote'),
+                style: const TextStyle(
                   fontSize: 11,
                   color: _D.textMuted,
                   fontWeight: FontWeight.w600,

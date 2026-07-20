@@ -55,6 +55,15 @@ class _S {
   String get lblContact  => isJa ? '連絡用メールアドレス *'    : 'Contact Email *';
   String get lblDesc     => isJa ? 'イベント説明 *'           : 'Event Description *';
   String get plDesc      => isJa ? 'イベントの詳細、ルール、スケジュールなどを記入してください。' : 'Talk about the event, rules, schedule, etc.';
+  String get plTitle     => isJa ? '例: UTR Pickleball Japan Tour 2026' : 'e.g. UTR Pickleball Japan Tour 2026';
+  String get plMax       => isJa ? '例: 64'                    : 'e.g. 64';
+  String get plAddress   => isJa ? '地図から自動入力、または手入力' : 'Auto-filled from map or type manually';
+  String get plMapLink   => isJa ? '地図から自動入力、またはリンクを貼り付け' : 'Auto-filled from map or paste link';
+  String get plVenue     => isJa ? '例: 渋谷スポーツセンター'     : 'e.g. Shibuya Sports Center';
+  String get plOrg       => isJa ? '例: 東京ピックルボール協会'   : 'e.g. Tokyo Pickleball Assoc.';
+  String get venueMarker => isJa ? 'イベント会場'               : 'Event Venue';
+  String get change      => isJa ? '変更'                      : 'Change';
+  String errGeneric(String e) => isJa ? 'エラー: $e' : 'Error: $e';
   String get lblCover    => isJa ? '可能であればフライヤーを添付してください。' : 'Event Flyer / Cover Image';
   String get selImg      => isJa ? '画像を選択'               : 'Select Event Image';
   String get imgSub      => isJa ? 'この画像はサムネイルとして使われます。' : "We'll use this as the event thumbnail.";
@@ -493,7 +502,7 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
         await _showSubmittedDialog(isJa: s.isJa);
       }
     } catch (e) {
-      if (mounted) _showSnack('Error: $e', isError: true);
+      if (mounted) _showSnack(s.errGeneric('$e'), isError: true);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -698,7 +707,7 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
 
         // Event Name
         _buildTextField(label: s.lblTitle, controller: _titleController,
-            hint: 'e.g. UTR Pickleball Japan Tour 2026'),
+            hint: s.plTitle),
         const SizedBox(height: 6),
         Row(children: [
           Icon(Icons.translate_rounded, size: 13, color: _textLight),
@@ -843,7 +852,7 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
               hint: '2,000')),
           const SizedBox(width: 12),
           Expanded(child: _buildTextField(label: s.lblMax, controller: _maxController,
-              hint: 'e.g. 64', keyboardType: TextInputType.number)),
+              hint: s.plMax, keyboardType: TextInputType.number)),
         ]),
         const SizedBox(height: 20),
 
@@ -978,7 +987,7 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
                 markers: _markerPos != null ? {
                   Marker(markerId: const MarkerId('venue'),
                       position: _markerPos!,
-                      infoWindow: const InfoWindow(title: 'Event Venue')),
+                      infoWindow: InfoWindow(title: s.venueMarker)),
                 } : {},
                 myLocationButtonEnabled: false,
                 zoomControlsEnabled: true,
@@ -1041,18 +1050,18 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
 
         const SizedBox(height: 16),
         _buildTextField(label: s.lblAddress, controller: _venueAddressController,
-            hint: 'Auto-filled from map or type manually'),
+            hint: s.plAddress),
         const SizedBox(height: 14),
         _buildTextField(label: s.lblMapLink, controller: _venueMapLinkController,
-            hint: 'Auto-filled from map or paste link',
+            hint: s.plMapLink,
             keyboardType: TextInputType.url),
         const SizedBox(height: 14),
         Row(children: [
           Expanded(child: _buildTextField(label: s.lblVenue,
-              controller: _venueNameController, hint: 'e.g. Shibuya Sports Center')),
+              controller: _venueNameController, hint: s.plVenue)),
           const SizedBox(width: 12),
           Expanded(child: _buildTextField(label: s.lblOrgName,
-              controller: _orgNameController, hint: 'e.g. Tokyo Pickleball Assoc.')),
+              controller: _orgNameController, hint: s.plOrg)),
         ]),
         const SizedBox(height: 14),
         _buildTextField(label: s.lblContact, controller: _contactController,
@@ -1107,10 +1116,10 @@ class _AddEventScreenState extends ConsumerState<AddEventScreen> {
                   decoration: BoxDecoration(
                       color: _textDark.withOpacity(0.75),
                       borderRadius: BorderRadius.circular(20)),
-                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.edit_rounded, size: 13, color: Colors.white),
-                    SizedBox(width: 5),
-                    Text('Change', style: TextStyle(
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.edit_rounded, size: 13, color: Colors.white),
+                    const SizedBox(width: 5),
+                    Text(s.change, style: const TextStyle(
                         color: Colors.white, fontSize: 12,
                         fontWeight: FontWeight.w600)),
                   ]),

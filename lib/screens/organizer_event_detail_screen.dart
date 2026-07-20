@@ -254,7 +254,7 @@ class _OrganizerEventDetailScreenState
 
   // ── Data helpers ──────────────────────────────────────────────────────────
   String get _title => widget.lang == 'ja'
-      ? ((widget.data['event_title_jp'] ?? widget.data['event_title'] ?? 'Untitled').toString())
+      ? ((widget.data['event_title_jp'] ?? widget.data['event_title'] ?? '無題').toString())
       : ((widget.data['event_title'] ?? 'Untitled').toString());
 
   String get _desc => widget.lang == 'ja'
@@ -457,7 +457,7 @@ class _OrganizerEventDetailScreenState
     if (tourist != null) {
       rows.add(_DetailEntry(
           _t('Tourist Friendly', '観光客歓迎'),
-          tourist == true ? '✓ Yes' : '✗ No',
+          tourist == true ? _t('✓ Yes', '✓ はい') : _t('✗ No', '✗ いいえ'),
           Icons.flag_rounded));
     }
     final added = d['event_added'];

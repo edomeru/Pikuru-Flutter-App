@@ -253,18 +253,18 @@ class _UserResult {
     photoUrl:   (d['photoURL']    ?? '').toString(),
     profileImg: (d['profile_img'] ?? '').toString(),
   );
-  String get displayName {
+  String displayName(String lang) {
     if (nickname.isNotEmpty) return nickname;
     if (firstName.isNotEmpty && lastName.isNotEmpty) return '$firstName $lastName';
     if (firstName.isNotEmpty) return firstName;
-    return 'Unknown User';
+    return lang == kLangJa ? '不明なユーザー' : 'Unknown User';
   }
   String get avatarUrl {
     if (photoUrl.isNotEmpty) return photoUrl;
     return '';
   }
   String get initials {
-    final n = displayName;
+    final n = displayName(kLangEn);
     final parts = n.split(' ');
     if (parts.length >= 2) return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
     if (n.isNotEmpty) return n[0].toUpperCase();
@@ -806,12 +806,13 @@ class _SearchScreenState extends State<SearchScreen>
           ...(_activeTab == _Tab.all ? _users.take(3) : _users)
               .map((u) => _UserTile(
             result: u,
+            lang: _lang,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
                 builder: (_) => UserProfileScreen(
                   userId:        u.docId,
-                  initialName:   u.displayName,
+                  initialName:   u.displayName(_lang),
                   initialAvatar: u.avatarUrl,
                 ),
               ),
@@ -961,7 +962,9 @@ class _CourtTile extends StatelessWidget {
             const SizedBox(width: 5),
             Text(
               result.indoor && result.outdoor ? '🏠 / 🌳'
-                  : result.indoor ? '🏠 Indoor' : '🌳 Outdoor',
+                  : result.indoor
+                  ? (lang == kLangJa ? '🏠 室内' : '🏠 Indoor')
+                  : (lang == kLangJa ? '🌳 屋外' : '🌳 Outdoor'),
               style: const TextStyle(fontSize: 9, color: Color(0xFF8A9E8A)),
             ),
           ],
@@ -1064,8 +1067,10 @@ class _GroupTile extends StatelessWidget {
 // ── CHANGED: added required onTap parameter — routes to UserProfileScreen ───
 class _UserTile extends StatelessWidget {
   final _UserResult result;
+  final String lang;
   final VoidCallback onTap;
-  const _UserTile({required this.result, required this.onTap});
+  const _UserTile(
+      {required this.result, required this.lang, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -1082,9 +1087,9 @@ class _UserTile extends StatelessWidget {
         ),
       ),
       content: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const _TypeBadge(label: 'User', color: AppColors.primary),
+        _TypeBadge(label: _t(lang, 'user'), color: AppColors.primary),
         const SizedBox(height: 4),
-        Text(result.displayName,
+        Text(result.displayName(lang),
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF0D1F0D)),
             maxLines: 1, overflow: TextOverflow.ellipsis),
         if (result.address.isNotEmpty) ...[

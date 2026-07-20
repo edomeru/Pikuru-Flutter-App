@@ -143,8 +143,8 @@ class _ResourcesScreenState extends ConsumerState<ResourcesScreen>
                   color: Colors.white, size: 20),
               onPressed: () => Navigator.maybePop(context),
             ),
-            title: const Text('Resources',
-                style: TextStyle(
+            title: Text(isJa ? 'リソース' : 'Resources',
+                style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w600,
                     fontSize: 18,
@@ -405,7 +405,10 @@ class _ResourceCard extends StatelessWidget {
           border: Border.all(color: AppColors.primary.withOpacity(0.15)),
         ),
         child: Center(
-          child: Text('No resources found.',
+          child: Text(
+              lang == kLangJa
+                  ? 'リソースが見つかりませんでした。'
+                  : 'No resources found.',
               style: TextStyle(fontSize: 13, color: Colors.grey.shade400)),
         ),
       );
@@ -437,6 +440,7 @@ class _ResourceCard extends StatelessWidget {
             docId: (doc['_doc_id'] ?? doc['id'] ?? '').toString(),
             isSoon: isSoon,
             isLast: isLast,
+            isJa: lang == kLangJa,
             onTap: isSoon ? null : () => onTap(doc),
           );
         }).toList(),
@@ -454,6 +458,7 @@ class _ResourceTile extends StatelessWidget {
   final String docId;
   final bool isSoon;
   final bool isLast;
+  final bool isJa;
   final VoidCallback? onTap;
 
   const _ResourceTile({
@@ -462,6 +467,7 @@ class _ResourceTile extends StatelessWidget {
     required this.docId,
     required this.isSoon,
     required this.isLast,
+    required this.isJa,
     required this.onTap,
   });
 
@@ -532,8 +538,8 @@ class _ResourceTile extends StatelessWidget {
                           color: AppColors.primary.withOpacity(0.1),
                           borderRadius: BorderRadius.circular(20),
                         ),
-                        child: const Text('Soon',
-                            style: TextStyle(
+                        child: Text(isJa ? '近日公開' : 'Soon',
+                            style: const TextStyle(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w700,
                                 color: AppColors.primary,
@@ -798,7 +804,10 @@ class _ResourceDetailScreenState extends ConsumerState<ResourceDetailScreen>
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(hero.isNotEmpty ? hero : 'Resource',
+                      Text(
+                          hero.isNotEmpty
+                              ? hero
+                              : (lang == kLangJa ? 'リソース' : 'Resource'),
                           style: const TextStyle(
                               fontSize: 22,
                               fontWeight: FontWeight.w900,
@@ -828,7 +837,7 @@ class _ResourceDetailScreenState extends ConsumerState<ResourceDetailScreen>
                       color: AppColors.primary, strokeWidth: 2.5)),
             )
                 : _docData == null
-                ? _buildNotFound()
+                ? _buildNotFound(lang)
                 : FadeTransition(
               opacity: _fadeAnim,
               child: Padding(
@@ -843,12 +852,15 @@ class _ResourceDetailScreenState extends ConsumerState<ResourceDetailScreen>
     );
   }
 
-  Widget _buildNotFound() {
-    return const Padding(
-      padding: EdgeInsets.all(40),
+  Widget _buildNotFound(String lang) {
+    return Padding(
+      padding: const EdgeInsets.all(40),
       child: Center(
-        child: Text('Resource not found.',
-            style: TextStyle(color: Colors.black38, fontSize: 15)),
+        child: Text(
+            lang == kLangJa
+                ? 'リソースが見つかりませんでした。'
+                : 'Resource not found.',
+            style: const TextStyle(color: Colors.black38, fontSize: 15)),
       ),
     );
   }
@@ -863,14 +875,17 @@ class _ResourceDetailScreenState extends ConsumerState<ResourceDetailScreen>
       return _buildAboutLayout(t);
     }
     if (t['content'] != null) {
-      return _buildContentBlock(t);
+      return _buildContentBlock(t, lang);
     }
 
-    return const Center(
+    return Center(
         child: Padding(
-          padding: EdgeInsets.all(32),
-          child: Text('No content available.',
-              style: TextStyle(color: Colors.black38)),
+          padding: const EdgeInsets.all(32),
+          child: Text(
+              lang == kLangJa
+                  ? 'コンテンツがありません。'
+                  : 'No content available.',
+              style: const TextStyle(color: Colors.black38)),
         ));
   }
 
@@ -1179,7 +1194,8 @@ class _ResourceDetailScreenState extends ConsumerState<ResourceDetailScreen>
     );
   }
 
-  Widget _buildContentBlock(Map<String, dynamic> t) {
+  Widget _buildContentBlock(Map<String, dynamic> t, String lang) {
+    final isJa = lang == kLangJa;
     final content = (t['content'] ?? '').toString();
 
     // Images: full https:// Firebase Storage URLs.
@@ -1234,8 +1250,8 @@ class _ResourceDetailScreenState extends ConsumerState<ResourceDetailScreen>
                     borderRadius: BorderRadius.circular(2)),
               ),
               const SizedBox(width: 10),
-              const Text('Diagrams',
-                  style: TextStyle(
+              Text(isJa ? '図解' : 'Diagrams',
+                  style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
                       color: Color(0xFF0D0D0D),
@@ -1243,7 +1259,8 @@ class _ResourceDetailScreenState extends ConsumerState<ResourceDetailScreen>
             ]),
           ),
           ...images.asMap().entries
-              .map((e) => _DiagramCard(url: e.value, index: e.key)),
+              .map((e) =>
+                  _DiagramCard(url: e.value, index: e.key, isJa: isJa)),
         ],
 
         if (greatForPts.isNotEmpty) ...[
@@ -1367,7 +1384,9 @@ class _ResourceDetailScreenState extends ConsumerState<ResourceDetailScreen>
 class _DiagramCard extends StatefulWidget {
   final String url;
   final int index;
-  const _DiagramCard({required this.url, required this.index});
+  final bool isJa;
+  const _DiagramCard(
+      {required this.url, required this.index, required this.isJa});
 
   @override
   State<_DiagramCard> createState() => _DiagramCardState();
@@ -1444,7 +1463,10 @@ class _DiagramCardState extends State<_DiagramCard> {
                           color: AppColors.primary,
                           shape: BoxShape.circle)),
                   const SizedBox(width: 6),
-                  Text('Diagram ${widget.index + 1}',
+                  Text(
+                      widget.isJa
+                          ? '図解 ${widget.index + 1}'
+                          : 'Diagram ${widget.index + 1}',
                       style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
@@ -1480,7 +1502,7 @@ class _DiagramCardState extends State<_DiagramCard> {
           Text(
               percent != null
                   ? '${(percent * 100).toInt()}%'
-                  : 'Loading diagram…',
+                  : (widget.isJa ? '図解を読み込み中…' : 'Loading diagram…'),
               style: TextStyle(
                   fontSize: 12,
                   color: Colors.grey.shade400,
@@ -1498,7 +1520,10 @@ class _DiagramCardState extends State<_DiagramCard> {
         Icon(Icons.broken_image_outlined,
             size: 36, color: AppColors.primary.withOpacity(0.3)),
         const SizedBox(height: 8),
-        Text('Could not load diagram ${widget.index + 1}',
+        Text(
+            widget.isJa
+                ? '図解 ${widget.index + 1} を読み込めませんでした'
+                : 'Could not load diagram ${widget.index + 1}',
             style: TextStyle(fontSize: 12, color: Colors.grey.shade400)),
       ]),
     );

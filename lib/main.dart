@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'firebase_options.dart';
@@ -10,6 +11,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:pikuru/services/notification_service.dart';
+import 'package:pikuru/providers/app_language_provider.dart';
 
 // Must be top-level — registered before runApp
 @pragma('vm:entry-point')
@@ -74,11 +76,14 @@ void main() async {
   );
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends ConsumerWidget {
   const MyApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final lang = ref.watch(appLangProvider);
+    final locale = lang == kLangJa ? const Locale('ja', 'JP') : const Locale('en', 'US');
+
     return MaterialApp(
       title: 'Pikuru',
       debugShowCheckedModeBanner: false,
@@ -93,6 +98,16 @@ class MyApp extends StatelessWidget {
           background: AppColors.background,
         ),
       ),
+      // ── Localizations: provide Material widget translations (date picker, buttons, etc.) ──
+      locale: locale,
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('en', 'US'),
+        Locale('ja', 'JP'),
+      ],
       home: const SplashScreen(),
     );
   }

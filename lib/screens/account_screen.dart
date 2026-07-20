@@ -47,6 +47,7 @@ const _L = {
     'signOutBody': 'Are you sure you want to sign out of your account?',
     'cancel': 'Cancel',
     'signOutConfirm': 'Sign Out',
+    'userFallback': 'User',
   },
   kLangJa: {
     'groupsJoined': '参加グループ',
@@ -76,6 +77,7 @@ const _L = {
     'signOutBody': 'アカウントからサインアウトしてもよろしいですか？',
     'cancel': 'キャンセル',
     'signOutConfirm': 'サインアウト',
+    'userFallback': 'ユーザー',
   },
 };
 
@@ -162,13 +164,13 @@ class _AccountScreenState extends ConsumerState<AccountScreen>
       widget.onOpenEventHistory?.call(initialTab: tabIndex);
 
 
-  String _buildDisplayName(User? user) {
+  String _buildDisplayName(User? user, String lang) {
     final first = (_firstName ?? '').trim();
     final last = (_lastName ?? '').trim();
     if (first.isNotEmpty || last.isNotEmpty) {
       return [first, last].where((s) => s.isNotEmpty).join(' ');
     }
-    return user?.displayName ?? 'User';
+    return user?.displayName ?? _t(lang, 'userFallback');
   }
 
   static String _rawBase64(String value) {
@@ -217,7 +219,7 @@ class _AccountScreenState extends ConsumerState<AccountScreen>
               _profileImgRaw = data['profile_img'] as String?;
             }
 
-            final displayName = _buildDisplayName(user);
+            final displayName = _buildDisplayName(user, lang);
             final authPhotoURL = user?.photoURL;
 
             return Scaffold(

@@ -450,7 +450,7 @@ class _EventCard extends StatelessWidget {
     }
     return (eventData?['event_title'] ??
         savedData['event_title'] ??
-        'Loading...')
+        (lang == kLangJa ? '読み込み中...' : 'Loading...'))
         .toString();
   }
 

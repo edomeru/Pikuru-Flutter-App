@@ -239,9 +239,9 @@ class _AboutPikuruScreenState extends ConsumerState<AboutPikuruScreen>
                 ),
               ),
             ],
-            title: const Text(
-              'About Pikuru',
-              style: TextStyle(
+            title: Text(
+              isJa ? 'Pikuruについて' : 'About Pikuru',
+              style: const TextStyle(
                 color: Colors.white, fontWeight: FontWeight.w600,
                 fontSize: 18, letterSpacing: 0.3,
               ),

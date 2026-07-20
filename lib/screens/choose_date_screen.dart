@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pikuru/theme/material.dart';
+import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:intl/intl.dart';
 
-class ChooseDateScreen extends StatefulWidget {
+class ChooseDateScreen extends ConsumerStatefulWidget {
   final DateTime? initialStart;
   final DateTime? initialEnd;
 
@@ -13,10 +15,10 @@ class ChooseDateScreen extends StatefulWidget {
   });
 
   @override
-  State<ChooseDateScreen> createState() => _ChooseDateScreenState();
+  ConsumerState<ChooseDateScreen> createState() => _ChooseDateScreenState();
 }
 
-class _ChooseDateScreenState extends State<ChooseDateScreen> {
+class _ChooseDateScreenState extends ConsumerState<ChooseDateScreen> {
   DateTime? _startDate;
   DateTime? _endDate;
   late DateTime _focusedMonth;
@@ -37,13 +39,20 @@ class _ChooseDateScreenState extends State<ChooseDateScreen> {
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
-  String _fmt(DateTime? d) =>
-      d == null ? '—' : DateFormat('MM/dd/yyyy').format(d);
+  bool get _isJa => ref.read(appLangProvider) == kLangJa;
+
+  String _fmt(DateTime? d) => d == null
+      ? '—'
+      : DateFormat(_isJa ? 'yyyy/MM/dd' : 'MM/dd/yyyy').format(d);
 
   String _monthName(int m) => const [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December',
   ][m - 1];
+
+  String _monthHeader(bool isJa) => isJa
+      ? '${_focusedMonth.year}年${_focusedMonth.month}月'
+      : '${_monthName(_focusedMonth.month)} ${_focusedMonth.year}';
 
   void _prevMonth() => setState(() =>
   _focusedMonth = DateTime(_focusedMonth.year, _focusedMonth.month - 1));
@@ -89,6 +98,7 @@ class _ChooseDateScreenState extends State<ChooseDateScreen> {
   // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
+    final isJa = ref.watch(appLangProvider) == kLangJa;
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
@@ -104,9 +114,9 @@ class _ChooseDateScreenState extends State<ChooseDateScreen> {
                         color: AppColors.primary, size: 20),
                     onPressed: () => Navigator.pop(context),
                   ),
-                  const Text(
-                    'Choose a date',
-                    style: TextStyle(
+                  Text(
+                    isJa ? '日付を選択' : 'Choose a date',
+                    style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w800,
                       color: AppColors.primary,
@@ -124,9 +134,13 @@ class _ChooseDateScreenState extends State<ChooseDateScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Row(
                 children: [
-                  Expanded(child: _dateField('Start Date', _startDate, 'start')),
+                  Expanded(
+                      child: _dateField(
+                          isJa ? '開始日' : 'Start Date', _startDate, 'start')),
                   const SizedBox(width: 16),
-                  Expanded(child: _dateField('End Date', _endDate, 'end')),
+                  Expanded(
+                      child: _dateField(
+                          isJa ? '終了日' : 'End Date', _endDate, 'end')),
                 ],
               ),
             ),
@@ -148,8 +162,12 @@ class _ChooseDateScreenState extends State<ChooseDateScreen> {
                   const SizedBox(width: 6),
                   Text(
                     _picking == 'start'
-                        ? 'Tap a day to set the start date'
-                        : 'Tap a day to set the end date',
+                        ? (isJa
+                            ? '日付をタップして開始日を設定'
+                            : 'Tap a day to set the start date')
+                        : (isJa
+                            ? '日付をタップして終了日を設定'
+                            : 'Tap a day to set the end date'),
                     style: TextStyle(
                       fontSize: 12,
                       color: AppColors.primary.withOpacity(0.6),
@@ -177,7 +195,7 @@ class _ChooseDateScreenState extends State<ChooseDateScreen> {
                       children: [
                         _navButton(Icons.chevron_left_rounded, _prevMonth),
                         Text(
-                          '${_monthName(_focusedMonth.month)} ${_focusedMonth.year}',
+                          _monthHeader(isJa),
                           style: const TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
@@ -193,7 +211,9 @@ class _ChooseDateScreenState extends State<ChooseDateScreen> {
 
                     // Day headers
                     Row(
-                      children: ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
+                      children: (isJa
+                          ? const ['日', '月', '火', '水', '木', '金', '土']
+                          : const ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'])
                           .map((d) => Expanded(
                         child: Center(
                           child: Text(
@@ -234,11 +254,12 @@ class _ChooseDateScreenState extends State<ChooseDateScreen> {
                       _endDate   = null;
                       _picking   = 'start';
                     }),
-                    child: const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 12),
                       child: Text(
-                        'Reset',
-                        style: TextStyle(
+                        isJa ? 'リセット' : 'Reset',
+                        style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
                           color: Color(0xFF0D0D0D),
@@ -276,7 +297,7 @@ class _ChooseDateScreenState extends State<ChooseDateScreen> {
                         ],
                       ),
                       child: Text(
-                        'Save date range',
+                        isJa ? '期間を保存' : 'Save date range',
                         style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,

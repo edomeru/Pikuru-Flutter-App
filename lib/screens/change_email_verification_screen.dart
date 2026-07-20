@@ -1,15 +1,63 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:pikuru/theme/material.dart';
+import 'package:pikuru/providers/app_language_provider.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Localization
+// ─────────────────────────────────────────────────────────────────────────────
+const _L = {
+  kLangEn: {
+    'errSendOtp':    'Failed to send code. Please try again.',
+    'errAllDigits':  'Please enter all 6 digits.',
+    'errIncorrect':  'Incorrect code. Please try again.',
+    'errUpdateFail': 'Failed to update email.',
+    'errVerifyFail': 'Something went wrong. Please try again.',
+    'successTitle':  'Email Updated!',
+    'successBody':   'Your email has been changed to\n{email}',
+    'done':          'Done',
+    'verifyAppBar':  'Verify Email',
+    'headerTitle':   'Check Your Inbox 📬',
+    'headerSub':     'Code sent to',
+    'pageTitle':     'Email Verification',
+    'pageSub':       'Please enter the 6-digit code sent to your email address',
+    'verify':        'Verify',
+    'noCode':        "Don't receive code?",
+    'resendIn':      'Resend in',
+    'resend':        'Resend Code',
+  },
+  kLangJa: {
+    'errSendOtp':    'コードの送信に失敗しました。もう一度お試しください。',
+    'errAllDigits':  '6桁のコードをすべて入力してください。',
+    'errIncorrect':  'コードが間違っています。もう一度お試しください。',
+    'errUpdateFail': 'メールアドレスの更新に失敗しました。',
+    'errVerifyFail': 'エラーが発生しました。もう一度お試しください。',
+    'successTitle':  'メールアドレスを更新しました！',
+    'successBody':   'メールアドレスを以下に変更しました：\n{email}',
+    'done':          '完了',
+    'verifyAppBar':  'メール認証',
+    'headerTitle':   'メールを確認してください 📬',
+    'headerSub':     'コードを送信しました：',
+    'pageTitle':     'メール認証',
+    'pageSub':       'メールアドレスに送信された6桁のコードを入力してください',
+    'verify':        '認証する',
+    'noCode':        'コードが届きませんでしたか？',
+    'resendIn':      '再送まで',
+    'resend':        'コードを再送する',
+  },
+};
+
+String _t(String lang, String key) => _L[lang]?[key] ?? _L[kLangEn]![key]!;
 
 /// Shown after the user enters a new email in ChangeEmailScreen.
 /// Sends an OTP via the `sendOtp` Cloud Function and verifies it here.
 /// On success calls `updateUserEmail` to persist the change.
-class ChangeEmailVerificationScreen extends StatefulWidget {
+class ChangeEmailVerificationScreen extends ConsumerStatefulWidget {
   final String newEmail;
   final String firstName;
 
@@ -20,11 +68,12 @@ class ChangeEmailVerificationScreen extends StatefulWidget {
   });
 
   @override
-  State<ChangeEmailVerificationScreen> createState() =>
+  ConsumerState<ChangeEmailVerificationScreen> createState() =>
       _ChangeEmailVerificationScreenState();
 }
 
-class _ChangeEmailVerificationScreenState extends State<ChangeEmailVerificationScreen>
+class _ChangeEmailVerificationScreenState
+    extends ConsumerState<ChangeEmailVerificationScreen>
     with TickerProviderStateMixin {
   // ── OTP state ─────────────────────────────────────────────────────
   final List<TextEditingController> _controllers =
@@ -102,7 +151,8 @@ class _ChangeEmailVerificationScreenState extends State<ChangeEmailVerificationS
 
       _startCountdown();
     } catch (e) {
-      setState(() => _errorMsg = 'Failed to send code. Please try again.');
+      setState(() =>
+          _errorMsg = _t(ref.read(appLangProvider), 'errSendOtp'));
     } finally {
       if (mounted) setState(() => _isSending = false);
     }
@@ -158,14 +208,15 @@ class _ChangeEmailVerificationScreenState extends State<ChangeEmailVerificationS
 
   // ── Verify ────────────────────────────────────────────────────────
   Future<void> _verify() async {
+    final lang = ref.read(appLangProvider);
     if (_enteredOtp.length < 6) {
-      setState(() => _errorMsg = 'Please enter all 6 digits.');
+      setState(() => _errorMsg = _t(lang, 'errAllDigits'));
       _shakeController.forward(from: 0);
       return;
     }
 
     if (_enteredOtp != _generatedOtp) {
-      setState(() => _errorMsg = 'Incorrect code. Please try again.');
+      setState(() => _errorMsg = _t(lang, 'errIncorrect'));
       _shakeController.forward(from: 0);
       HapticFeedback.heavyImpact();
       // Clear fields
@@ -204,17 +255,18 @@ class _ChangeEmailVerificationScreenState extends State<ChangeEmailVerificationS
     } on FirebaseFunctionsException catch (e) {
       setState(() {
         _isVerifying = false;
-        _errorMsg = e.message ?? 'Failed to update email.';
+        _errorMsg = e.message ?? _t(lang, 'errUpdateFail');
       });
     } catch (e) {
       setState(() {
         _isVerifying = false;
-        _errorMsg = 'Something went wrong. Please try again.';
+        _errorMsg = _t(lang, 'errVerifyFail');
       });
     }
   }
 
   void _showSuccessDialog() {
+    final lang = ref.read(appLangProvider);
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -237,14 +289,15 @@ class _ChangeEmailVerificationScreenState extends State<ChangeEmailVerificationS
                     color: AppColors.primary, size: 36),
               ),
               const SizedBox(height: 20),
-              const Text('Email Updated!',
-                  style: TextStyle(
+              Text(_t(lang, 'successTitle'),
+                  style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w800,
                       color: Color(0xFF0D0D0D))),
               const SizedBox(height: 10),
               Text(
-                'Your email has been changed to\n${widget.newEmail}',
+                _t(lang, 'successBody')
+                    .replaceAll('{email}', widget.newEmail),
                 textAlign: TextAlign.center,
                 style: TextStyle(
                     fontSize: 14,
@@ -267,8 +320,8 @@ class _ChangeEmailVerificationScreenState extends State<ChangeEmailVerificationS
                         borderRadius: BorderRadius.circular(14)),
                     elevation: 0,
                   ),
-                  child: const Text('Done',
-                      style: TextStyle(
+                  child: Text(_t(lang, 'done'),
+                      style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
                           color: Colors.white)),
@@ -289,6 +342,7 @@ class _ChangeEmailVerificationScreenState extends State<ChangeEmailVerificationS
 
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(appLangProvider);
     return Scaffold(
       backgroundColor: const Color(0xFFF4F9F5),
       body: CustomScrollView(
@@ -310,8 +364,8 @@ class _ChangeEmailVerificationScreenState extends State<ChangeEmailVerificationS
                     color: Colors.white, size: 20),
               ),
             ),
-            title: const Text('Verify Email',
-                style: TextStyle(
+            title: Text(_t(lang, 'verifyAppBar'),
+                style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w700,
                     fontSize: 18)),
@@ -358,15 +412,15 @@ class _ChangeEmailVerificationScreenState extends State<ChangeEmailVerificationS
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Text('Check Your Inbox 📬',
-                              style: TextStyle(
+                          Text(_t(lang, 'headerTitle'),
+                              style: const TextStyle(
                                   fontSize: 20,
                                   fontWeight: FontWeight.w900,
                                   color: Colors.white,
                                   letterSpacing: -0.3)),
                           const SizedBox(height: 4),
                           Text(
-                            'Code sent to ${widget.newEmail}',
+                            '${_t(lang, 'headerSub')} ${widget.newEmail}',
                             style: TextStyle(
                                 fontSize: 12,
                                 color: Colors.white.withOpacity(0.72)),
@@ -411,8 +465,8 @@ class _ChangeEmailVerificationScreenState extends State<ChangeEmailVerificationS
 
                     const SizedBox(height: 20),
 
-                    const Text('Email Verification',
-                        style: TextStyle(
+                    Text(_t(lang, 'pageTitle'),
+                        style: const TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.w800,
                             color: Color(0xFF0D0D0D),
@@ -421,7 +475,7 @@ class _ChangeEmailVerificationScreenState extends State<ChangeEmailVerificationS
                     const SizedBox(height: 8),
 
                     Text(
-                      'Please enter the 6-digit code sent to your email address',
+                      _t(lang, 'pageSub'),
                       textAlign: TextAlign.center,
                       style: TextStyle(
                           fontSize: 14,
@@ -504,8 +558,8 @@ class _ChangeEmailVerificationScreenState extends State<ChangeEmailVerificationS
                             height: 22,
                             child: CircularProgressIndicator(
                                 color: Colors.white, strokeWidth: 2.5))
-                            : const Text('Verify',
-                            style: TextStyle(
+                            : Text(_t(lang, 'verify'),
+                            style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w700,
                                 color: Colors.white)),
@@ -516,7 +570,7 @@ class _ChangeEmailVerificationScreenState extends State<ChangeEmailVerificationS
 
                     // ── Resend ────────────────────────────────────
                     Text(
-                      "Don't receive code?",
+                      _t(lang, 'noCode'),
                       style: TextStyle(
                           fontSize: 14,
                           color: Colors.black.withOpacity(0.45)),
@@ -525,7 +579,7 @@ class _ChangeEmailVerificationScreenState extends State<ChangeEmailVerificationS
                     _secondsLeft > 0
                         ? RichText(
                       text: TextSpan(
-                        text: 'Resend in ',
+                        text: '${_t(lang, 'resendIn')} ',
                         style: TextStyle(
                             fontSize: 14,
                             color: Colors.black.withOpacity(0.45)),
@@ -548,9 +602,9 @@ class _ChangeEmailVerificationScreenState extends State<ChangeEmailVerificationS
                           color: AppColors.primary.withOpacity(0.08),
                           borderRadius: BorderRadius.circular(20),
                         ),
-                        child: const Text(
-                          'Resend Code',
-                          style: TextStyle(
+                        child: Text(
+                          _t(lang, 'resend'),
+                          style: const TextStyle(
                               fontSize: 14,
                               fontWeight: FontWeight.w700,
                               color: AppColors.primary),

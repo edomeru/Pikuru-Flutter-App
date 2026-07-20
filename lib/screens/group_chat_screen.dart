@@ -33,6 +33,7 @@ class _T {
   final String messagePh;
   final String notifSilenced;
   final String notifEnabled;
+  final String couldNotLoad;
 
   const _T({
     required this.today,
@@ -51,6 +52,7 @@ class _T {
     required this.messagePh,
     required this.notifSilenced,
     required this.notifEnabled,
+    required this.couldNotLoad,
   });
 }
 
@@ -71,6 +73,7 @@ const _en = _T(
   messagePh:     'Message...',
   notifSilenced: 'Notifications silenced',
   notifEnabled:  'Notifications enabled',
+  couldNotLoad:  'Could not load chat',
 );
 
 const _ja = _T(
@@ -90,6 +93,7 @@ const _ja = _T(
   messagePh:     'メッセージ...',
   notifSilenced: '通知をミュートにしました',
   notifEnabled:  '通知を有効にしました',
+  couldNotLoad:  'チャットを読み込めませんでした',
 );
 
 _T _strings(String lang) => lang == kLangJa ? _ja : _en;
@@ -434,12 +438,13 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
 
   void _openMembersScreen() {
     if (_chatId == null) return;
+    final t = _strings(ref.read(appLangProvider));
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (_) => ChatMembersScreen(
           chatId:    _chatId!,
-          groupName: (_groupData ?? widget.group)['org_name'] ?? 'Group Chat',
+          groupName: (_groupData ?? widget.group)['org_name'] ?? t.groupChat,
         ),
       ),
     );
@@ -474,7 +479,7 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
               child: _isLoading
                   ? _buildLoader()
                   : _chatId == null
-                  ? _buildError()
+                  ? _buildError(t)
                   : _buildMessageList(t),
             ),
           ),
@@ -1346,9 +1351,9 @@ class _GroupChatScreenState extends ConsumerState<GroupChatScreen>
       child: CircularProgressIndicator(
           color: AppColors.primary, strokeWidth: 2.5));
 
-  Widget _buildError() => const Center(
-      child: Text('Could not load chat',
-          style: TextStyle(color: Color(0xFFAEAEB2))));
+  Widget _buildError(_T t) => Center(
+      child: Text(t.couldNotLoad,
+          style: const TextStyle(color: Color(0xFFAEAEB2))));
 
   Widget _buildEmptyState(_T t) => Center(
     child: Column(

@@ -40,6 +40,8 @@ const _L = {
     'errTooMany': 'Too many attempts. Please try again later.',
     'errDefault': 'Login failed. Please try again.',
     'errGoogle': 'Google sign-in failed',
+    'errGeneric': 'Error',
+    'errApple': 'Apple sign-in failed',
   },
   kLangJa: {
     'headerTitle': 'ログイン',
@@ -59,6 +61,8 @@ const _L = {
     'errTooMany': 'ログイン試行回数が多すぎます。後でもう一度お試しください。',
     'errDefault': 'エラーが発生しました。もう一度お試しください。',
     'errGoogle': 'Googleログインに失敗しました',
+    'errGeneric': 'エラー',
+    'errApple': 'Apple ログインに失敗しました',
   },
 };
 
@@ -263,7 +267,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             setState(() => showSpinner = false);
                             if (!mounted) return;
                             ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(content: Text('Error: ${e.toString()}')),
+                              SnackBar(content: Text('${_t(lang, 'errGeneric')}: ${e.toString()}')),
                             );
                           }
                         },
@@ -559,13 +563,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (e.code != AuthorizationErrorCode.canceled) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Apple sign-in failed: ${e.message}')),
+          SnackBar(content: Text('${_t(lang, 'errApple')}: ${e.message}')),
         );
       }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Apple sign-in failed: $e')),
+        SnackBar(content: Text('${_t(lang, 'errApple')}: $e')),
       );
     } finally {
       if (mounted) setState(() => showSpinner = false);

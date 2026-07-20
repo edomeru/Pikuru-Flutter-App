@@ -6,6 +6,7 @@ class GroupCard extends StatelessWidget {
   final String name;
   final String description;
   final String location;
+  final bool isJa;
 
   const GroupCard({
     super.key,
@@ -13,6 +14,7 @@ class GroupCard extends StatelessWidget {
     required this.name,
     this.description = '',
     required this.location,
+    this.isJa = false,
   });
 
   static const double _cardHeight = 270;
@@ -162,9 +164,9 @@ class GroupCard extends StatelessWidget {
                       color: AppColors.primary,
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: const Text(
-                      'Join Group',
-                      style: TextStyle(
+                    child: Text(
+                      isJa ? 'グループに参加' : 'Join Group',
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 11,
                         fontWeight: FontWeight.w600,

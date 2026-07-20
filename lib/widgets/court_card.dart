@@ -5,12 +5,14 @@ class CourtCard extends StatelessWidget {
   final String imageUrl;
   final String name;
   final String location;
+  final bool isJa;
 
   const CourtCard({
     super.key,
     required this.imageUrl,
     required this.name,
     required this.location,
+    this.isJa = false,
   });
 
   @override
@@ -103,9 +105,9 @@ class CourtCard extends StatelessWidget {
                   color: AppColors.primary,
                   borderRadius: BorderRadius.circular(20),
                 ),
-                child: const Text(
-                  'Open',
-                  style: TextStyle(
+                child: Text(
+                  isJa ? '利用可能' : 'Open',
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 11,
                     fontWeight: FontWeight.w700,

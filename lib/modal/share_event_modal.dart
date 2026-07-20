@@ -138,7 +138,9 @@ class _ShareEventModalState extends ConsumerState<ShareEventModal>
   String get _eventDateLabel {
     final rawDate = widget.event['event_date'];
     if (rawDate is Timestamp) {
-      return DateFormat('MMM d, yyyy').format(rawDate.toDate());
+      return _isJa
+          ? DateFormat('yyyy年M月d日').format(rawDate.toDate())
+          : DateFormat('MMM d, yyyy').format(rawDate.toDate());
     } else if (rawDate != null) {
       return rawDate.toString();
     }
@@ -636,7 +638,8 @@ class _PeopleTab extends StatelessWidget {
         final otherId   = parts.firstWhere((p) => p != myUid, orElse: () => '');
         final names     = Map<String, dynamic>.from(data['participant_names']   ?? {});
         final avatars   = Map<String, dynamic>.from(data['participant_avatars'] ?? {});
-        final name      = (names[otherId]   ?? 'User').toString();
+        final name      =
+            (names[otherId] ?? (isJa ? 'ユーザー' : 'User')).toString();
         final avatar    = (avatars[otherId] ?? '').toString();
         final selected  = selectedIds.contains(chatId);
 
@@ -741,6 +744,9 @@ class _GroupsTabState extends State<_GroupsTab> {
             }
           } catch (_) {}
         }
+
+        // Translate the generic fallback name if it was never resolved
+        if (widget.isJa && name == 'Group Chat') name = 'グループチャット';
 
         result.add(_GroupChatItem(chatId: doc.id, name: name, avatarUrl: avatar));
       }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:pikuru/theme/material.dart';
 
 // ── How to use ────────────────────────────────────────────────────────
@@ -42,7 +44,7 @@ class ShareModal {
   }
 }
 
-class _ShareSheet extends StatefulWidget {
+class _ShareSheet extends ConsumerStatefulWidget {
   final String eventTitle;
   final String eventUrl;
 
@@ -52,19 +54,23 @@ class _ShareSheet extends StatefulWidget {
   });
 
   @override
-  State<_ShareSheet> createState() => _ShareSheetState();
+  ConsumerState<_ShareSheet> createState() => _ShareSheetState();
 }
 
-class _ShareSheetState extends State<_ShareSheet>
+class _ShareSheetState extends ConsumerState<_ShareSheet>
     with TickerProviderStateMixin {
   late final AnimationController _animController;
   late final Animation<double> _anim;
 
   bool _linkCopied = false;
 
+  // ── i18n helper ───────────────────────────────────────────────────────
+  String _t(String en, String ja) =>
+      ref.read(appLangProvider) == kLangJa ? ja : en;
+
   // ── Share text ────────────────────────────────────────────────────────
   String get _shareText =>
-      '🏓 ${widget.eventTitle}\n\nJoin me at this event!\n${widget.eventUrl}';
+      '🏓 ${widget.eventTitle}\n\n${_t('Join me at this event!', 'このイベントに一緒に参加しましょう！')}\n${widget.eventUrl}';
 
   @override
   void initState() {
@@ -144,7 +150,8 @@ class _ShareSheetState extends State<_ShareSheet>
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           _snackBar(
-            '📋 Text copied — paste it in your Instagram post or Story',
+            _t('📋 Text copied — paste it in your Instagram post or Story',
+                '📋 テキストをコピーしました — Instagramの投稿やストーリーに貼り付けてください'),
             isInfo: true,
           ),
         );
@@ -155,7 +162,8 @@ class _ShareSheetState extends State<_ShareSheet>
           mode: LaunchMode.externalApplication);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          _snackBar('📋 Text copied — paste it in your post'),
+          _snackBar(_t('📋 Text copied — paste it in your post',
+              '📋 テキストをコピーしました — 投稿に貼り付けてください')),
         );
       }
     }
@@ -178,15 +186,18 @@ class _ShareSheetState extends State<_ShareSheet>
     // Here we fall back to copy + message.
     await Clipboard.setData(ClipboardData(text: _shareText));
     if (mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(_snackBar('📋 Copied to clipboard!'));
+      ScaffoldMessenger.of(context).showSnackBar(
+          _snackBar(_t('📋 Copied to clipboard!', '📋 クリップボードにコピーしました！')));
     }
   }
 
   void _showNotInstalled(String app) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      _snackBar('$app is not installed on this device', isError: true),
+      _snackBar(
+          _t('$app is not installed on this device',
+              '$appはこの端末にインストールされていません'),
+          isError: true),
     );
   }
 
@@ -209,6 +220,8 @@ class _ShareSheetState extends State<_ShareSheet>
 
   @override
   Widget build(BuildContext context) {
+    // Watch so the sheet rebuilds if the app language changes.
+    ref.watch(appLangProvider);
     return SlideTransition(
       position: Tween<Offset>(
         begin: const Offset(0, 1),
@@ -252,8 +265,8 @@ class _ShareSheetState extends State<_ShareSheet>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Share Event',
-                            style: TextStyle(
+                        Text(_t('Share Event', 'イベントを共有'),
+                            style: const TextStyle(
                                 fontSize: 17,
                                 fontWeight: FontWeight.w800,
                                 color: Color(0xFF1A1A1A))),
@@ -345,7 +358,7 @@ class _ShareSheetState extends State<_ShareSheet>
                     ),
                     icon: Icons.camera_alt_rounded,
                     onTap: _shareToInstagram,
-                    note: 'Paste in app',
+                    note: _t('Paste in app', 'アプリで貼り付け'),
                   ),
                   // Facebook ✅ real share URL
                   _AppBtn(
@@ -363,7 +376,9 @@ class _ShareSheetState extends State<_ShareSheet>
                   ),
                   // Copy ✅
                   _AppBtn(
-                    label: _linkCopied ? 'Copied!' : 'Copy',
+                    label: _linkCopied
+                        ? _t('Copied!', 'コピーしました！')
+                        : _t('Copy', 'コピー'),
                     color: _linkCopied
                         ? AppColors.primary
                         : const Color(0xFF6B7280),
@@ -397,7 +412,8 @@ class _ShareSheetState extends State<_ShareSheet>
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Instagram: event text is copied to clipboard — just paste it in your post or Story.',
+                        _t('Instagram: event text is copied to clipboard — just paste it in your post or Story.',
+                            'Instagram: イベントのテキストがクリップボードにコピーされます — 投稿やストーリーに貼り付けるだけです。'),
                         style: TextStyle(
                             fontSize: 11,
                             color: Colors.amber.shade800,
@@ -422,7 +438,7 @@ class _ShareSheetState extends State<_ShareSheet>
                   Padding(
                     padding:
                     const EdgeInsets.symmetric(horizontal: 12),
-                    child: Text('More options',
+                    child: Text(_t('More options', 'その他のオプション'),
                         style: TextStyle(
                             fontSize: 11,
                             color: Colors.grey.shade400,
@@ -447,8 +463,8 @@ class _ShareSheetState extends State<_ShareSheet>
                   Expanded(
                     child: _OptionTile(
                       icon: Icons.open_in_new_rounded,
-                      label: 'More apps',
-                      subtitle: 'WhatsApp, Mail…',
+                      label: _t('More apps', 'その他のアプリ'),
+                      subtitle: _t('WhatsApp, Mail…', 'WhatsApp、メールなど…'),
                       onTap: _nativeShare,
                     ),
                   ),
@@ -456,15 +472,15 @@ class _ShareSheetState extends State<_ShareSheet>
                   Expanded(
                     child: _OptionTile(
                       icon: Icons.copy_rounded,
-                      label: 'Copy full text',
-                      subtitle: 'Title + link',
+                      label: _t('Copy full text', '全文をコピー'),
+                      subtitle: _t('Title + link', 'タイトル＋リンク'),
                       onTap: () async {
                         await Clipboard.setData(
                             ClipboardData(text: _shareText));
                         if (mounted) {
                           Navigator.pop(context);
-                          ScaffoldMessenger.of(context)
-                              .showSnackBar(_snackBar('Copied!'));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                              _snackBar(_t('Copied!', 'コピーしました！')));
                         }
                       },
                     ),

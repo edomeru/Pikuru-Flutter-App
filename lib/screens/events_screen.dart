@@ -115,6 +115,10 @@ class _S {
       ? '$loc で今後30日間のイベントはありません。'
       : 'No upcoming events in $loc\nin the next 30 days.';
   String get clearFilters => isJa ? 'フィルターをクリア' : 'Clear all filters';
+  String loadError(String err) => isJa
+      ? '問題が発生しました。\n$err'
+      : 'Something went wrong.\n$err';
+  String get retry => isJa ? '再試行' : 'Retry';
 
   List<String> get eventTypeKeys => [
     'Professional Tournament', 'Global Tournament', 'Japan Tournament',
@@ -892,7 +896,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                       color: _greenLight,
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: const Text('Active', style: TextStyle(
+                    child: Text(s.filtersActive, style: const TextStyle(
                       fontSize: 11, fontWeight: FontWeight.w700, color: _green,
                     )),
                   ),
@@ -1447,7 +1451,7 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('Something went wrong.\n$_loadError',
+                    Text(s.loadError('$_loadError'),
                         textAlign: TextAlign.center,
                         style: const TextStyle(color: _textLight, fontSize: 14)),
                     const SizedBox(height: 16),
@@ -1459,8 +1463,8 @@ class _EventsScreenState extends ConsumerState<EventsScreen> {
                           color: _greenLight,
                           borderRadius: BorderRadius.circular(20),
                         ),
-                        child: const Text('Retry',
-                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _green)),
+                        child: Text(s.retry,
+                            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _green)),
                       ),
                     ),
                   ],

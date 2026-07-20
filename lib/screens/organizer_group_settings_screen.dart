@@ -113,6 +113,12 @@ const _L = {
     'viewAllPast':         'View all {count} past events',
     'upcomingModalTitle':  'Upcoming Events from this Group',
     'pastModalTitle':      'Past Events from this Group',
+    'photoLibrary':        'Photo Library',
+    'camera':              'Camera',
+    'coverUpdated':        'Cover image updated!',
+    'coverUploadFailed':   'Failed to upload image.',
+    'edit':                'Edit',
+    'moreMembers':         '(+{count} more)',
   },
   kLangJa: {
     'title':           'グループ設定',
@@ -173,6 +179,12 @@ const _L = {
     'viewAllPast':         '過去の{count}件のイベントをすべて見る',
     'upcomingModalTitle':  'このグループの今後のイベント',
     'pastModalTitle':      'このグループの過去のイベント',
+    'photoLibrary':        'フォトライブラリ',
+    'camera':              'カメラ',
+    'coverUpdated':        'カバー画像を更新しました！',
+    'coverUploadFailed':   '画像のアップロードに失敗しました。',
+    'edit':                '編集',
+    'moreMembers':         '（他{count}人）',
   },
 };
 
@@ -489,7 +501,7 @@ class _EventGridCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final title  = lang == kLangJa
-        ? (ev['event_title_jp'] ?? ev['event_title'] ?? 'Untitled').toString()
+        ? (ev['event_title_jp'] ?? ev['event_title'] ?? '無題').toString()
         : (ev['event_title'] ?? 'Untitled').toString();
     final desc   = lang == kLangJa
         ? (ev['event_description_jp'] ?? ev['event_description_en'] ?? '').toString()
@@ -1048,6 +1060,7 @@ class _OrganizerGroupSettingsScreenState extends ConsumerState<OrganizerGroupSet
   }
 
   Future<void> _pickCoverImage() async {
+    final lang = ref.read(appLangProvider);
     final source = await showModalBottomSheet<ImageSource>(
       context: context, backgroundColor: Colors.transparent,
       builder: (_) => Container(
@@ -1060,7 +1073,7 @@ class _OrganizerGroupSettingsScreenState extends ConsumerState<OrganizerGroupSet
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             leading: Container(width: 40, height: 40, decoration: BoxDecoration(color: _D.accentLt, borderRadius: BorderRadius.circular(12)),
                 child: const Icon(Icons.photo_library_rounded, color: _D.accent, size: 20)),
-            title: const Text('Photo Library', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+            title: Text(_t(lang, 'photoLibrary'), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
             onTap: () => Navigator.pop(context, ImageSource.gallery),
           ),
           const SizedBox(height: 4),
@@ -1068,7 +1081,7 @@ class _OrganizerGroupSettingsScreenState extends ConsumerState<OrganizerGroupSet
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             leading: Container(width: 40, height: 40, decoration: BoxDecoration(color: _D.accentLt, borderRadius: BorderRadius.circular(12)),
                 child: const Icon(Icons.camera_alt_rounded, color: _D.accent, size: 20)),
-            title: const Text('Camera', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+            title: Text(_t(lang, 'camera'), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
             onTap: () => Navigator.pop(context, ImageSource.camera),
           ),
         ]),
@@ -1092,7 +1105,7 @@ class _OrganizerGroupSettingsScreenState extends ConsumerState<OrganizerGroupSet
       if (mounted) {
         setState(() { _groupData['org_image'] = downloadUrl; _uploadingImage = false; _dirty = false; });
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Cover image updated!'), backgroundColor: _D.accent,
+          content: Text(_t(lang, 'coverUpdated')), backgroundColor: _D.accent,
           behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           margin: const EdgeInsets.all(16), duration: const Duration(seconds: 2),
         ));
@@ -1101,7 +1114,7 @@ class _OrganizerGroupSettingsScreenState extends ConsumerState<OrganizerGroupSet
       if (mounted) {
         setState(() { _uploadingImage = false; _pickedImageFile = null; });
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Failed to upload image.'), backgroundColor: _D.rejClr,
+          content: Text(_t(lang, 'coverUploadFailed')), backgroundColor: _D.rejClr,
           behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           margin: const EdgeInsets.all(16),
         ));
@@ -1266,10 +1279,10 @@ class _OrganizerGroupSettingsScreenState extends ConsumerState<OrganizerGroupSet
                   decoration: BoxDecoration(color: Colors.black.withOpacity(0.50), borderRadius: BorderRadius.circular(20)),
                   child: _uploadingImage
                       ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.edit_rounded, size: 12, color: Colors.white),
-                    SizedBox(width: 4),
-                    Text('Edit', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
+                      : Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.edit_rounded, size: 12, color: Colors.white),
+                    const SizedBox(width: 4),
+                    Text(_t(lang, 'edit'), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
                   ]),
                 )),
           ]),
@@ -1439,7 +1452,7 @@ class _OrganizerGroupSettingsScreenState extends ConsumerState<OrganizerGroupSet
                 const SizedBox(width: 12),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Text(name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: _D.textPri), maxLines: 1, overflow: TextOverflow.ellipsis),
-                  if (isCreator) ...[const SizedBox(height: 2), Text('Group Creator', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: _D.accent.withOpacity(0.8)))],
+                  if (isCreator) ...[const SizedBox(height: 2), Text(_t(lang, 'groupCreator'), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: _D.accent.withOpacity(0.8)))],
                 ])),
                 if (isCreator)
                   Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -1459,7 +1472,7 @@ class _OrganizerGroupSettingsScreenState extends ConsumerState<OrganizerGroupSet
           child: Padding(padding: const EdgeInsets.symmetric(vertical: 14),
               child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                 Text(_t(lang, 'manageAll'), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _D.accent)),
-                if (extra > 0) ...[const SizedBox(width: 6), Text('(+$extra more)', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _D.textMuted))],
+                if (extra > 0) ...[const SizedBox(width: 6), Text(_t(lang, 'moreMembers').replaceAll('{count}', '$extra'), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: _D.textMuted))],
                 const SizedBox(width: 4),
                 const Icon(Icons.arrow_forward_ios_rounded, size: 12, color: _D.accent),
               ])),
@@ -1515,7 +1528,7 @@ class _OrganizerGroupSettingsScreenState extends ConsumerState<OrganizerGroupSet
         Column(children: List.generate(preview.length, (i) {
           final ev     = preview[i];
           final title  = lang == kLangJa
-              ? (ev['event_title_jp'] ?? ev['event_title'] ?? 'Untitled').toString()
+              ? (ev['event_title_jp'] ?? ev['event_title'] ?? '無題').toString()
               : (ev['event_title'] ?? 'Untitled').toString();
           final desc   = lang == kLangJa
               ? (ev['event_description_jp'] ?? ev['event_description_en'] ?? '').toString()

@@ -3,10 +3,63 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:pikuru/theme/material.dart';
 import 'package:pikuru/screens/group_chat_screen.dart';
 import 'package:pikuru/screens/individual_chat_screen.dart';
 import 'package:pikuru/screens/event_chat_screen.dart';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// i18n
+// ─────────────────────────────────────────────────────────────────────────────
+const _L = {
+  kLangEn: {
+    'chats':                'chats',
+    'search':               'Search',
+    'all':                  'All',
+    'unread':               'Unread',
+    'groups':               'Groups',
+    'events':               'Events',
+    'noEventChannels':      'No event channels yet',
+    'noUnread':             'No unread messages',
+    'noGroupChats':         'No group chats yet',
+    'noChats':              'No chats yet',
+    'groupChat':            'Group Chat',
+    'unknown':              'Unknown',
+    'eventChannel':         'Event Channel',
+    'eventChannels':        'Event Channels',
+    'tapViewEventChannels': 'Tap to view event channels',
+    'pastEvents':           'Past Events',
+    'announceOnly':         'ANNOUNCE ONLY',
+    'noMessages':           'No messages yet',
+    'yesterday':            'Yesterday',
+  },
+  kLangJa: {
+    'chats':                'チャット',
+    'search':               '検索',
+    'all':                  'すべて',
+    'unread':               '未読',
+    'groups':               'グループ',
+    'events':               'イベント',
+    'noEventChannels':      'イベントチャンネルはまだありません',
+    'noUnread':             '未読メッセージはありません',
+    'noGroupChats':         'グループチャットはまだありません',
+    'noChats':              'チャットはまだありません',
+    'groupChat':            'グループチャット',
+    'unknown':              '不明',
+    'eventChannel':         'イベントチャンネル',
+    'eventChannels':        'イベントチャンネル',
+    'tapViewEventChannels': 'タップしてイベントチャンネルを表示',
+    'pastEvents':           '過去のイベント',
+    'announceOnly':         'アナウンス専用',
+    'noMessages':           'メッセージはまだありません',
+    'yesterday':            '昨日',
+  },
+};
+
+String _t(String lang, String key) =>
+    _L[lang]?[key] ?? _L[kLangEn]![key]!;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Data models
@@ -81,14 +134,14 @@ ImageProvider? _resolveImage(String av) {
 // ─────────────────────────────────────────────────────────────────────────────
 // ChatsScreen
 // ─────────────────────────────────────────────────────────────────────────────
-class ChatsScreen extends StatefulWidget {
+class ChatsScreen extends ConsumerStatefulWidget {
   const ChatsScreen({super.key});
 
   @override
-  State<ChatsScreen> createState() => _ChatsScreenState();
+  ConsumerState<ChatsScreen> createState() => _ChatsScreenState();
 }
 
-class _ChatsScreenState extends State<ChatsScreen> {
+class _ChatsScreenState extends ConsumerState<ChatsScreen> {
   final _searchCtrl = TextEditingController();
   final _me = FirebaseAuth.instance.currentUser;
 
@@ -243,6 +296,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
         .orderBy('last_message_at', descending: true)
         .snapshots()
         .listen((snap) async {
+          final lang = ref.read(appLangProvider);
           final List<_ChatItem> items = [];
           for (final doc in snap.docs) {
             final data = doc.data();
@@ -276,7 +330,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
                 : 0;
 
             final orgId = (data['org_id'] ?? doc.id).toString();
-            String name = 'Group Chat';
+            String name = _t(lang, 'groupChat');
             String avatarUrl = '';
 
             if (orgId.isNotEmpty) {
@@ -286,7 +340,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
                     .doc(orgId)
                     .get();
                 if (orgDoc.exists) {
-                  name = (orgDoc.data()!['org_name'] ?? 'Group Chat')
+                  name = (orgDoc.data()!['org_name'] ?? _t(lang, 'groupChat'))
                       .toString();
                   avatarUrl = (orgDoc.data()!['org_image'] ?? '').toString();
                 } else {
@@ -297,7 +351,8 @@ class _ChatsScreenState extends State<ChatsScreen> {
                       .get();
                   if (orgSnap.docs.isNotEmpty) {
                     name =
-                        (orgSnap.docs.first.data()['org_name'] ?? 'Group Chat')
+                        (orgSnap.docs.first.data()['org_name'] ??
+                                _t(lang, 'groupChat'))
                             .toString();
                     avatarUrl = (orgSnap.docs.first.data()['org_image'] ?? '')
                         .toString();
@@ -344,6 +399,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
         .orderBy('last_message_at', descending: true)
         .snapshots()
         .listen((snap) async {
+          final lang = ref.read(appLangProvider);
           final List<_ChatItem> items = [];
           for (final doc in snap.docs) {
             final data = doc.data();
@@ -384,7 +440,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
             final cached = _profileCache[otherId];
             final resolvedName = ((cached?['name'] ?? '').isNotEmpty)
                 ? cached!['name']!
-                : (names[otherId] ?? 'Unknown').toString();
+                : (names[otherId] ?? _t(lang, 'unknown')).toString();
             final resolvedAvatar = ((cached?['avatar'] ?? '').isNotEmpty)
                 ? cached!['avatar']!
                 : _toImgSrc((avatars[otherId] ?? '').toString());
@@ -429,6 +485,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
         .orderBy('last_message_at', descending: true)
         .snapshots()
         .listen((snap) async {
+          final lang = ref.read(appLangProvider);
           final List<_ChatItem> items = [];
           final List<String> eventIds = [];
 
@@ -464,7 +521,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
 
             final name = (data['name'] ?? '').toString().isNotEmpty
                 ? data['name'].toString()
-                : 'Event Channel';
+                : _t(lang, 'eventChannel');
             final imgUrl = (data['image'] ?? '').toString();
 
             final eventId = (data['event_id'] ?? doc.id).toString();
@@ -623,18 +680,19 @@ class _ChatsScreenState extends State<ChatsScreen> {
   // ─────────────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
+    final lang = ref.watch(appLangProvider);
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
         child: Column(
           children: [
-            _buildHeader(),
+            _buildHeader(lang),
             const SizedBox(height: 12),
-            _buildSearchBar(),
+            _buildSearchBar(lang),
             const SizedBox(height: 12),
-            _buildFilterTabs(),
+            _buildFilterTabs(lang),
             const SizedBox(height: 4),
-            Expanded(child: _buildRefreshableBody()),
+            Expanded(child: _buildRefreshableBody(lang)),
           ],
         ),
       ),
@@ -642,7 +700,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
   }
 
   // ── Refresh wrapper ───────────────────────────────────────────────────
-  Widget _buildRefreshableBody() {
+  Widget _buildRefreshableBody(String lang) {
     return RefreshIndicator(
       onRefresh: _onRefresh,
       color: AppColors.primary,
@@ -650,12 +708,12 @@ class _ChatsScreenState extends State<ChatsScreen> {
       displacement: 20,
       notificationPredicate: (notification) => notification.depth == 0,
       triggerMode: RefreshIndicatorTriggerMode.onEdge,
-      child: _buildBody(),
+      child: _buildBody(lang),
     );
   }
 
   // ── Header ────────────────────────────────────────────────────────────
-  Widget _buildHeader() {
+  Widget _buildHeader(String lang) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
       child: Row(
@@ -669,9 +727,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
             ),
           ),
           const SizedBox(width: 14),
-          const Text(
-            'chats',
-            style: TextStyle(
+          Text(
+            _t(lang, 'chats'),
+            style: const TextStyle(
               fontSize: 28,
               fontWeight: FontWeight.bold,
               color: AppColors.primary,
@@ -733,7 +791,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
   }
 
   // ── Search ────────────────────────────────────────────────────────────
-  Widget _buildSearchBar() {
+  Widget _buildSearchBar(String lang) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Container(
@@ -746,7 +804,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
           controller: _searchCtrl,
           style: const TextStyle(fontSize: 15, color: Color(0xFF1C1C1E)),
           decoration: InputDecoration(
-            hintText: 'Search',
+            hintText: _t(lang, 'search'),
             hintStyle: TextStyle(
               color: Colors.black.withOpacity(0.35),
               fontSize: 15,
@@ -768,7 +826,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
   }
 
   // ── Filter Tabs ───────────────────────────────────────────────────────
-  Widget _buildFilterTabs() {
+  Widget _buildFilterTabs(String lang) {
+    // Internal filter values stay in English; only the visible label is
+    // translated via the _L map ('all' / 'unread' / 'groups' / 'events').
     final tabs = ['All', 'Unread', 'Groups', 'Events'];
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -809,7 +869,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
                         const SizedBox(width: 4),
                       ],
                       Text(
-                        label,
+                        _t(lang, label.toLowerCase()),
                         style: TextStyle(
                           fontSize: 13.5,
                           fontWeight: FontWeight.w600,
@@ -855,7 +915,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
   }
 
   // ── Body ──────────────────────────────────────────────────────────────
-  Widget _buildBody() {
+  Widget _buildBody(String lang) {
     if (_loading) {
       return Center(
         child: CircularProgressIndicator(
@@ -871,7 +931,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
       final current = split.current;
       final past = split.past;
       if (current.isEmpty && past.isEmpty) {
-        return _buildScrollableEmpty('No event channels yet');
+        return _buildScrollableEmpty(_t(lang, 'noEventChannels'));
       }
       return ListView(
         children: [
@@ -879,7 +939,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
             current.length,
             (i) => Column(
               children: [
-                _buildEventTile(current[i]),
+                _buildEventTile(current[i], lang),
                 if (i < current.length - 1)
                   const Divider(
                     height: 1,
@@ -890,7 +950,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
               ],
             ),
           ),
-          if (past.isNotEmpty) _buildPastEventsSection(past),
+          if (past.isNotEmpty) _buildPastEventsSection(past, lang),
         ],
       );
     }
@@ -905,10 +965,10 @@ class _ChatsScreenState extends State<ChatsScreen> {
     if (items.isEmpty && eventShortcutItems.isEmpty) {
       return _buildScrollableEmpty(
         _filter == 'Unread'
-            ? 'No unread messages'
+            ? _t(lang, 'noUnread')
             : _filter == 'Groups'
-            ? 'No group chats yet'
-            : 'No chats yet',
+            ? _t(lang, 'noGroupChats')
+            : _t(lang, 'noChats'),
       );
     }
 
@@ -917,7 +977,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
         // ── Event Channels button (only in All/Unread) — routes to Events tab ──
         if ((_filter == 'All' || _filter == 'Unread') &&
             eventShortcutItems.isNotEmpty) ...[
-          _buildEventChannelsButton(eventShortcutItems),
+          _buildEventChannelsButton(eventShortcutItems, lang),
           if (items.isNotEmpty)
             Divider(
               height: 1,
@@ -931,7 +991,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
         ...List.generate(items.length, (i) {
           return Column(
             children: [
-              _buildChatTile(items[i]),
+              _buildChatTile(items[i], lang),
               if (i < items.length - 1)
                 const Divider(
                   height: 1,
@@ -982,7 +1042,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
   // ── Event Channels Button (All/Unread tab) ────────────────────────────
   // Single tappable button that routes to the Events tab. Replaces the
   // previous preview-list section.
-  Widget _buildEventChannelsButton(List<_ChatItem> evs) {
+  Widget _buildEventChannelsButton(List<_ChatItem> evs, String lang) {
     final unreadCount = evs.fold<int>(
       0,
       (total, item) => total + item.unreadCount,
@@ -1018,23 +1078,23 @@ class _ChatsScreenState extends State<ChatsScreen> {
                 ),
               ),
               const SizedBox(width: 12),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Event Channels',
-                      style: TextStyle(
+                      _t(lang, 'eventChannels'),
+                      style: const TextStyle(
                         fontSize: 15.5,
                         fontWeight: FontWeight.w800,
                         color: Color(0xFF1C1C1E),
                         letterSpacing: -0.2,
                       ),
                     ),
-                    SizedBox(height: 2),
+                    const SizedBox(height: 2),
                     Text(
-                      'Tap to view event channels',
-                      style: TextStyle(
+                      _t(lang, 'tapViewEventChannels'),
+                      style: const TextStyle(
                         fontSize: 12.5,
                         color: Color(0xFF8A8A8E),
                         fontWeight: FontWeight.w500,
@@ -1084,7 +1144,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
   }
 
   // ── Past Events collapsible section (Events tab) ──────────────────────
-  Widget _buildPastEventsSection(List<_ChatItem> past) {
+  Widget _buildPastEventsSection(List<_ChatItem> past, String lang) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1104,7 +1164,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  'Past Events',
+                  _t(lang, 'pastEvents'),
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
@@ -1150,7 +1210,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
             past.length,
             (i) => Column(
               children: [
-                _buildEventTile(past[i]),
+                _buildEventTile(past[i], lang),
                 if (i < past.length - 1)
                   const Divider(
                     height: 1,
@@ -1166,7 +1226,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
   }
 
   // ── Event Channel Tile ────────────────────────────────────────────────
-  Widget _buildEventTile(_ChatItem item) {
+  Widget _buildEventTile(_ChatItem item, String lang) {
     final avatarImage = _resolveImage(item.avatarUrl);
     return InkWell(
       onTap: () => _openChat(item),
@@ -1240,7 +1300,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
                         ),
                       ),
                       Text(
-                        _formatTime(item.lastMessageAt),
+                        _formatTime(item.lastMessageAt, lang),
                         style: TextStyle(
                           fontSize: 12,
                           color: item.hasUnread
@@ -1268,9 +1328,9 @@ class _ChatsScreenState extends State<ChatsScreen> {
                             color: const Color(0xFFFF9933).withOpacity(0.12),
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child: const Text(
-                            'ANNOUNCE ONLY',
-                            style: TextStyle(
+                          child: Text(
+                            _t(lang, 'announceOnly'),
+                            style: const TextStyle(
                               fontSize: 8,
                               fontWeight: FontWeight.w900,
                               color: Color(0xFFFF9933),
@@ -1282,7 +1342,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
                       Expanded(
                         child: Text(
                           item.lastMessage.isEmpty
-                              ? 'No messages yet'
+                              ? _t(lang, 'noMessages')
                               : item.lastMessage,
                           style: TextStyle(
                             fontSize: 13.5,
@@ -1332,7 +1392,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
   }
 
   // ── Regular Chat Tile ─────────────────────────────────────────────────
-  Widget _buildChatTile(_ChatItem item) {
+  Widget _buildChatTile(_ChatItem item, String lang) {
     final avatarImage = _resolveImage(item.avatarUrl);
     return InkWell(
       onTap: () => _openChat(item),
@@ -1403,7 +1463,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
                   const SizedBox(height: 3),
                   Text(
                     item.lastMessage.isEmpty
-                        ? 'No messages yet'
+                        ? _t(lang, 'noMessages')
                         : item.lastMessage,
                     style: TextStyle(
                       fontSize: 13.5,
@@ -1426,7 +1486,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
-                  _formatTime(item.lastMessageAt),
+                  _formatTime(item.lastMessageAt, lang),
                   style: TextStyle(
                     fontSize: 12,
                     color: item.hasUnread
@@ -1519,7 +1579,7 @@ class _ChatsScreenState extends State<ChatsScreen> {
     ),
   );
 
-  String _formatTime(DateTime? dt) {
+  String _formatTime(DateTime? dt, String lang) {
     if (dt == null) return '';
     final now = DateTime.now();
     final diff = DateTime(
@@ -1534,13 +1594,23 @@ class _ChatsScreenState extends State<ChatsScreen> {
           ? 12
           : dt.hour;
       final m = dt.minute.toString().padLeft(2, '0');
+      if (lang == kLangJa) {
+        return '${dt.hour >= 12 ? '午後' : '午前'}$h:$m';
+      }
       return '$h:$m ${dt.hour >= 12 ? 'pm' : 'am'}';
     } else if (diff == 1) {
-      return 'Yesterday';
+      return _t(lang, 'yesterday');
     } else if (diff < 7) {
+      if (lang == kLangJa) {
+        const days = ['月', '火', '水', '木', '金', '土', '日'];
+        return '${days[dt.weekday - 1]}曜日';
+      }
       const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
       return days[dt.weekday - 1];
     } else {
+      if (lang == kLangJa) {
+        return '${dt.month}月${dt.day}日';
+      }
       const months = [
         'Jan',
         'Feb',

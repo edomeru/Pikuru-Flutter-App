@@ -386,6 +386,32 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
     lang == kLangJa ? '室内/\n屋外'   : 'INDOOR/\nOUTDOOR',
   ];
 
+  // Display-only label for the stored English loc_type value.
+  static const Map<String, String> _locTypeJa = {
+    'Arena':               'アリーナ',
+    'Professional Courts': 'プロ仕様コート',
+    'Gym/Club':            'ジム／クラブ',
+    'Gymnasium':           '体育館',
+    'Public Court':        '公共コート',
+    'Event Center':        'イベントセンター',
+    'Resort/Hotel':        'リゾート／ホテル',
+    'School':              '学校',
+  };
+
+  String _locTypeLabel(String lang, String value) =>
+      lang == kLangJa ? (_locTypeJa[value] ?? value) : value;
+
+  // Display-only label for the stored English _courtType value.
+  String _courtTypeDisplay(String lang, String value) {
+    if (lang != kLangJa) return value;
+    switch (value) {
+      case 'INDOOR COURTS':         return '室内コート';
+      case 'OUTDOOR COURTS':        return '屋外コート';
+      case 'INDOOR/OUTDOOR COURTS': return '室内／屋外コート';
+      default:                      return value;
+    }
+  }
+
   List<String> _amenityOpts(String lang) => [
     '',
     _t(lang, 'amenityYes'),
@@ -689,7 +715,8 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _errorText = 'Error: $e');
+        setState(() => _errorText =
+            lang == kLangJa ? 'エラー: $e' : 'Error: $e');
         _showSnack(_t(lang, 'submissionFailed'), isError: true);
       }
     } finally {
@@ -853,7 +880,7 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
         _buildDropdown<String>(
           value: _locType,
           items: _locTypes,
-          itemLabel: (v) => v,
+          itemLabel: (v) => _locTypeLabel(lang, v),
           onChanged: (v) => setState(() => _locType = v ?? _locType),
         ),
         const SizedBox(height: 14),
@@ -1405,7 +1432,7 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
 
         _buildSummarySection(_t(lang, 'basicInfo'), [
           (_t(lang, 'name'),   _nameController.text.isEmpty ? '—' : _nameController.text),
-          (_t(lang, 'type'),   _locType),
+          (_t(lang, 'type'),   _locTypeLabel(lang, _locType)),
           (_t(lang, 'courts'), _courtCountController.text.isEmpty ? '—' : _courtCountController.text),
           (_t(lang, 'access'), _isPublic ? _t(lang, 'openPublic') : _t(lang, 'requiresSetup')),
         ]),
@@ -1421,7 +1448,7 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
         const SizedBox(height: 12),
 
         _buildSummarySection(_t(lang, 'courtPricing'), [
-          (_t(lang, 'courtTypeLabel'), _courtType),
+          (_t(lang, 'courtTypeLabel'), _courtTypeDisplay(lang, _courtType)),
           (_t(lang, 'price'), _isPriceFree
               ? _t(lang, 'free')
               : (_priceController.text.isEmpty ? '—' : _priceController.text)),

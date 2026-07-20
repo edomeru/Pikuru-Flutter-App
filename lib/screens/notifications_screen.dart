@@ -22,6 +22,7 @@ const _L = {
     'notificationDismissed': 'Notification dismissed.',
     'adminRedirectInfo': 'Please access the Admin Dashboard on the Pikuru Web application.',
     'errorOccurred': 'An error occurred. Please try again.',
+    'error': 'Error',
   },
   kLangJa: {
     'title': '通知',
@@ -36,6 +37,7 @@ const _L = {
     'notificationDismissed': '通知を非表示にしました。',
     'adminRedirectInfo': '管理画面機能はウェブ版Pikuruからご利用ください。',
     'errorOccurred': 'エラーが発生しました。もう一度お試しください。',
+    'error': 'エラー',
   },
 };
 
@@ -534,7 +536,8 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
             ],
           );
         },
-        error: (err, stack) => Center(child: Text('Error: $err')),
+        error: (err, stack) =>
+            Center(child: Text('${_t(lang, 'error')}: $err')),
         loading: () => const Center(child: CircularProgressIndicator(color: AppColors.primary)),
       ),
     );

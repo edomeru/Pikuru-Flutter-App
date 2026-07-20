@@ -34,7 +34,7 @@ const _T = {
   },
   'ja': {
     'title':           'アカウント\n作成',
-    'nickname':        'Nickname / Username',
+    'nickname':        'ニックネーム / ユーザー名',
     'email':           'メールアドレス',
     'password':        'パスワード',
     'confirmPassword': 'パスワード確認',

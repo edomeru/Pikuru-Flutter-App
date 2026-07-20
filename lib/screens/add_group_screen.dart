@@ -916,23 +916,27 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
     ]);
   }
 
-  Widget _buildSegmentedType(String lang) {
-    final bool isJa = lang == kLangJa;
-    const Map<String, (String, String)> _typeLabels = {
-      'For-Profit Club / Facility': ('For-Profit Club / Facility', '営利クラブ・施設'),
-      'Nonprofit / Federation':     ('Nonprofit / Federation',     '非営利団体・協会'),
-      'Event Organizer':            ('Event Organizer',            'イベント主催者'),
-      'Collegiate Group':           ('Collegiate Group',           '大学サークル'),
-      'Local Group':                ('Local Group',                'サークル'),
-      'Coaching / Lessons':         ('Coaching / Lessons',         'レッスン・コーチ'),
-    };
+  // Display labels for stored English org_type values.
+  static const Map<String, (String, String)> _orgTypeLabels = {
+    'For-Profit Club / Facility': ('For-Profit Club / Facility', '営利クラブ・施設'),
+    'Nonprofit / Federation':     ('Nonprofit / Federation',     '非営利団体・協会'),
+    'Event Organizer':            ('Event Organizer',            'イベント主催者'),
+    'Collegiate Group':           ('Collegiate Group',           '大学サークル'),
+    'Local Group':                ('Local Group',                'サークル'),
+    'Coaching / Lessons':         ('Coaching / Lessons',         'レッスン・コーチ'),
+  };
 
+  String _orgTypeLabel(String lang, String type) {
+    final labels = _orgTypeLabels[type] ?? (type, type);
+    return lang == kLangJa ? labels.$2 : labels.$1;
+  }
+
+  Widget _buildSegmentedType(String lang) {
     return Wrap(
       spacing: 8, runSpacing: 8,
       children: _orgTypes.map((type) {
         final selected = _orgType == type;
-        final labels = _typeLabels[type] ?? (type, type);
-        final label = isJa ? labels.$2 : labels.$1;
+        final label = _orgTypeLabel(lang, type);
         return GestureDetector(
           onTap: () => setState(() => _orgType = type),
           child: AnimatedContainer(
@@ -1294,7 +1298,7 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
         _buildReviewSection(t('reviewBasics'), Icons.groups_outlined, [
           _buildReviewRow(t('reviewName'),       reviewName),
           _buildReviewRow(t('reviewHandle'),     _handleController.text.trim()),
-          _buildReviewRow(t('reviewType'),       _orgType),
+          _buildReviewRow(t('reviewType'),       _orgTypeLabel(lang, _orgType)),
           _buildReviewRow(t('reviewVisibility'), _isPublic ? t('visPub') : t('visPriv')),
           _buildReviewRow(t('reviewDesc'),       reviewDesc),
         ]),

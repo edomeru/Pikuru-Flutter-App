@@ -520,6 +520,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
         title: s.cancelRegTitle,
         body: s.cancelRegBody,
         confirmLabel: s.cancelReg,
+        cancelLabel: s.cancel,
         confirmColor: _red,
         onConfirm: () { Navigator.pop(context); _cancelRegistration(); },
         onCancel:  () => Navigator.pop(context),
@@ -578,7 +579,7 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
     ref.watch(appLangProvider);
     final e         = widget.event;
     final title     = s.isJa
-        ? (e['event_title_jp'] ?? e['event_title'] ?? 'Untitled').toString()
+        ? (e['event_title_jp'] ?? e['event_title'] ?? '無題').toString()
         : (e['event_title'] ?? 'Untitled').toString();
     final desc      = s.isJa
         ? (e['event_description_jp'] ?? e['event_description_en'] ?? e['event_description'] ?? '').toString()
@@ -1602,11 +1603,12 @@ class _OutlineButton extends StatelessWidget {
 // Confirm dialog
 // ═════════════════════════════════════════════════════════════════════════════
 class _ConfirmDialog extends StatelessWidget {
-  final String title, body, confirmLabel;
+  final String title, body, confirmLabel, cancelLabel;
   final Color confirmColor;
   final VoidCallback onConfirm, onCancel;
   const _ConfirmDialog({required this.title, required this.body,
-    required this.confirmLabel, required this.confirmColor,
+    required this.confirmLabel, required this.cancelLabel,
+    required this.confirmColor,
     required this.onConfirm, required this.onCancel});
 
   @override
@@ -1617,7 +1619,7 @@ class _ConfirmDialog extends StatelessWidget {
         fontSize: 18, fontWeight: FontWeight.w800, color: _textDark)),
     content: Text(body, style: const TextStyle(fontSize: 14, color: _textMid)),
     actions: [
-      TextButton(onPressed: onCancel, child: Text('Cancel',
+      TextButton(onPressed: onCancel, child: Text(cancelLabel,
           style: TextStyle(color: _textMid, fontWeight: FontWeight.w600))),
       TextButton(onPressed: onConfirm, child: Text(confirmLabel,
           style: TextStyle(color: confirmColor, fontWeight: FontWeight.w700))),

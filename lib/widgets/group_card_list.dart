@@ -26,6 +26,7 @@ const _L = {
     'joinBtn': 'JOIN',
     'interested': 'Favorited',
     'organizer': 'Organizer',
+    'unnamedGroup': 'Unnamed Group',
   },
   kLangJa: {
     'joinTitle': 'グループに参加しますか？',
@@ -41,6 +42,7 @@ const _L = {
     'joinBtn': '参加',
     'interested': 'お気に入り',
     'organizer': 'オーガナイザー',
+    'unnamedGroup': '名称未設定',
   },
 };
 
@@ -385,7 +387,7 @@ class _GroupCardListState extends ConsumerState<GroupCardList> {
                       .trim()
                       .isNotEmpty
               ? widget.group['org_name_jp'].toString()
-              : (widget.group['org_name'] ?? 'Unnamed Group').toString());
+              : (widget.group['org_name'] ?? _t(lang, 'unnamedGroup')).toString());
     final displayDescription = resolvedDescription.isNotEmpty
         ? resolvedDescription
         : (lang == kLangJa &&

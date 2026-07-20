@@ -28,8 +28,8 @@ class EventCardFull extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final title = _isJa
-        ? (event['event_title_jp'] ?? event['event_title'] ?? 'Untitled Event').toString()
-        : (event['event_title'] ?? 'Untitled Event').toString();
+        ? (event['event_title_jp'] ?? event['event_title'] ?? 'イベント').toString()
+        : (event['event_title'] ?? 'Event').toString();
 
     final rawType = (event['event_type'] ?? '').toString();
     final displayType = _isJa ? _localizeType(rawType) : rawType;

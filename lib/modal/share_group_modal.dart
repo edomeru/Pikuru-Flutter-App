@@ -119,7 +119,7 @@ class _ShareGroupModalState extends ConsumerState<ShareGroupModal>
             ? jp
             : (widget.group['org_name'] ??
             widget.group['group_name'] ??
-            'a group')
+            'グループ')
             .toString();
       })()
           : (widget.group['org_name'] ??
@@ -629,7 +629,8 @@ class _PeopleTab extends StatelessWidget {
         final otherId = parts.firstWhere((p) => p != myUid, orElse: () => '');
         final names   = Map<String, dynamic>.from(data['participant_names']   ?? {});
         final avatars = Map<String, dynamic>.from(data['participant_avatars'] ?? {});
-        final name    = (names[otherId]   ?? 'User').toString();
+        final name    =
+            (names[otherId] ?? (isJa ? 'ユーザー' : 'User')).toString();
         final avatar  = (avatars[otherId] ?? '').toString();
         final selected = selectedIds.contains(chatId);
 
@@ -734,6 +735,9 @@ class _GroupsTabState extends State<_GroupsTab> {
             }
           } catch (_) {}
         }
+
+        // Translate the generic fallback name if it was never resolved
+        if (widget.isJa && name == 'Group Chat') name = 'グループチャット';
 
         result.add(_GroupChatItem(chatId: doc.id, name: name, avatarUrl: avatar));
       }

@@ -58,7 +58,7 @@ class _S {
   String get noEvents     => isJa ? 'この日のイベントはありません' : 'No events on this day';
   String get free         => isJa ? '無料'                    : 'Free';
   String get filters      => isJa ? 'フィルター'               : 'Filters';
-  String get filterActive => isJa ? 'Active'                 : 'Active';
+  String get filterActive => isJa ? 'フィルター中'             : 'Active';
   String get allCountries => isJa ? 'すべての国'               : 'All Countries';
   String get clearAll     => isJa ? 'クリア'                  : 'Clear All';
   String get applyFilters => isJa ? 'フィルターを適用'         : 'APPLY FILTERS';
@@ -940,13 +940,15 @@ class _ConfirmDialog extends StatelessWidget {
   final String title;
   final String body;
   final String confirmLabel;
+  final String cancelLabel;
   final Color confirmColor;
   final VoidCallback onConfirm;
   final VoidCallback onCancel;
 
   const _ConfirmDialog({
     required this.title, required this.body,
-    required this.confirmLabel, required this.confirmColor,
+    required this.confirmLabel, required this.cancelLabel,
+    required this.confirmColor,
     required this.onConfirm, required this.onCancel,
   });
 
@@ -959,7 +961,7 @@ class _ConfirmDialog extends StatelessWidget {
     content: Text(body, style: const TextStyle(fontSize: 14, color: Color(0xFF4B5563))),
     actions: [
       TextButton(onPressed: onCancel,
-          child: const Text('Cancel', style: TextStyle(
+          child: Text(cancelLabel, style: const TextStyle(
               color: Color(0xFF4B5563), fontWeight: FontWeight.w600))),
       TextButton(onPressed: onConfirm,
           child: Text(confirmLabel, style: TextStyle(
@@ -1533,7 +1535,8 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
       barrierColor: Colors.black.withOpacity(0.55),
       builder: (ctx) => _ConfirmDialog(
         title: ls.cancelRegTitle, body: ls.cancelRegBody,
-        confirmLabel: ls.cancelReg, confirmColor: _red,
+        confirmLabel: ls.cancelReg, cancelLabel: ls.cancel,
+        confirmColor: _red,
         onConfirm: () => Navigator.pop(ctx, true),
         onCancel:  () => Navigator.pop(ctx, false),
       ),
@@ -2024,6 +2027,7 @@ class _CalendarEventsScreenState extends ConsumerState<CalendarEventsScreen>
                     '', temp.type,
                     _eventTypeKeys, curS.fAllTypes,
                         (v) => setS(() => temp = temp.copyWith(type: v)),
+                    displayMapper: (v) => curS.localizeType(v),
                   ),
 
                   divider(),
@@ -2457,7 +2461,7 @@ class _EventCard extends StatelessWidget {
   bool get _isJa => lang == kLangJa;
 
   String get _title => _isJa
-      ? (event['event_title_jp'] ?? event['event_title'] ?? 'Untitled Event').toString()
+      ? (event['event_title_jp'] ?? event['event_title'] ?? '無題のイベント').toString()
       : (event['event_title'] ?? 'Untitled Event').toString();
 
   String get _location => _isJa

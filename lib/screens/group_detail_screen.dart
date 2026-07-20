@@ -960,7 +960,8 @@ class _GroupDetailScreenState extends ConsumerState<GroupDetailScreen>
                   color: Colors.grey.shade50,
                   borderRadius: BorderRadius.circular(12)),
               child: Center(
-                child: Text('Error loading events.\n${snapshot.error}',
+                child: Text(
+                    '${_tr(lang, 'Error loading events.', 'イベントの読み込みに失敗しました。')}\n${snapshot.error}',
                     style: const TextStyle(fontSize: 13, color: Colors.black54),
                     textAlign: TextAlign.center),
               ),

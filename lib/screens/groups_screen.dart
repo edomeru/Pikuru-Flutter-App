@@ -866,7 +866,11 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
                 height: 400,
                 child: _empty(
                   Icons.search_off_rounded,
-                  query.isNotEmpty ? 'No groups match "$query".' : t.noMatch,
+                  query.isNotEmpty
+                      ? (t.isJa
+                          ? '「$query」に一致するグループはありません。'
+                          : 'No groups match "$query".')
+                      : t.noMatch,
                   sub: t.noMatchSub,
                 ),
               ),
@@ -1009,7 +1013,9 @@ class _GroupsScreenState extends ConsumerState<GroupsScreen>
               child: Padding(
                 padding: const EdgeInsets.all(24),
                 child: Text(
-                  'Something went wrong.\n$e',
+                  t.isJa
+                      ? 'エラーが発生しました。\n$e'
+                      : 'Something went wrong.\n$e',
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.black45, fontSize: 14),
                 ),

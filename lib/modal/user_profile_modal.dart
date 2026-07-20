@@ -85,7 +85,7 @@ class UserAvatar extends ConsumerWidget {
 // User Profile Modal  (StatefulWidget so the Future is only created once)
 // ════════════════════════════════════════════════════════════════════════════
 
-class UserProfileModal extends StatefulWidget {
+class UserProfileModal extends ConsumerStatefulWidget {
   final String userId;
   final String userName;
   final String avatarUrl;
@@ -137,10 +137,10 @@ class UserProfileModal extends StatefulWidget {
   }
 
   @override
-  State<UserProfileModal> createState() => _UserProfileModalState();
+  ConsumerState<UserProfileModal> createState() => _UserProfileModalState();
 }
 
-class _UserProfileModalState extends State<UserProfileModal> {
+class _UserProfileModalState extends ConsumerState<UserProfileModal> {
   late final Future<List<dynamic>> _dataFuture;
 
   @override
@@ -231,6 +231,7 @@ class _UserProfileModalState extends State<UserProfileModal> {
 
   @override
   Widget build(BuildContext context) {
+    final isJa = ref.watch(appLangProvider) == kLangJa;
     final hiResAvatar = hiRes(widget.avatarUrl, size: 600);
 
     return FutureBuilder<List<dynamic>>(
@@ -276,7 +277,9 @@ class _UserProfileModalState extends State<UserProfileModal> {
                     children: [
                       Expanded(
                         child: _ChatButton(
-                          label: 'Chat with $firstNameOnly',
+                          label: isJa
+                              ? '$firstNameOnlyとチャットする'
+                              : 'Chat with $firstNameOnly',
                           onTap: () => Navigator.pop(context),
                         ),
                       ),
@@ -305,7 +308,10 @@ class _UserProfileModalState extends State<UserProfileModal> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _SectionTitle(title: 'About $firstNameOnly'),
+                        _SectionTitle(
+                            title: isJa
+                                ? '$firstNameOnlyについて'
+                                : 'About $firstNameOnly'),
 
                         if (bio.isNotEmpty) ...[
                           const SizedBox(height: 14),
@@ -346,7 +352,8 @@ class _UserProfileModalState extends State<UserProfileModal> {
                     padding: const EdgeInsets.fromLTRB(20, 28, 20, 14),
                     child: Row(
                       children: [
-                        _SectionTitle(title: 'Groups Joined'),
+                        _SectionTitle(
+                            title: isJa ? '参加グループ' : 'Groups Joined'),
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(

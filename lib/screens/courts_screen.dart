@@ -1217,7 +1217,7 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
       final jp = (_loc['loc_name_jp'] ?? '').toString().trim();
       if (jp.isNotEmpty) return jp;
     }
-    return (_loc['loc_name'] ?? 'Court').toString();
+    return (_loc['loc_name'] ?? (_isJa ? 'コート' : 'Court')).toString();
   }
 
   String get _address {
@@ -2314,7 +2314,10 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          pageBtn(label: '← Prev', disabled: isFirst, onTap: onPrev),
+          pageBtn(
+              label: _isJa ? '← 前へ' : '← Prev',
+              disabled: isFirst,
+              onTap: onPrev),
           Text(
             '$currentPage / $totalPages',
             style: const TextStyle(
@@ -2323,7 +2326,10 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
               color: _textDark,
             ),
           ),
-          pageBtn(label: 'Next →', disabled: isLast, onTap: onNext),
+          pageBtn(
+              label: _isJa ? '次へ →' : 'Next →',
+              disabled: isLast,
+              onTap: onNext),
         ],
       ),
     );
@@ -2796,6 +2802,27 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
     ('Paddle Rentals', 'パドルレンタル',   'paddlerentals'),
   ];
 
+  static const Map<String, String> _prefectureJa = {
+    'Arakawa': '荒川区', 'Adachi': '足立区', 'Aomori': '青森県', 'Akita': '秋田県',
+    'Iwate': '岩手県', 'Chiba': '千葉県', 'Chiyoda': '千代田区', 'Chofu': '調布市',
+    'Edogawa': '江戸川区', 'Ehime': '愛媛県', 'Fukui': '福井県', 'Fukuoka': '福岡県',
+    'Fukushima': '福島県', 'Gifu': '岐阜県', 'Gunma': '群馬県', 'Hachijojima': '八丈島',
+    'Hachioji': '八王子市', 'Higashikurume': '東久留米市', 'Hiroshima': '広島県',
+    'Hokkaido': '北海道', 'Hyogo': '兵庫県', 'Ibaraki': '茨城県', 'Inagi': '稲城市',
+    'Itabashi': '板橋区', 'Izu': '伊豆市', 'Kagawa': '香川県', 'Kanagawa': '神奈川県',
+    'Katsushika': '葛飾区', 'Kita': '北区', 'Kobe': '神戸市', 'Kochi': '高知県',
+    'Kokubunji': '国分寺市', 'Koto': '江東区', 'Kumamoto': '熊本県', 'Kyoto': '京都府',
+    'Mie': '三重県', 'Minato': '港区', 'Miyagi': '宮城県', 'Miyazaki': '宮崎県',
+    'Musashino': '武蔵野市', 'Nagano': '長野県', 'Nagasaki': '長崎県', 'Nago': '名護市',
+    'Nakano': '中野区', 'Nara': '奈良県', 'Nerima': '練馬区', 'Niigata': '新潟県',
+    'Okinawa': '沖縄県', 'Okayama': '岡山県', 'Ome': '青梅市', 'Osaka': '大阪府',
+    'Saitama': '埼玉県', 'Shiga': '滋賀県', 'Shimane': '島根県', 'Shizuoka': '静岡県',
+    'Shibuya': '渋谷区', 'Shinagawa': '品川区', 'Shinjuku': '新宿区', 'Suginami': '杉並区',
+    'Sumida': '墨田区', 'Taito': '台東区', 'Tokyo': '東京都', 'Tochigi': '栃木県',
+    'Tokushima': '徳島県', 'Toshima': '豊島区', 'Toyama': '富山県', 'Wakayama': '和歌山県',
+    'Yamagata': '山形県', 'Yamaguchi': '山口県', 'Yamanashi': '山梨県', 'Yamazaki': '山崎市',
+  };
+
   @override
   void initState() {
     super.initState();
@@ -2948,6 +2975,7 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
                         value: _safePref, hint: _t.allPrefectures, items: _prefectures,
                         onChanged: (v) => setState(() =>
                         _draft = _draft.copyWith(prefecture: v, city: null)),
+                        displayMapper: (v) => _isJa ? (_prefectureJa[v] ?? v) : v,
                       ),
                       const SizedBox(height: 20),
 
@@ -3105,6 +3133,7 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
     required String hint,
     required List<String> items,
     required void Function(String?) onChanged,
+    String Function(String)? displayMapper,
   }) {
     final uniqueItems = items.toSet().toList()..sort();
     final safeValue = (value != null && uniqueItems.contains(value)) ? value : null;
@@ -3142,7 +3171,7 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
             ),
             ...uniqueItems.map((item) => DropdownMenuItem<String>(
               value: item,
-              child: Text(item,
+              child: Text(displayMapper != null ? displayMapper(item) : item,
                   style: const TextStyle(
                       fontSize: 14, fontWeight: FontWeight.w500, color: Color(0xFF0D0D0D))),
             )),
@@ -3165,7 +3194,9 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
     } else if (selected.length == 1) {
       final only = selected.first;
       final match = options.where((o) => o.value == only).toList();
-      summary = match.isNotEmpty ? match.first.label : '1 selected';
+      summary = match.isNotEmpty
+          ? match.first.label
+          : (_isJa ? '1件選択中' : '1 selected');
     } else {
       summary = _isJa ? '${selected.length}件選択中' : '${selected.length} selected';
     }

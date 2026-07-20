@@ -495,7 +495,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final jp = (data['event_title_jp'] ?? '').toString().trim();
       if (jp.isNotEmpty) return jp;
     }
-    return (data['event_title'] ?? 'Untitled').toString();
+    return (data['event_title'] ??
+            (lang == kLangJa ? '無題' : 'Untitled'))
+        .toString();
   }
 
   String _groupName(Map<String, dynamic> data, String lang) {
@@ -503,7 +505,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final jp = (data['org_name_jp'] ?? '').toString().trim();
       if (jp.isNotEmpty) return jp;
     }
-    return (data['org_name'] ?? 'Unnamed Group').toString();
+    return (data['org_name'] ??
+            (lang == kLangJa ? '名称不明のグループ' : 'Unnamed Group'))
+        .toString();
   }
 
   String _groupDescription(Map<String, dynamic> data, String lang) {
@@ -520,7 +524,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       final jp = (data['loc_name_jp'] ?? '').toString().trim();
       if (jp.isNotEmpty) return jp;
     }
-    return (data['loc_name'] ?? 'Unnamed Court').toString();
+    return (data['loc_name'] ??
+            (lang == kLangJa ? '名称不明のコート' : 'Unnamed Court'))
+        .toString();
   }
 
   String _courtLocation(Map<String, dynamic> data, String lang) {

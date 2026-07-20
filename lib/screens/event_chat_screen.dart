@@ -35,6 +35,14 @@ const _L = {
     'notifSilenced':       'Notifications silenced',
     'notifEnabled':        'Notifications enabled',
     'unknown':             'Unknown',
+    'event':               'Event',
+    'micPermission':       'Microphone permission required',
+    'failedImage':         'Failed to send image',
+    'failedRecording':     'Failed to start recording',
+    'failedVoice':         'Failed to send voice',
+    'repliesDisabled':     'Announcements only — replies are disabled',
+    'recording':           'Recording',
+    'cancel':              'Cancel',
   },
   kLangJa: {
     'announcements':       'アナウンス',
@@ -50,6 +58,14 @@ const _L = {
     'notifSilenced':       '通知をミュートにしました',
     'notifEnabled':        '通知を有効にしました',
     'unknown':             '不明',
+    'event':               'イベント',
+    'micPermission':       'マイクの許可が必要です',
+    'failedImage':         '画像の送信に失敗しました',
+    'failedRecording':     '録音を開始できませんでした',
+    'failedVoice':         '音声の送信に失敗しました',
+    'repliesDisabled':     'アナウンスのみ — 返信は無効になっています',
+    'recording':           '録音中',
+    'cancel':              'キャンセル',
   },
 };
 
@@ -540,8 +556,9 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
       _scrollToBottom();
     } catch (e) {
       if (mounted) {
+        final lang = ref.read(appLangProvider);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to send image: $e')),
+          SnackBar(content: Text('${_t(lang, 'failedImage')}: $e')),
         );
       }
     } finally {
@@ -564,8 +581,9 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
     try {
       if (!await _recorder.hasPermission()) {
         if (mounted) {
+          final lang = ref.read(appLangProvider);
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Microphone permission required')),
+            SnackBar(content: Text(_t(lang, 'micPermission'))),
           );
         }
         return;
@@ -588,8 +606,9 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
       setState(() => _isRecording = true);
     } catch (e) {
       if (mounted) {
+        final lang = ref.read(appLangProvider);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to start recording: $e')),
+          SnackBar(content: Text('${_t(lang, 'failedRecording')}: $e')),
         );
       }
     }
@@ -702,8 +721,9 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
       _scrollToBottom();
     } catch (e) {
       if (mounted) {
+        final lang = ref.read(appLangProvider);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to send voice: $e')),
+          SnackBar(content: Text('${_t(lang, 'failedVoice')}: $e')),
         );
       }
     } finally {
@@ -811,8 +831,8 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
       channelName = lang == kLangJa
           ? (widget.eventData['event_title_jp'] ??
           widget.eventData['event_title'] ??
-          'Event')
-          : (widget.eventData['event_title'] ?? 'Event');
+          _t(lang, 'event'))
+          : (widget.eventData['event_title'] ?? _t(lang, 'event'));
     }
     channelName = channelName.toString();
 
@@ -1510,7 +1530,7 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
             const SizedBox(width: 8),
             Flexible(
               child: Text(
-                'Announcements only — replies are disabled',
+                _t(lang, 'repliesDisabled'),
                 style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -1622,7 +1642,7 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            'Recording  ${_fmtDur(_recordDuration)}',
+                            '${_t(lang, 'recording')}  ${_fmtDur(_recordDuration)}',
                             style: const TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
@@ -1631,8 +1651,8 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
                           const Spacer(),
                           GestureDetector(
                             onTap: _cancelRecording,
-                            child: const Text('Cancel',
-                                style: TextStyle(
+                            child: Text(_t(lang, 'cancel'),
+                                style: const TextStyle(
                                     fontSize: 13,
                                     fontWeight: FontWeight.w700,
                                     color: Color(0xFFFF3B30))),
