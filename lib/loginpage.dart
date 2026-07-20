@@ -13,12 +13,10 @@ import 'package:pikuru/providers/app_language_provider.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:pikuru/services/notification_service.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 import 'package:crypto/crypto.dart';
-import 'package:app_links/app_links.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:pikuru/screens/apple_sign_in_webview_screen.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Localised strings — mirrors the web app's T map in login/page.tsx
@@ -81,6 +79,19 @@ String _authError(String lang, String code) {
       return _t(lang, 'errTooMany');
     default:
       return _t(lang, 'errDefault');
+  }
+}
+
+/// Accept-Language header sent when opening Apple's sign-in page inside
+/// AppleSignInWebViewScreen (Android only), so the page's language follows
+/// Pikuru's own language toggle rather than the device's system language.
+String _appleAcceptLanguage(String lang) {
+  switch (lang) {
+    case kLangJa:
+      return 'ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7';
+    case kLangEn:
+    default:
+      return 'en-US,en;q=0.9';
   }
 }
 
@@ -469,12 +480,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           MaterialPageRoute(builder: (_) => const MainNavigation()),
         );
       } else {
-        // ── Android: manual OAuth flow via app_links + url_launcher ─────────
-        // The sign_in_with_apple plugin's signinwithapple:// callback is
-        // not reliably registered on Android. Instead we:
+        // ── Android: in-app WebView OAuth flow ───────────────────────────────
+        // Android has no native Apple ID sheet, so we drive the same
+        // appleid.apple.com/auth/authorize page used on the web, but inside
+        // a WebView we control (rather than an external Chrome Custom Tab).
+        // That lets us set an `Accept-Language` header matching Pikuru's own
+        // language toggle, so Apple's page renders in the same language —
+        // previously it just followed the device's system language.
         //  1. Build the Apple OAuth URL ourselves
-        //  2. Open it in the external browser via url_launcher
-        //  3. Listen for pikuru://apple-callback?id_token=... via app_links
+        //  2. Open it in AppleSignInWebViewScreen with a language-matched header
+        //  3. That screen intercepts the pikuru://apple-callback redirect and
+        //     returns it as a Uri
         //  4. Complete Firebase sign-in with the returned id_token + rawNonce
 
         final appleAuthUrl = Uri.https('appleid.apple.com', '/auth/authorize', {
@@ -486,33 +502,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           'nonce': hashedNonce,
         });
 
-        final completer = Completer<Uri>();
-        final appLinks = AppLinks();
-        late StreamSubscription<Uri> sub;
-        sub = appLinks.uriLinkStream.listen((uri) {
-          if (uri.scheme == 'pikuru' && uri.host == 'apple-callback') {
-            sub.cancel();
-            if (!completer.isCompleted) completer.complete(uri);
-          }
-        });
-
-        final launched = await launchUrl(
-          appleAuthUrl,
-          mode: LaunchMode.externalApplication,
+        final callbackUri = await Navigator.push<Uri>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => AppleSignInWebViewScreen(
+              authUrl: appleAuthUrl,
+              acceptLanguage: _appleAcceptLanguage(lang),
+            ),
+          ),
         );
-        if (!launched) {
-          sub.cancel();
-          throw Exception('Could not open Apple sign-in page');
+
+        if (callbackUri == null) {
+          // User closed the WebView before completing sign-in.
+          return;
         }
-
-        // Wait up to 5 minutes for the user to complete Apple sign-in
-        final callbackUri = await completer.future.timeout(
-          const Duration(minutes: 5),
-          onTimeout: () {
-            sub.cancel();
-            throw Exception('Apple sign-in timed out');
-          },
-        );
 
         final idToken = callbackUri.queryParameters['id_token'];
         if (idToken == null || idToken.isEmpty) {
