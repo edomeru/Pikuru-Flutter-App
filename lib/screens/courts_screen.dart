@@ -2783,6 +2783,9 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
   late CourtFilter _draft;
   late final List<String> _prefectures;
   late final Map<String, List<String>> _citiesByPref;
+  late final Map<String, String> _cityJa;
+  late final Map<String, String> _prefectureJaReverse;
+  late final Map<String, String> _cityJaReverse;
 
   static const _setupTypes = [
     ('Public Access Courts',             'Public Access Courts',             '一般開放コート'),
@@ -2803,23 +2806,23 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
   ];
 
   static const Map<String, String> _prefectureJa = {
-    'Arakawa': '荒川区', 'Adachi': '足立区', 'Aomori': '青森県', 'Akita': '秋田県',
-    'Iwate': '岩手県', 'Chiba': '千葉県', 'Chiyoda': '千代田区', 'Chofu': '調布市',
+    'Aichi': '愛知県', 'Arakawa': '荒川区', 'Adachi': '足立区', 'Aomori': '青森県', 'Akita': '秋田県',
+    'Iwate': '岩手県', 'Ishikawa': '石川県', 'Chiba': '千葉県', 'Chiyoda': '千代田区', 'Chofu': '調布市',
     'Edogawa': '江戸川区', 'Ehime': '愛媛県', 'Fukui': '福井県', 'Fukuoka': '福岡県',
     'Fukushima': '福島県', 'Gifu': '岐阜県', 'Gunma': '群馬県', 'Hachijojima': '八丈島',
     'Hachioji': '八王子市', 'Higashikurume': '東久留米市', 'Hiroshima': '広島県',
     'Hokkaido': '北海道', 'Hyogo': '兵庫県', 'Ibaraki': '茨城県', 'Inagi': '稲城市',
-    'Itabashi': '板橋区', 'Izu': '伊豆市', 'Kagawa': '香川県', 'Kanagawa': '神奈川県',
+    'Itabashi': '板橋区', 'Izu': '伊豆市', 'Kagawa': '香川県', 'Kagoshima': '鹿児島県', 'Kanagawa': '神奈川県',
     'Katsushika': '葛飾区', 'Kita': '北区', 'Kobe': '神戸市', 'Kochi': '高知県',
     'Kokubunji': '国分寺市', 'Koto': '江東区', 'Kumamoto': '熊本県', 'Kyoto': '京都府',
     'Mie': '三重県', 'Minato': '港区', 'Miyagi': '宮城県', 'Miyazaki': '宮崎県',
     'Musashino': '武蔵野市', 'Nagano': '長野県', 'Nagasaki': '長崎県', 'Nago': '名護市',
     'Nakano': '中野区', 'Nara': '奈良県', 'Nerima': '練馬区', 'Niigata': '新潟県',
-    'Okinawa': '沖縄県', 'Okayama': '岡山県', 'Ome': '青梅市', 'Osaka': '大阪府',
-    'Saitama': '埼玉県', 'Shiga': '滋賀県', 'Shimane': '島根県', 'Shizuoka': '静岡県',
+    'Oita': '大分県', 'Okinawa': '沖縄県', 'Okayama': '岡山県', 'Ome': '青梅市', 'Osaka': '大阪府',
+    'Saga': '佐賀県', 'Saitama': '埼玉県', 'Shiga': '滋賀県', 'Shimane': '島根県', 'Shizuoka': '静岡県',
     'Shibuya': '渋谷区', 'Shinagawa': '品川区', 'Shinjuku': '新宿区', 'Suginami': '杉並区',
     'Sumida': '墨田区', 'Taito': '台東区', 'Tokyo': '東京都', 'Tochigi': '栃木県',
-    'Tokushima': '徳島県', 'Toshima': '豊島区', 'Toyama': '富山県', 'Wakayama': '和歌山県',
+    'Tokushima': '徳島県', 'Toshima': '豊島区', 'Tottori': '鳥取県', 'Toyama': '富山県', 'Wakayama': '和歌山県',
     'Yamagata': '山形県', 'Yamaguchi': '山口県', 'Yamanashi': '山梨県', 'Yamazaki': '山崎市',
   };
 
@@ -2833,24 +2836,39 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
   void _buildLookups() {
     final prefectures  = <String>{};
     final citiesByPref = <String, Set<String>>{};
+    final prefJa       = <String, String>{};
+    final cityJa       = <String, String>{};
     for (final loc in widget.allLocations) {
       final country = (loc['loc_country'] ?? '').toString().trim();
       if (country != 'Japan') continue;
       final prefEn  = (loc['loc_prefecture_en'] ?? '').toString().trim();
-      final pref    = (loc['loc_prefecture']    ?? '').toString().trim();
+      final pref    = (loc['loc_prefecture_jp'] ?? '').toString().trim();
       final prefVal = prefEn.isNotEmpty ? prefEn : pref;
       final cityEn  = (loc['loc_city_en'] ?? '').toString().trim();
-      final city    = (loc['loc_city']    ?? '').toString().trim();
+      final city    = (loc['loc_city_jp'] ?? '').toString().trim();
       final cityVal = cityEn.isNotEmpty ? cityEn : city;
       if (prefVal.isNotEmpty) {
         prefectures.add(prefVal);
+        // Store mapping from English prefecture to Japanese if both available
+        if (prefEn.isNotEmpty && pref.isNotEmpty) {
+          prefJa[prefEn] = pref;
+        }
         if (cityVal.isNotEmpty) {
           citiesByPref.putIfAbsent(prefVal, () => <String>{}).add(cityVal);
+          // Store mapping from English city name to Japanese if both available
+          if (cityEn.isNotEmpty && city.isNotEmpty) {
+            cityJa[cityEn] = city;
+          }
         }
       }
     }
     _prefectures  = prefectures.toList()..sort();
     _citiesByPref = citiesByPref.map((k, v) => MapEntry(k, v.toList()..sort()));
+    // Merge hardcoded prefecture map with dynamic Firestore map
+    final mergedPrefJa = {..._prefectureJa, ...prefJa};
+    _prefectureJaReverse = {for (var e in mergedPrefJa.entries) e.value: e.key};
+    _cityJa       = cityJa;
+    _cityJaReverse = {for (var e in cityJa.entries) e.value: e.key};
   }
 
   List<String> get _currentCities =>
@@ -2975,7 +2993,9 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
                         value: _safePref, hint: _t.allPrefectures, items: _prefectures,
                         onChanged: (v) => setState(() =>
                         _draft = _draft.copyWith(prefecture: v, city: null)),
-                        displayMapper: (v) => _isJa ? (_prefectureJa[v] ?? v) : v,
+                        displayMapper: (v) => _isJa
+                          ? (_prefectureJa[v] ?? _prefectureJaReverse[v] ?? v)
+                          : (_prefectureJaReverse[v] ?? v),
                       ),
                       const SizedBox(height: 20),
 
@@ -2985,6 +3005,9 @@ class _CourtFilterModalState extends State<_CourtFilterModal> {
                         _buildDropdown(
                           value: _safeCity, hint: _t.allCities, items: _currentCities,
                           onChanged: (v) => setState(() => _draft = _draft.copyWith(city: v)),
+                          displayMapper: (v) => _isJa
+                            ? (_cityJa[v] ?? _cityJaReverse[v] ?? v)
+                            : (_cityJaReverse[v] ?? v),
                         ),
                         const SizedBox(height: 20),
                       ],
