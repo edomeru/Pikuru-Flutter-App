@@ -428,6 +428,17 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
       }
       await FirebaseFirestore.instance
           .collection('event_registrations').doc(_regDocId!).delete();
+
+      // Remove from the event chat so they stop receiving messages/notifications.
+      final me = FirebaseAuth.instance.currentUser;
+      if (me != null && eventId.isNotEmpty) {
+        try {
+          await FirebaseFirestore.instance
+              .collection('group_chats').doc('event_$eventId')
+              .collection('participants').doc(me.uid).delete();
+        } catch (_) {}
+      }
+
       setState(() { _regStatus = _RegStatus.none; _regDocId = null; });
     } catch (_) {} finally {
       if (mounted) setState(() => _regLoading = false);
@@ -1151,6 +1162,14 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
           icon: Icons.chat_bubble_outline_rounded,
           loading: false,
           onTap: _openEventChat,
+        ),
+        const SizedBox(height: 10),
+        _OutlineButton(
+          label: s.cancelReg,
+          color: _red,
+          icon: Icons.cancel_outlined,
+          loading: _regLoading,
+          onTap: _showCancelConfirm,
         ),
       ]);
     }
