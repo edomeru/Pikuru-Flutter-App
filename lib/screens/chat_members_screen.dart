@@ -130,6 +130,51 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
   final Map<String, Map<String, String>> _profileCache = {};
   final Map<String, StreamSubscription>  _profileSubs  = {};
 
+  // For event chats: the set of uids allowed to be members (approved registrants
+  // + creator). null = no restriction (regular group chat, not yet resolved).
+  Set<String>? _allowedIds;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveAllowedMembers();
+  }
+
+  // Resolve event-chat membership: approved registrants + creator. Leaves
+  // _allowedIds null for regular group chats (no filtering).
+  Future<void> _resolveAllowedMembers() async {
+    try {
+      final chatSnap = await FirebaseFirestore.instance
+          .collection('group_chats').doc(widget.chatId).get();
+      final data = chatSnap.data() ?? {};
+      final isEvent = (data['type'] ?? '') == 'event' ||
+          widget.chatId.startsWith('event_');
+      if (!isEvent) return;
+      final createdBy = (data['created_by'] ?? '').toString();
+      final eventId = (data['event_id'] ??
+              (widget.chatId.startsWith('event_')
+                  ? widget.chatId.substring('event_'.length)
+                  : ''))
+          .toString();
+      final allowed = <String>{};
+      if (createdBy.isNotEmpty) allowed.add(createdBy);
+      if (eventId.isNotEmpty) {
+        final regSnap = await FirebaseFirestore.instance
+            .collection('event_registrations')
+            .where('event_id', isEqualTo: eventId)
+            .where('status', isEqualTo: 'approved')
+            .get();
+        for (final r in regSnap.docs) {
+          final uid = (r.data()['user_id'] ?? '').toString();
+          if (uid.isNotEmpty) allowed.add(uid);
+        }
+      }
+      if (mounted) setState(() => _allowedIds = allowed);
+    } catch (e) {
+      debugPrint('[ChatMembersScreen] resolve allowed members failed: $e');
+    }
+  }
+
   @override
   void dispose() {
     for (final sub in _profileSubs.values) sub.cancel();
@@ -229,10 +274,14 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
             ),
           ),
           const SizedBox(width: 16),
-          StreamBuilder<int>(
-            stream: ChatService.memberCountStream(widget.chatId),
+          StreamBuilder<QuerySnapshot>(
+            stream: ChatService.membersStream(widget.chatId),
             builder: (context, snapshot) {
-              final count = snapshot.data ?? 0;
+              // For event chats, count only approved registrants + creator.
+              final allDocs = snapshot.data?.docs ?? [];
+              final count = _allowedIds != null
+                  ? allDocs.where((d) => _allowedIds!.contains(d.id)).length
+                  : allDocs.length;
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -334,6 +383,12 @@ class _ChatMembersScreenState extends ConsumerState<ChatMembersScreen> {
         }
 
         var docs = snap.data!.docs;
+
+        // For event chats, restrict to approved registrants + creator (drops
+        // stale participant docs from users who are no longer / never were members).
+        if (_allowedIds != null) {
+          docs = docs.where((d) => _allowedIds!.contains(d.id)).toList();
+        }
 
         // ── Start a real-time registration subscription for every member ───
         for (final doc in docs) {

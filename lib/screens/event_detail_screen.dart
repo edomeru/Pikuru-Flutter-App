@@ -9,6 +9,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:pikuru/modal/share_event_modal.dart';
+import 'package:pikuru/screens/event_chat_screen.dart';
 import 'package:intl/intl.dart';
 
 const _bg        = Color(0xFFF7F8FA);
@@ -123,6 +124,7 @@ class _S {
   String get cancelReg          => isJa ? '登録をキャンセル'          : 'Cancel Registration';
   String get alreadyRegistered  => isJa ? 'このイベントに登録済みです。' : 'You are registered for this event.';
   String get regApprovedMsg     => isJa ? '登録が承認されました！'     : 'Your registration has been approved!';
+  String get openChat           => isJa ? 'チャットを開く'            : 'Open Chat';
   String get regRejectedMsg     => isJa ? '登録は承認されませんでした。': 'Your registration was not approved.';
   String get regWaitlistMsg     => isJa ? 'ウェイティングリストに登録しました。' : "You're on the waitlist. We'll notify you if a spot opens.";
   String get regPending         => isJa ? '登録中（承認待ち）'         : 'Registration Pending';
@@ -430,6 +432,35 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
     } catch (_) {} finally {
       if (mounted) setState(() => _regLoading = false);
     }
+  }
+
+  // Ensure the user is a member of the event chat, then open it.
+  Future<void> _openEventChat() async {
+    final me = FirebaseAuth.instance.currentUser;
+    if (me == null || eventId.isEmpty) return;
+    final chatId = 'event_$eventId';
+    try {
+      // Idempotent membership grant — makes the channel appear in their chat list.
+      await FirebaseFirestore.instance
+          .collection('group_chats').doc(chatId)
+          .collection('participants').doc(me.uid)
+          .set({
+            'last_read_at': FieldValue.serverTimestamp(),
+            'joined_at': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('[EventDetail] _openEventChat join error: $e');
+    }
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EventChatScreen(
+          chatId: chatId,
+          eventData: {...widget.event, '_doc_id': eventId},
+        ),
+      ),
+    );
   }
 
   String _formatDate(dynamic raw) {
@@ -1111,7 +1142,17 @@ class _EventDetailScreenState extends ConsumerState<EventDetailScreen> {
     // "Registration Approved / Your registration has been approved!" and
     // NO cancel button (approved registrations cannot be self-cancelled).
     if (_regStatus == _RegStatus.approved) {
-      return _ApprovedBanner(s: s);
+      return Column(children: [
+        _ApprovedBanner(s: s),
+        const SizedBox(height: 12),
+        _PrimaryButton(
+          label: s.openChat,
+          color: _green,
+          icon: Icons.chat_bubble_outline_rounded,
+          loading: false,
+          onTap: _openEventChat,
+        ),
+      ]);
     }
 
     // ── 5b/c. Pending / Rejected / Waitlist ───────────────────────────────────

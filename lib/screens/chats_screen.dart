@@ -489,19 +489,45 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
           final List<_ChatItem> items = [];
           final List<String> eventIds = [];
 
+          // Authoritative event membership = approved registration (or being the
+          // creator). Fetch this user's approved event_ids once, then gate
+          // visibility so stale participant docs no longer expose the channel.
+          final Set<String> approvedEventIds = {};
+          try {
+            final regSnap = await FirebaseFirestore.instance
+                .collection('event_registrations')
+                .where('user_id', isEqualTo: me.uid)
+                .where('status', isEqualTo: 'approved')
+                .get();
+            for (final r in regSnap.docs) {
+              final eid = (r.data()['event_id'] ?? '').toString();
+              if (eid.isNotEmpty) approvedEventIds.add(eid);
+            }
+          } catch (e) {
+            debugPrint('[eventChannels] approved regs fetch failed: $e');
+          }
+
           for (final doc in snap.docs) {
             final data = doc.data();
 
             // Hide cleared channels (mirrors web messages_cleared check)
             if (data['messages_cleared'] == true) continue;
 
-            final lastMsgAt = (data['last_message_at'] as Timestamp?)?.toDate();
+            final eventId = (data['event_id'] ?? doc.id).toString();
+
+            // Only show the event channel to the creator/organizer or approved
+            // registrants.
+            final isCreator = (data['created_by'] ?? '') == me.uid;
+            if (!isCreator && !approvedEventIds.contains(eventId)) continue;
+
             final participantDoc = await FirebaseFirestore.instance
                 .collection('group_chats')
                 .doc(doc.id)
                 .collection('participants')
                 .doc(me.uid)
                 .get();
+
+            final lastMsgAt = (data['last_message_at'] as Timestamp?)?.toDate();
             final lastReadAt =
                 (participantDoc.data()?['last_read_at'] as Timestamp?)
                     ?.toDate();
@@ -524,7 +550,6 @@ class _ChatsScreenState extends ConsumerState<ChatsScreen> {
                 : _t(lang, 'eventChannel');
             final imgUrl = (data['image'] ?? '').toString();
 
-            final eventId = (data['event_id'] ?? doc.id).toString();
             if (eventId.isNotEmpty) eventIds.add(eventId);
 
             items.add(

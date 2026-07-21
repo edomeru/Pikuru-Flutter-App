@@ -1107,6 +1107,9 @@ class _RegistrantsSheetState extends State<_RegistrantsSheet> {
     setState(() => _updatingId = regId);
     try {
       final uid = FirebaseAuth.instance.currentUser?.uid;
+      final reg = _regs.firstWhere((r) => r['_id'] == regId,
+          orElse: () => <String, dynamic>{});
+      final prevStatus = (reg['status'] ?? 'pending').toString();
       await FirebaseFirestore.instance
           .collection('event_registrations')
           .doc(regId)
@@ -1115,6 +1118,33 @@ class _RegistrantsSheetState extends State<_RegistrantsSheet> {
         'updated_at': FieldValue.serverTimestamp(),
         if (uid != null) 'updated_by': uid,
       });
+
+      // ── Event chat membership ──────────────────────────────────────────
+      // On approval, add the user to the event chat's participants (grants
+      // access to the channel + announcements). On rejection, remove them.
+      final regUserId = (reg['user_id'] ?? '').toString();
+      if (widget.eventId.isNotEmpty && regUserId.isNotEmpty) {
+        final chatId = 'event_${widget.eventId}';
+        try {
+          if (status == 'approved') {
+            await FirebaseFirestore.instance
+                .collection('group_chats').doc(chatId)
+                .collection('participants').doc(regUserId)
+                .set({
+                  'last_read_at': FieldValue.serverTimestamp(),
+                  'joined_at': FieldValue.serverTimestamp(),
+                }, SetOptions(merge: true));
+          } else if (prevStatus == 'approved') {
+            await FirebaseFirestore.instance
+                .collection('group_chats').doc(chatId)
+                .collection('participants').doc(regUserId)
+                .delete();
+          }
+        } catch (e) {
+          debugPrint('[Organizer] event chat membership update failed: $e');
+        }
+      }
+
       setState(() {
         final i = _regs.indexWhere((r) => r['_id'] == regId);
         if (i != -1) _regs[i] = {..._regs[i], 'status': status};

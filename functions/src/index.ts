@@ -194,22 +194,69 @@ export const onGroupMessage = onDocumentCreated(
     const notifTitle: string =
       ((message.notification_title ?? message.event_name ?? chatMeta.notifTitle) || chatMeta.name).toString().trim();
 
+    // ── Resolve recipients ────────────────────────────────────────────────
+    // The participants subcollection holds per-user silenced state. Membership,
+    // however, is defined differently per chat type:
+    //   • EVENT chats → approved event_registrations + the creator/organizer.
+    //     (Deliberately NOT the raw participants list, so stale participant docs
+    //      from non-registered users can never receive notifications.)
+    //   • GROUP chats → the participants subcollection.
     const participantsSnap = await admin.firestore()
       .collection("group_chats").doc(chatId)
       .collection("participants").get();
 
+    // Map of uid -> isSilenced (from participant docs).
+    const silencedByUid: Record<string, boolean> = {};
+    for (const p of participantsSnap.docs) {
+      silencedByUid[p.id] = p.data()?.is_silenced === true;
+    }
+
+    const recipientIds = new Set<string>();
+
+    if (chatMeta.chatType === "event" && chatId.startsWith("event_")) {
+      const eventId = chatId.substring("event_".length);
+      // Approved registrants
+      try {
+        const regsSnap = await admin.firestore()
+          .collection("event_registrations")
+          .where("event_id", "==", eventId)
+          .where("status", "==", "approved")
+          .get();
+        for (const r of regsSnap.docs) {
+          const uid = (r.data()?.user_id ?? "").toString();
+          if (uid) recipientIds.add(uid);
+        }
+        console.log(`[FCM] Event ${eventId}: ${regsSnap.size} approved registrants`);
+      } catch (e) {
+        console.error(`[FCM] Failed to fetch approved registrations for eventId=${eventId}:`, e);
+      }
+      // Creator / organizer of the chat
+      try {
+        const chatSnap = await admin.firestore().collection("group_chats").doc(chatId).get();
+        const createdBy = (chatSnap.data()?.created_by ?? "").toString();
+        if (createdBy) recipientIds.add(createdBy);
+      } catch (e) {
+        console.error(`[FCM] Failed to fetch chat creator for chatId=${chatId}:`, e);
+      }
+    } else {
+      // Group chat: participants are the members.
+      for (const p of participantsSnap.docs) {
+        recipientIds.add(p.id);
+      }
+    }
+    console.log(`[FCM] ${recipientIds.size} total recipients for chatId=${chatId}`);
+
     const normalTokens: string[] = [];
     const silentTokens: string[] = [];
 
-    for (const p of participantsSnap.docs) {
-      if (p.id === senderId) continue;
+    for (const uid of recipientIds) {
+      if (uid === senderId) continue;
 
-      const token = await getFcmToken(p.id);
+      const token = await getFcmToken(uid);
       if (!token) continue;
 
-      const isSilenced = p.data()?.is_silenced === true;
-      if (isSilenced) {
-        console.log(`[FCM] uid=${p.id} silenced — queuing silent notification`);
+      if (silencedByUid[uid] === true) {
+        console.log(`[FCM] uid=${uid} silenced — queuing silent notification`);
         silentTokens.push(token);
       } else {
         normalTokens.push(token);

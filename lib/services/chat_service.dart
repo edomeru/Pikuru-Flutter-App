@@ -144,12 +144,14 @@ class ChatService {
   }
 
   // ── Stream participants for ChatMembersScreen ─────────────────────────
+  // NOTE: do NOT orderBy('joined_at') — Firestore excludes docs missing that
+  // field, which would hide members added via approval / "Open Chat".
+  // The screen sorts client-side (creator first), so ordering here isn't needed.
   static Stream<QuerySnapshot> membersStream(String chatId) {
     return _db
         .collection('group_chats')
         .doc(chatId)
         .collection('participants')
-        .orderBy('joined_at')
         .snapshots();
   }
 

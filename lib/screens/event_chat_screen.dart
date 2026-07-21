@@ -43,6 +43,7 @@ const _L = {
     'repliesDisabled':     'Announcements only — replies are disabled',
     'recording':           'Recording',
     'cancel':              'Cancel',
+    'notMember':           'You must be registered for this event to access its chat.',
   },
   kLangJa: {
     'announcements':       'アナウンス',
@@ -66,6 +67,7 @@ const _L = {
     'repliesDisabled':     'アナウンスのみ — 返信は無効になっています',
     'recording':           '録音中',
     'cancel':              'キャンセル',
+    'notMember':           'このイベントに登録している必要があります。',
   },
 };
 
@@ -227,6 +229,11 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
   // ── Firestore subscriptions ─────────────────────────────────────────────
   StreamSubscription? _chatDocSub;
 
+  // True member set for event chats (approved registrants + creator). Used to
+  // show an accurate member count instead of raw participant docs. null until
+  // resolved / for non-event chats.
+  Set<String>? _allowedMemberIds;
+
   @override
   void initState() {
     super.initState();
@@ -275,6 +282,62 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
   // ── Init ──────────────────────────────────────────────────────────────
   Future<void> _init() async {
     if (_me == null) return;
+
+    // ── Access guard ────────────────────────────────────────────────────
+    // Only the creator/organizer or approved registrants may access an event
+    // chat. Deny everyone else (and remove any stale participant doc) so a
+    // non-member can't view the channel via a stale list entry or deep link.
+    String _eventId = (widget.eventData['event_id'] ??
+            widget.eventData['_doc_id'] ??
+            widget.eventData['id'] ??
+            '')
+        .toString()
+        .trim();
+    if (_eventId.isEmpty && widget.chatId.startsWith('event_')) {
+      _eventId = widget.chatId.substring('event_'.length);
+    }
+    final allowed = <String>{};
+    bool resolved = false;
+    try {
+      final chatSnap = await FirebaseFirestore.instance
+          .collection('group_chats').doc(widget.chatId).get();
+      final createdBy = (chatSnap.data()?['created_by'] ?? '').toString();
+      if (createdBy.isNotEmpty) allowed.add(createdBy);
+      if (_eventId.isNotEmpty) {
+        final regSnap = await FirebaseFirestore.instance
+            .collection('event_registrations')
+            .where('event_id', isEqualTo: _eventId)
+            .where('status', isEqualTo: 'approved')
+            .get();
+        for (final r in regSnap.docs) {
+          final uid = (r.data()['user_id'] ?? '').toString();
+          if (uid.isNotEmpty) allowed.add(uid);
+        }
+      }
+      resolved = true;
+    } catch (e) {
+      debugPrint('[EventChatScreen] access check failed: $e');
+    }
+    // Only enforce denial if membership was successfully resolved (fail-open on
+    // transient errors; Firestore rules are the hard backstop).
+    if (resolved) {
+      _allowedMemberIds = allowed;
+      if (!allowed.contains(_me!.uid)) {
+        try {
+          await FirebaseFirestore.instance
+              .collection('group_chats').doc(widget.chatId)
+              .collection('participants').doc(_me!.uid).delete();
+        } catch (_) {}
+        if (mounted) {
+          final lang = ref.read(appLangProvider);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(_t(lang, 'notMember'))),
+          );
+          Navigator.of(context).pop();
+        }
+        return;
+      }
+    }
 
     // Tag this chat doc so push-notification fan-out can route taps back here.
     // Safe to call repeatedly; merge:true means we never clobber existing fields.
@@ -946,7 +1009,16 @@ class _EventChatScreenState extends ConsumerState<EventChatScreen> {
                                   .collection('participants')
                                   .snapshots(),
                               builder: (_, snap) {
-                                final count = snap.data?.size ?? 0;
+                                // For event chats, count only true members
+                                // (approved registrants + creator), not stale
+                                // participant docs.
+                                final docs = snap.data?.docs ?? [];
+                                final count = _allowedMemberIds != null
+                                    ? docs
+                                        .where((d) =>
+                                            _allowedMemberIds!.contains(d.id))
+                                        .length
+                                    : docs.length;
                                 return Row(children: [
                                   Container(
                                     width: 6, height: 6,
