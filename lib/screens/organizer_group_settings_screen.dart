@@ -58,10 +58,18 @@ const _L = {
     'title':           'Group Settings',
     'sub':             'Edit your group details',
     'coverImage':      'Cover Image',
-    'groupNameEn':     'Group Name (EN)',
-    'groupNameJp':     'Group Name (JP)',
-    'descEn':          'Description (EN)',
-    'descJp':          'Description (JP)',
+    'groupNameEn':     'Group Name',
+    'groupNameJp':     'Group Name',
+    'descEn':          'Description',
+    'descJp':          'Description',
+    'locContact':      'Location & Contact',
+    'venue':           'Venue / Location',
+    'city':            'City',
+    'prefecture':      'Prefecture',
+    'country':         'Country',
+    'contactEmail':    'Contact Email',
+    'website':         'Website',
+    'social':          'Social',
     'groupMembers':    'Group Members',
     'manageAll':       'Manage All Members',
     'eventsByGroup':   'Events by this Group',
@@ -124,10 +132,18 @@ const _L = {
     'title':           'グループ設定',
     'sub':             'グループ情報を編集',
     'coverImage':      'カバー画像',
-    'groupNameEn':     'グループ名（英語）',
-    'groupNameJp':     'グループ名（日本語）',
-    'descEn':          '説明（英語）',
-    'descJp':          '説明（日本語）',
+    'groupNameEn':     'グループ名',
+    'groupNameJp':     'グループ名',
+    'descEn':          '説明',
+    'descJp':          '説明',
+    'locContact':      '所在地・連絡先',
+    'venue':           '会場／所在地',
+    'city':            '市区町村',
+    'prefecture':      '都道府県',
+    'country':         '国',
+    'contactEmail':    '連絡先メール',
+    'website':         'ウェブサイト',
+    'social':          'ソーシャル',
     'groupMembers':    'グループメンバー',
     'manageAll':       'メンバーを管理',
     'eventsByGroup':   'このグループのイベント',
@@ -896,9 +912,27 @@ class _OrganizerGroupSettingsScreenState extends ConsumerState<OrganizerGroupSet
   late final TextEditingController _nameJpCtrl;
   late final TextEditingController _descEnCtrl;
   late final TextEditingController _descJpCtrl;
+  // Location & Contact
+  late final TextEditingController _venueCtrl;
+  late final TextEditingController _cityCtrl;
+  late final TextEditingController _prefCtrl;
+  late final TextEditingController _countryCtrl;
+  late final TextEditingController _emailCtrl;
+  late final TextEditingController _websiteCtrl;
+  late final TextEditingController _socialCtrl;
 
   bool _saving = false;
   bool _dirty  = false;
+
+  // Toggle-chip boolean fields (age groups / skill levels / meeting days & times)
+  static const List<String> _flagKeys = [
+    'org_age_juniors', 'org_age_students', 'org_age_adult', 'org_age_seniors',
+    'org_skill_beginner', 'org_skill_intermediate', 'org_skill_advance',
+    'org_meetup_mon', 'org_meetup_tues', 'org_meetup_weds', 'org_meetup_thurs',
+    'org_meetup_fri', 'org_meetup_sat', 'org_meetup_sun',
+    'org_meetup_time_mornings', 'org_meetup_time_afternoons', 'org_meetup_time_evenings',
+  ];
+  final Map<String, bool> _flags = {};
 
   File? _pickedImageFile;
   bool  _uploadingImage = false;
@@ -926,8 +960,19 @@ class _OrganizerGroupSettingsScreenState extends ConsumerState<OrganizerGroupSet
     _nameJpCtrl = TextEditingController(text: (widget.initialData['org_name_jp'] ?? '').toString());
     _descEnCtrl = TextEditingController(text: (widget.initialData['org_description'] ?? '').toString());
     _descJpCtrl = TextEditingController(text: (widget.initialData['org_description_jp'] ?? '').toString());
-    for (final ctrl in [_nameEnCtrl, _nameJpCtrl, _descEnCtrl, _descJpCtrl]) {
+    _venueCtrl   = TextEditingController(text: (widget.initialData['org_venue_loc_name'] ?? '').toString());
+    _cityCtrl    = TextEditingController(text: (widget.initialData['org_city']            ?? '').toString());
+    _prefCtrl    = TextEditingController(text: (widget.initialData['org_prefecture']      ?? '').toString());
+    _countryCtrl = TextEditingController(text: (widget.initialData['org_country']         ?? '').toString());
+    _emailCtrl   = TextEditingController(text: (widget.initialData['org_contact_email']   ?? '').toString());
+    _websiteCtrl = TextEditingController(text: (widget.initialData['org_website']         ?? '').toString());
+    _socialCtrl  = TextEditingController(text: (widget.initialData['org_social']          ?? '').toString());
+    for (final ctrl in [_nameEnCtrl, _nameJpCtrl, _descEnCtrl, _descJpCtrl,
+      _venueCtrl, _cityCtrl, _prefCtrl, _countryCtrl, _emailCtrl, _websiteCtrl, _socialCtrl]) {
       ctrl.addListener(() => setState(() => _dirty = true));
+    }
+    for (final k in _flagKeys) {
+      _flags[k] = _truthyFlag(widget.initialData[k]);
     }
     _subscribeGroupDoc();
     _loadCreatorProfile();
@@ -940,6 +985,8 @@ class _OrganizerGroupSettingsScreenState extends ConsumerState<OrganizerGroupSet
     _groupSub?.cancel();
     _nameEnCtrl.dispose(); _nameJpCtrl.dispose();
     _descEnCtrl.dispose(); _descJpCtrl.dispose();
+    _venueCtrl.dispose(); _cityCtrl.dispose(); _prefCtrl.dispose();
+    _countryCtrl.dispose(); _emailCtrl.dispose(); _websiteCtrl.dispose(); _socialCtrl.dispose();
     super.dispose();
   }
 
@@ -957,7 +1004,8 @@ class _OrganizerGroupSettingsScreenState extends ConsumerState<OrganizerGroupSet
   Future<void> _loadCreatorProfile() async {
     setState(() => _creatorLoading = true);
     try {
-      final uid = (_groupData['submittedBy'] ?? _groupData['org_creator'] ?? '').toString();
+      final rawUid = (_groupData['submittedBy'] ?? _groupData['org_creator'] ?? _groupData['org_addedby'] ?? '').toString();
+      final uid = rawUid.isNotEmpty ? rawUid : (FirebaseAuth.instance.currentUser?.uid ?? '');
       if (uid.isEmpty) { if (mounted) setState(() => _creatorLoading = false); return; }
       final snap = await FirebaseFirestore.instance.collection('registration').doc(uid).get();
       if (snap.exists && mounted) {
@@ -971,7 +1019,8 @@ class _OrganizerGroupSettingsScreenState extends ConsumerState<OrganizerGroupSet
   Future<void> _loadMembers() async {
     setState(() => _membersLoading = true);
     try {
-      final creatorUid = (_groupData['submittedBy'] ?? _groupData['org_creator'] ?? '').toString();
+      final rawUid = (_groupData['submittedBy'] ?? _groupData['org_creator'] ?? _groupData['org_addedby'] ?? '').toString();
+      final creatorUid = rawUid.isNotEmpty ? rawUid : (FirebaseAuth.instance.currentUser?.uid ?? '');
       final ugSnap = await FirebaseFirestore.instance
           .collection('user_groups')
           .where('group_id', isEqualTo: widget.groupId)
@@ -1132,6 +1181,14 @@ class _OrganizerGroupSettingsScreenState extends ConsumerState<OrganizerGroupSet
         'org_name_jp':        _nameJpCtrl.text.trim(),
         'org_description':    _descEnCtrl.text.trim(),
         'org_description_jp': _descJpCtrl.text.trim(),
+        'org_venue_loc_name': _venueCtrl.text.trim(),
+        'org_city':           _cityCtrl.text.trim(),
+        'org_prefecture':     _prefCtrl.text.trim(),
+        'org_country':        _countryCtrl.text.trim(),
+        'org_contact_email':  _emailCtrl.text.trim(),
+        'org_website':        _websiteCtrl.text.trim(),
+        'org_social':         _socialCtrl.text.trim(),
+        for (final k in _flagKeys) k: (_flags[k] ?? false),
         'updated_at':         FieldValue.serverTimestamp(),
         if (FirebaseAuth.instance.currentUser?.uid != null)
           'updated_by': FirebaseAuth.instance.currentUser!.uid,
@@ -1221,6 +1278,57 @@ class _OrganizerGroupSettingsScreenState extends ConsumerState<OrganizerGroupSet
             const _Divider(),
             _buildField(label: _t(lang, 'descJp'), ctrl: _descJpCtrl, hint: '説明を入力…', maxLines: 4),
           ])),
+          const SizedBox(height: 16),
+          _buildSectionHeader(_t(lang, 'locContact'), Icons.place_outlined),
+          const SizedBox(height: 8),
+          _buildCard(child: Column(children: [
+            _buildField(label: _t(lang, 'venue'), ctrl: _venueCtrl),
+            const _Divider(),
+            _buildField(label: _t(lang, 'city'), ctrl: _cityCtrl),
+            const _Divider(),
+            _buildField(label: _t(lang, 'prefecture'), ctrl: _prefCtrl),
+            const _Divider(),
+            _buildField(label: _t(lang, 'country'), ctrl: _countryCtrl),
+            const _Divider(),
+            _buildField(label: _t(lang, 'contactEmail'), ctrl: _emailCtrl),
+            const _Divider(),
+            _buildField(label: _t(lang, 'website'), ctrl: _websiteCtrl),
+            const _Divider(),
+            _buildField(label: _t(lang, 'social'), ctrl: _socialCtrl),
+          ])),
+          const SizedBox(height: 16),
+          _buildChipSection(
+            lang == kLangJa ? '年齢層' : 'AGE GROUPS', Icons.groups_outlined, [
+              MapEntry('org_age_juniors',  lang == kLangJa ? 'ジュニア' : 'Juniors'),
+              MapEntry('org_age_students', lang == kLangJa ? '学生'     : 'Students'),
+              MapEntry('org_age_adult',    lang == kLangJa ? '大人'     : 'Adults'),
+              MapEntry('org_age_seniors',  lang == kLangJa ? 'シニア'   : 'Seniors'),
+            ]),
+          const SizedBox(height: 16),
+          _buildChipSection(
+            lang == kLangJa ? 'スキルレベル' : 'SKILL LEVELS', Icons.star_outline_rounded, [
+              MapEntry('org_skill_beginner',     lang == kLangJa ? '初級' : 'Beginner'),
+              MapEntry('org_skill_intermediate', lang == kLangJa ? '中級' : 'Intermediate'),
+              MapEntry('org_skill_advance',      lang == kLangJa ? '上級' : 'Advanced'),
+            ]),
+          const SizedBox(height: 16),
+          _buildChipSection(
+            lang == kLangJa ? '活動曜日' : 'MEETING DAYS', Icons.calendar_today_outlined, [
+              MapEntry('org_meetup_mon',   lang == kLangJa ? '月' : 'Mon'),
+              MapEntry('org_meetup_tues',  lang == kLangJa ? '火' : 'Tue'),
+              MapEntry('org_meetup_weds',  lang == kLangJa ? '水' : 'Wed'),
+              MapEntry('org_meetup_thurs', lang == kLangJa ? '木' : 'Thu'),
+              MapEntry('org_meetup_fri',   lang == kLangJa ? '金' : 'Fri'),
+              MapEntry('org_meetup_sat',   lang == kLangJa ? '土' : 'Sat'),
+              MapEntry('org_meetup_sun',   lang == kLangJa ? '日' : 'Sun'),
+            ]),
+          const SizedBox(height: 16),
+          _buildChipSection(
+            lang == kLangJa ? '活動時間帯' : 'MEETING TIMES', Icons.schedule_outlined, [
+              MapEntry('org_meetup_time_mornings',   lang == kLangJa ? '午前' : 'Mornings'),
+              MapEntry('org_meetup_time_afternoons', lang == kLangJa ? '午後' : 'Afternoons'),
+              MapEntry('org_meetup_time_evenings',   lang == kLangJa ? '夜'   : 'Evenings'),
+            ]),
           const SizedBox(height: 16),
           _buildSectionHeader(_t(lang, 'groupMembers'), Icons.people_alt_rounded,
               badge: _members.isNotEmpty ? '${_members.length}' : null),
@@ -1404,6 +1512,44 @@ class _OrganizerGroupSettingsScreenState extends ConsumerState<OrganizerGroupSet
                 contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
               )),
         ]));
+  }
+
+  static bool _truthyFlag(dynamic v) {
+    if (v is bool) return v;
+    if (v is num) return v != 0;
+    final s = v?.toString().toLowerCase().trim() ?? '';
+    return s == 'true' || s == '1' || s == 'yes' || s == 't';
+  }
+
+  Widget _buildChipSection(String title, IconData icon, List<MapEntry<String, String>> items) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _buildSectionHeader(title, icon),
+      const SizedBox(height: 8),
+      _buildCard(child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Wrap(spacing: 8, runSpacing: 8,
+            children: [for (final it in items) _toggleChip(it.value, it.key)]),
+      )),
+    ]);
+  }
+
+  Widget _toggleChip(String label, String key) {
+    final on = _flags[key] ?? false;
+    return GestureDetector(
+      onTap: () => setState(() { _flags[key] = !on; _dirty = true; }),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: on ? _D.accentLt : _D.inputBg,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: on ? _D.accent : Colors.transparent, width: 1.5),
+        ),
+        child: Text(label, style: TextStyle(
+            fontSize: 13, fontWeight: FontWeight.w700,
+            color: on ? _D.accent : _D.textMuted)),
+      ),
+    );
   }
 
   Widget _buildSectionHeader(String label, IconData icon, {String? badge}) {

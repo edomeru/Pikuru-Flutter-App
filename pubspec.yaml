@@ -2,7 +2,7 @@ name: pikuru
 description: "A new Flutter project."
 publish_to: 'none'
 
-version: 1.0.0+6
+version: 1.0.0+7
 
 environment:
   sdk: ^3.10.7
@@ -53,6 +53,10 @@ flutter_launcher_icons:
   ios: true
   image_path: "assets/icon/pikuru_full_logo.png"
   min_sdk_android: 21
+  # iOS App Store icons must be opaque (no alpha channel). Flatten onto white
+  # so a future icon regeneration won't reintroduce transparency.
+  remove_alpha_ios: true
+  background_color_ios: "#FFFFFF"
   web:
     generate: false
 

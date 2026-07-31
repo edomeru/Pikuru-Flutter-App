@@ -994,11 +994,6 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
                 hint: t('prefHint')),
           ),
         ]),
-        const SizedBox(height: 14),
-        _buildTextField(
-            label: t('country'),
-            controller: _countryController,
-            hint: 'Japan'),
         const SizedBox(height: 20),
         _buildTextField(
             label: t('email'),
@@ -1307,7 +1302,6 @@ class _AddGroupScreenState extends ConsumerState<AddGroupScreen> {
           _buildReviewRow(t('reviewLoc'),     _locNameController.text.trim()),
           _buildReviewRow(t('reviewCity'),    reviewCity),
           _buildReviewRow(t('reviewPref'),    reviewPref),
-          _buildReviewRow(t('reviewCountry'), _countryController.text.trim()),
           _buildReviewRow(t('reviewEmail'),   _emailController.text.trim()),
           _buildReviewRow(t('reviewWebsite'), _websiteController.text.trim()),
           _buildReviewRow(t('reviewSocial'),  _socialController.text.trim()),

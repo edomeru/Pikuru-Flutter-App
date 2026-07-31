@@ -1248,6 +1248,36 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
 
   String get _country    => (_loc['loc_country']   ?? '').toString();
   String get _type       => (_loc['loc_type']       ?? '').toString();
+
+  // English court-type value → Japanese label (display only; value unchanged).
+  static const Map<String, String> _locTypeJa = {
+    'Arena': 'アリーナ',
+    'Professional Courts': 'プロコート',
+    'Gym/Club': 'ジム／クラブ',
+    'Gymnasium': '体育館',
+    'Public Court': '公共コート',
+    'Event Center': 'イベントセンター',
+    'Resort/Hotel': 'リゾート／ホテル',
+    'Hotel/Resort': 'ホテル／リゾート',
+    'School': '学校',
+    'School/University': '学校・大学',
+    'University': '大学',
+    'Amusement Center': 'アミューズメントセンター',
+    'Community Center': 'コミュニティセンター',
+    'Recreation Center': 'レクリエーションセンター',
+    'Recreation': 'レクリエーション',
+    'Parks and Recreation': '公園・レクリエーション',
+    'Sports Center': 'スポーツセンター',
+    'Sports Facility': 'スポーツ施設',
+    'Fitness Center': 'フィットネスセンター',
+    'Shopping Mall': 'ショッピングモール',
+    'Park': '公園',
+    'Tennis Club': 'テニスクラブ',
+    'Tennis Court': 'テニスコート',
+    'Other': 'その他',
+  };
+  String get _typeLabel =>
+      _isJa ? (_locTypeJa[_type] ?? _type) : _type;
   String get _price      => (_loc['loc_price']      ?? '').toString();
   String get _googleLink => (_loc['loc_googlelink'] ?? '').toString();
   String get _website    => (_loc['loc_website']    ?? '').toString();
@@ -1678,7 +1708,7 @@ class _CourtDetailSheetState extends State<_CourtDetailSheet> {
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(color: _border),
                     ),
-                    child: Text(_type,
+                    child: Text(_typeLabel,
                         style: TextStyle(
                             fontSize: 10, fontWeight: FontWeight.w700, color: _primary)),
                   ),

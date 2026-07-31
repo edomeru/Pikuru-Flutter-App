@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geocoding/geocoding.dart';
@@ -181,7 +182,7 @@ const _T = {
     'website':            'ウェブサイト',
     'websiteHint':        'https://example.com',
     'contactEmail':       '連絡先メール',
-    'contactEmailHint':   'contact@example.com',
+    'contactEmailHint':   'メールアドレス',
     'courtType':          'コートタイプ *',
     'pricing':            '料金',
     'priceInfo':          '料金情報',
@@ -289,6 +290,7 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
   late TextEditingController _addressEnController;
   late TextEditingController _cityEnController;
   late TextEditingController _prefectureEnController;
+  late TextEditingController _prefectureJpController;
   late TextEditingController _countryController;
   late TextEditingController _latController;
   late TextEditingController _lngController;
@@ -341,6 +343,7 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
     _addressEnController    = TextEditingController();
     _cityEnController       = TextEditingController();
     _prefectureEnController = TextEditingController(text: 'Tokyo');
+    _prefectureJpController = TextEditingController(text: '東京都');
     _countryController      = TextEditingController(text: 'Japan');
     _latController          = TextEditingController();
     _lngController          = TextEditingController();
@@ -366,6 +369,7 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
     for (final c in [
       _nameController, _courtCountController,
       _addressEnController, _cityEnController, _prefectureEnController,
+      _prefectureJpController,
       _countryController, _latController, _lngController,
       _googlelinkController, _websiteController, _contactEmailController,
       _priceController, _notesController, _mapSearchController,
@@ -645,6 +649,23 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
         }
       }
 
+      // Contact email is taken automatically from the submitter's registration
+      // profile (registration/{uid}.email), falling back to their auth email.
+      // Guarded with a timeout so a slow/blocked read can never stall submit.
+      final _me = FirebaseAuth.instance.currentUser;
+      String _contactEmail = _me?.email ?? '';
+      try {
+        if (_me != null) {
+          final regSnap = await FirebaseFirestore.instance
+              .collection('registration').doc(_me.uid).get()
+              .timeout(const Duration(seconds: 6));
+          final regEmail = (regSnap.data()?['email'] ?? '').toString().trim();
+          if (regEmail.isNotEmpty) _contactEmail = regEmail;
+        }
+      } catch (e) {
+        debugPrint('[AddCourt] failed to fetch submitter email: $e');
+      }
+
       // ── Write to Firestore — mirrors web app field names exactly ─────────
       await FirebaseFirestore.instance.collection('locations').add({
         'loc_id':             newLocId,
@@ -671,13 +692,13 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
         'loc_city_en':       _cityEnController.text.trim(),
         'loc_city_jp':       '',
         'loc_prefecture_en': _prefectureEnController.text.trim(),
-        'loc_prefecture_jp': '',
+        'loc_prefecture_jp': _prefectureJpController.text.trim(),
         'loc_country':       _countryController.text.trim(),
         'loc_latitude':      _latController.text.trim(),
         'loc_longitude':     _lngController.text.trim(),
         'loc_googlelink':    _googlelinkController.text.trim(),
         'loc_website':       _websiteController.text.trim(),
-        'loc_contact_email': _contactEmailController.text.trim(),
+        'loc_contact_email': _contactEmail,
 
         'loc_court_type_indoor':
         _courtType == 'INDOOR COURTS' ||
@@ -707,7 +728,7 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
 
         'loc_notes': _notesController.text.trim(),
         'loc_image': imageUrl.isNotEmpty ? imageUrl : null,
-      });
+      }).timeout(const Duration(seconds: 25));
 
       if (mounted) {
         _showSnack(_t(lang, 'submittedMsg'));
@@ -1240,24 +1261,21 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
           const SizedBox(width: 12),
           Expanded(child: _buildTextField(
               label: _t(lang, 'prefecture'),
-              controller: _prefectureEnController,
+              controller: lang == kLangJa
+                  ? _prefectureJpController
+                  : _prefectureEnController,
               hint: _t(lang, 'prefectureHint'))),
         ]),
         const SizedBox(height: 14),
-        _buildTextField(
+        // Country — fixed to Japan; display localized, stored value stays 'Japan'.
+        _buildReadOnlyField(
             label: _t(lang, 'country'),
-            controller: _countryController,
-            hint: 'Japan'),
+            text: lang == kLangJa ? '日本' : 'Japan'),
         const SizedBox(height: 14),
         _buildTextField(
             label: _t(lang, 'website'),
             controller: _websiteController,
             hint: _t(lang, 'websiteHint')),
-        const SizedBox(height: 14),
-        _buildTextField(
-            label: _t(lang, 'contactEmail'),
-            controller: _contactEmailController,
-            hint: _t(lang, 'contactEmailHint')),
       ]),
     );
   }
@@ -1663,6 +1681,26 @@ class _AddCourtScreenState extends ConsumerState<AddCourtScreen> {
           contentPadding:
           const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
         ),
+      ),
+    ]);
+  }
+
+  // Read-only display styled like _buildTextField (used for the fixed Country field).
+  Widget _buildReadOnlyField({required String label, required String text}) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      _buildLabel(label),
+      const SizedBox(height: 6),
+      Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+        decoration: BoxDecoration(
+          color: _surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _border, width: 1),
+        ),
+        child: Text(text,
+            style: const TextStyle(
+                color: _textDark, fontSize: 14, fontWeight: FontWeight.w500)),
       ),
     ]);
   }
