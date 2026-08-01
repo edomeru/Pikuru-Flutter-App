@@ -4,11 +4,20 @@
 
 ---
 
-## 🎬 Demo Preview
+## 🎬 Video Demos & Feature Highlights
 
-[![Watch Pikuru App Demo](https://img.youtube.com/vi/zH0ar6Npn94/hqdefault.jpg)](https://youtube.com/shorts/zH0ar6Npn94)
+### 📱 Full Demos & Overviews
 
-> 📺 **[Click here to watch the full demo on YouTube Shorts!](https://youtube.com/shorts/zH0ar6Npn94)**
+| Main App Demo | Feature Overview | App Walkthrough |
+| :---: | :---: | :---: |
+| [![Main App Demo](https://img.youtube.com/vi/zH0ar6Npn94/hqdefault.jpg)](https://youtube.com/shorts/zH0ar6Npn94)<br>▶️ **[Watch Main Demo](https://youtube.com/shorts/zH0ar6Npn94)** | [![Feature Overview](https://img.youtube.com/vi/Koi515lZ3CE/hqdefault.jpg)](https://youtu.be/Koi515lZ3CE)<br>▶️ **[Watch Feature Overview](https://youtu.be/Koi515lZ3CE)** | [![App Walkthrough](https://img.youtube.com/vi/Veam5ILT8tE/hqdefault.jpg)](https://youtu.be/Veam5ILT8tE)<br>▶️ **[Watch Walkthrough](https://youtu.be/Veam5ILT8tE)** |
+
+### ⚡ Feature Shorts & Demos
+
+| | | |
+| :---: | :---: | :---: |
+| [![Demo Short 1](https://img.youtube.com/vi/lVbCsxFiMas/hqdefault.jpg)](https://youtube.com/shorts/lVbCsxFiMas)<br>▶️ **[Watch Demo 1](https://youtube.com/shorts/lVbCsxFiMas)** | [![Demo Short 2](https://img.youtube.com/vi/O40tV6BLRU4/hqdefault.jpg)](https://youtube.com/shorts/O40tV6BLRU4)<br>▶️ **[Watch Demo 2](https://youtube.com/shorts/O40tV6BLRU4)** | [![Demo Short 3](https://img.youtube.com/vi/aupZUVJGkOs/hqdefault.jpg)](https://youtube.com/shorts/aupZUVJGkOs)<br>▶️ **[Watch Demo 3](https://youtube.com/shorts/aupZUVJGkOs)** |
+| [![Demo Short 4](https://img.youtube.com/vi/gfkUyYc2Ef8/hqdefault.jpg)](https://youtube.com/shorts/gfkUyYc2Ef8)<br>▶️ **[Watch Demo 4](https://youtube.com/shorts/gfkUyYc2Ef8)** | [![Demo Short 5](https://img.youtube.com/vi/YWd1g3sXF88/hqdefault.jpg)](https://youtube.com/shorts/YWd1g3sXF88)<br>▶️ **[Watch Demo 5](https://youtube.com/shorts/YWd1g3sXF88)** | |
 
 ---
 
