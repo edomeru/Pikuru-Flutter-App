@@ -1,16 +1,50 @@
-# pikuru
+# 🏓 Pikuru - Flutter App
 
-A new Flutter project.
+**Pikuru** is Japan's premier Pickleball Community Hub application built with Flutter. It connects pickleball enthusiasts across Japan to discover local courts, join community groups, register for events, and chat with fellow players.
 
-## Getting Started
+---
 
-This project is a starting point for a Flutter application.
+## 🎬 Demo Preview
 
-A few resources to get you started if this is your first Flutter project:
+[![Watch Pikuru App Demo](https://img.youtube.com/vi/zH0ar6Npn94/hqdefault.jpg)](https://youtube.com/shorts/zH0ar6Npn94)
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+> 📺 **[Click here to watch the full demo on YouTube Shorts!](https://youtube.com/shorts/zH0ar6Npn94)**
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+---
+
+## ✨ Features
+
+- 🏟️ **Court Discovery**: Find and locate pickleball courts across Japan with interactive maps and details.
+- 👥 **Group Communities**: Join local pickleball clubs, view group members, and organize activities.
+- 📅 **Events & Tournaments**: Register for upcoming matches, sessions, and events.
+- 💬 **Real-time Chat**: Connect with players via personal, group, and event channels.
+- 🌐 **Localization**: Supports Japanese and English languages.
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- [Flutter SDK](https://docs.flutter.dev/get-started/install) (latest stable version)
+- Dart SDK
+- Xcode (for iOS build/simulator)
+- Android Studio / Android SDK (for Android build/emulator)
+
+### Installation
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/edomeru/Pikuru-Flutter-App.git
+   cd Pikuru-Flutter-App
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   flutter pub get
+   ```
+
+3. **Run the app:**
+   ```bash
+   flutter run
+   ```
